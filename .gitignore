@@ -1,0 +1,17 @@
+# Visual Studio
+.vs/
+**/.vs/
+
+# .NET
+bin/
+obj/
+**/bin/
+**/obj/
+
+# Node
+node_modules/
+dist/
+
+# Environment
+.env
+.env.local
