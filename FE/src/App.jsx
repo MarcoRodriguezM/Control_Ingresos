@@ -1,84 +1,413 @@
-import useStore from './store/useStore'
+import { useEffect, useMemo, useState } from 'react'
+import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from 'react-router-dom'
+import { Icon } from './components/Icon'
+import { AlertModal } from './components/AlertModal'
+import { ApprovalsPage, LoginPage, PersonAccessPage, RequestFormPage, RequestsListPage } from './pages'
+import { controlIngresosApi } from './services/api'
+import { initials } from './utils/formatters'
+import './App.css'
+
+const today = () => new Date().toLocaleDateString('en-CA')
+const sessionKey = 'control-ingresos-session'
+const initialForm = () => ({
+  idTipoIngreso: '', idEstadoSolicitud: '', idProveedor: '', fechaInicio: today(), fechaFin: today(),
+  nombreActividad: '', descripcionActividad: '', numeroContrato: '', cantidadEstimada: '1',
+  contactoProveedor: '', correoProveedor: '', idAreaSolicitante: '', idUbicacion: '',
+  idUsuarioSolicitante: '', observaciones: '',
+})
 
 function App() {
-  const { count, increment, decrement, reset } = useStore()
+  const navigate = useNavigate()
+  const [session, setSession] = useState(readSession)
+
+  async function login(credentials) {
+    const authenticatedUser = await controlIngresosApi.iniciarSesion(credentials)
+    localStorage.setItem(sessionKey, JSON.stringify(authenticatedUser))
+    setSession(authenticatedUser)
+    navigate(authenticatedUser.esAprobador ? '/aprobaciones' : '/solicitudes', { replace: true })
+  }
+
+  async function logout() {
+    try {
+      await controlIngresosApi.cerrarSesion()
+    } finally {
+      localStorage.removeItem(sessionKey)
+      setSession(null)
+      navigate('/login', { replace: true })
+    }
+  }
+
+  if (!session) {
+    return <Routes>
+      <Route path="/login" element={<LoginPage onLogin={login} />} />
+      <Route path="*" element={<Navigate to="/login" replace />} />
+    </Routes>
+  }
+
+  return <AuthenticatedApp session={session} onLogout={logout} />
+}
+
+function AuthenticatedApp({ session, onLogout }) {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const editRoute = matchPath('/solicitudes/:id/editar', location.pathname)
+  const personRoute = matchPath('/personas/:idPersona', location.pathname)
+  const isPersonsRoute = location.pathname.startsWith('/personas')
+  const isRequestsRoute = location.pathname.startsWith('/solicitudes')
+  const isApprovalsRoute = location.pathname.startsWith('/aprobaciones')
+  const [step, setStep] = useState(1)
+  const [editingId, setEditingId] = useState(null)
+  const [form, setForm] = useState(initialForm)
+  const [options, setOptions] = useState(null)
+  const [solicitudes, setSolicitudes] = useState([])
+  const [personas, setPersonas] = useState([])
+  const [personaSeleccionada, setPersonaSeleccionada] = useState(null)
+  const [aprobaciones, setAprobaciones] = useState([])
+  const [approvalsLoading, setApprovalsLoading] = useState(false)
+  const [decisionSaving, setDecisionSaving] = useState(false)
+  const [personLoading, setPersonLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState(null)
+  const activeEditingId = editRoute ? editingId : null
+
+  useEffect(() => {
+    let active = true
+    Promise.all([controlIngresosApi.obtenerDatosFormularioSolicitud(), controlIngresosApi.listarSolicitudes()])
+      .then(([data, records]) => {
+        if (!active) return
+        setOptions(data)
+        setSolicitudes(records)
+        setForm((current) => withDefaults(current, data, session.idUsuario))
+      })
+      .catch((requestError) => active && setError(requestError.message))
+      .finally(() => active && setLoading(false))
+    return () => { active = false }
+  }, [session.idUsuario])
+
+  useEffect(() => {
+    const id = Number(editRoute?.params.id)
+    if (!id || !options || editingId === id) return
+    let active = true
+    const load = async () => {
+      await Promise.resolve()
+      if (!active) return
+      setLoading(true)
+      setError('')
+      try {
+        const item = await controlIngresosApi.obtenerSolicitud(id)
+        if (!active) return
+        setEditingId(id)
+        setForm(formFromDetail(item, options))
+        setStep(1)
+      } catch (requestError) {
+        if (active) setError(requestError.message)
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+    load()
+    return () => { active = false }
+  }, [location.pathname, options, editRoute?.params.id, editingId])
+
+  useEffect(() => {
+    if (!isPersonsRoute) return
+    let active = true
+    const load = async () => {
+      await Promise.resolve()
+      if (!active) return
+      setPersonLoading(true)
+      setError('')
+      try {
+        const records = personas.length ? personas : await controlIngresosApi.listarPersonas()
+        if (!active) return
+        setPersonas(records)
+        const routeId = Number(personRoute?.params.idPersona)
+        const preferred = routeId
+          ? records.find((item) => item.idPersona === routeId)
+          : records.find((item) => item.nombreCompleto?.toLowerCase().includes('david')) ?? records[0]
+        if (!preferred) {
+          setPersonaSeleccionada(null)
+          return
+        }
+        if (personaSeleccionada?.idPersona !== preferred.idPersona) {
+          const detail = await controlIngresosApi.obtenerPersonaAccesos(preferred.idPersona)
+          if (active) setPersonaSeleccionada(detail)
+        }
+      } catch (requestError) {
+        if (active) setError(requestError.message)
+      } finally {
+        if (active) setPersonLoading(false)
+      }
+    }
+    load()
+    return () => { active = false }
+  }, [isPersonsRoute, personRoute?.params.idPersona, personas, personaSeleccionada?.idPersona])
+
+  useEffect(() => {
+    if (!isApprovalsRoute || !session.esAprobador) return
+    let active = true
+    const load = async () => {
+      await Promise.resolve()
+      if (!active) return
+      setApprovalsLoading(true)
+      setError('')
+      try {
+        const records = await controlIngresosApi.listarAprobaciones(session.idUsuario)
+        if (active) setAprobaciones(records)
+      } catch (requestError) {
+        if (active) setError(requestError.message)
+      } finally {
+        if (active) setApprovalsLoading(false)
+      }
+    }
+    load()
+    return () => { active = false }
+  }, [isApprovalsRoute, session.esAprobador, session.idUsuario])
+
+  const selected = useMemo(() => ({
+    tipo: findOption(options?.tiposIngreso, form.idTipoIngreso),
+    proveedor: findOption(options?.proveedores, form.idProveedor),
+    area: findOption(options?.areas, form.idAreaSolicitante),
+    ubicacion: findOption(options?.ubicaciones, form.idUbicacion),
+    usuario: findOption(options?.usuarios, form.idUsuarioSolicitante),
+  }), [form, options])
+
+  function change(event) {
+    const { name, value } = event.target
+    setForm((current) => ({ ...current, [name]: value }))
+    setError('')
+  }
+
+  function next() { goToStep(Math.min(3, step + 1)) }
+
+  function goToStep(targetStep) {
+    for (let currentStep = 1; currentStep < targetStep; currentStep += 1) {
+      const validation = validateStep(currentStep, form)
+      if (validation) {
+        setStep(currentStep)
+        setError(validation)
+        return
+      }
+    }
+    setError('')
+    setStep(targetStep)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  function openNew() {
+    setEditingId(null)
+    setForm(withDefaults(initialForm(), options, session.idUsuario))
+    setStep(1)
+    setError('')
+    setSuccess(null)
+    navigate('/solicitudes/nueva')
+  }
+
+  function openEdit(id) {
+    setError('')
+    navigate(`/solicitudes/${id}/editar`)
+  }
+
+  async function remove(id, number) {
+    if (!window.confirm(`¿Deseas eliminar la solicitud ${number ?? `#${id}`}?`)) return
+    setError('')
+    try {
+      const user = session.idUsuario
+      await controlIngresosApi.eliminarSolicitud(id, user)
+      setSolicitudes(await controlIngresosApi.listarSolicitudes())
+      setSuccess({ message: `La solicitud ${number ?? `#${id}`} fue eliminada.` })
+    } catch (requestError) {
+      setError(requestError.message)
+    }
+  }
+
+  function openPersons() {
+    navigate('/personas')
+    setMenuOpen(false)
+    setError('')
+    setSuccess(null)
+  }
+
+  function selectPerson(idPersona) {
+    setError('')
+    navigate(`/personas/${idPersona}`)
+  }
+
+  async function decideApproval(idSolicitudPersonaArea, codigoEstado, comentarioDecision) {
+    setDecisionSaving(true)
+    setError('')
+    setSuccess(null)
+    try {
+      await controlIngresosApi.decidirAprobacion(idSolicitudPersonaArea, {
+        idUsuarioAprobador: session.idUsuario,
+        codigoEstado,
+        comentarioDecision: comentarioDecision.trim() || null,
+      })
+      setAprobaciones(await controlIngresosApi.listarAprobaciones(session.idUsuario))
+      setSuccess({ message: codigoEstado === 'APROBADA' ? 'El acceso fue aprobado.' : 'El acceso fue rechazado.' })
+      return true
+    } catch (requestError) {
+      setError(requestError.message)
+      return false
+    } finally {
+      setDecisionSaving(false)
+    }
+  }
+
+  async function submit() {
+    if (step !== 3) return
+    if (editRoute && !activeEditingId) {
+      setError('No fue posible cargar la solicitud que deseas editar.')
+      return
+    }
+    const validation = validateStep(2, form)
+    if (validation) { setStep(2); setError(validation); return }
+    setSaving(true)
+    setError('')
+    try {
+      const sentStatus = options.estadosSolicitud.find((item) => item.codigo === 'ENVIADA')
+      const payload = {
+        idTipoIngreso: numberOrNull(form.idTipoIngreso),
+        idEstadoSolicitud: activeEditingId ? numberOrNull(form.idEstadoSolicitud) : sentStatus?.id ?? numberOrNull(form.idEstadoSolicitud),
+        fechaInicio: form.fechaInicio,
+        fechaFin: form.fechaFin,
+        nombreActividad: form.nombreActividad.trim(),
+        descripcionActividad: textOrNull(form.descripcionActividad),
+        idProveedor: numberOrNull(form.idProveedor),
+        numeroContrato: textOrNull(form.numeroContrato),
+        contactoProveedor: textOrNull(form.contactoProveedor),
+        correoProveedor: textOrNull(form.correoProveedor),
+        cantidadEstimada: numberOrNull(form.cantidadEstimada),
+        idAreaSolicitante: numberOrNull(form.idAreaSolicitante),
+        idUsuarioSolicitante: form.idUsuarioSolicitante,
+        idUbicacion: numberOrNull(form.idUbicacion),
+        observaciones: textOrNull(form.observaciones),
+        usuario: session.idUsuario,
+      }
+      const created = activeEditingId
+        ? await controlIngresosApi.actualizarSolicitud(activeEditingId, payload)
+        : await controlIngresosApi.crearSolicitud(payload)
+      setSuccess(activeEditingId ? { message: 'La solicitud fue actualizada correctamente.' } : created)
+      setSolicitudes(await controlIngresosApi.listarSolicitudes())
+      setForm(withDefaults(initialForm(), options, session.idUsuario))
+      setEditingId(null)
+      setStep(1)
+      navigate('/solicitudes')
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function cancelForm() {
+    setForm(withDefaults(initialForm(), options, session.idUsuario))
+    setStep(1)
+    setEditingId(null)
+    setError('')
+    navigate('/solicitudes')
+  }
 
   return (
-    <div className="min-h-screen bg-gray-100 p-8">
-      <div className="max-w-4xl mx-auto">
-        <h1 className="text-4xl font-bold text-center mb-8 text-gray-800">
-          React + Zustand + Tailwind + Bootstrap
-        </h1>
-        
-        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-          <h2 className="text-2xl font-semibold mb-4 text-gray-700">Contador con Zustand</h2>
-          <div className="text-center mb-6">
-            <span className="text-6xl font-bold text-blue-600">{count}</span>
-          </div>
-          
-          <div className="flex justify-center gap-3 mb-4">
-            <button 
-              onClick={decrement}
-              className="btn btn-primary"
-            >
-              Decrementar
-            </button>
-            <button 
-              onClick={increment}
-              className="btn btn-success"
-            >
-              Incrementar
-            </button>
-            <button 
-              onClick={reset}
-              className="btn btn-danger"
-            >
-              Reset
-            </button>
-          </div>
+    <div className="app-shell">
+      <AlertModal message={error} onClose={() => setError('')} />
+      {menuOpen && <button className="sidebar-backdrop" onClick={() => setMenuOpen(false)} aria-label="Cerrar menú" />}
+      <aside className={`sidebar ${menuOpen ? 'open' : ''}`} aria-label="Navegación principal">
+        <div className="brand"><span className="brand-mark"><Icon name="logo" /></span><span>Entrada</span></div>
+        <p className="side-label">Gestión de ingresos</p>
+        <nav className="main-nav">
+          <Nav icon="home" label="Dashboard" onClick={() => setMenuOpen(false)} />
+          <Nav icon="file" label="Solicitudes" count={solicitudes.length} active={isRequestsRoute} onClick={() => { navigate('/solicitudes'); setMenuOpen(false); setError('') }} />
+          {session.esAprobador && <Nav icon="check" label="Mis aprobaciones" count={aprobaciones.filter((item) => item.codigoEstado === 'PENDIENTE').length || undefined} active={isApprovalsRoute} onClick={() => { navigate('/aprobaciones'); setMenuOpen(false); setError(''); setSuccess(null) }} />}
+          <Nav icon="tasks" label="Mis actividades" count="7" onClick={() => setMenuOpen(false)} />
+          <Nav icon="users" label="Personas" count={personas.length || undefined} active={isPersonsRoute} onClick={openPersons} />
+          <Nav icon="settings" label="Configuración" onClick={() => setMenuOpen(false)} />
+        </nav>
+        <div className="sidebar-footer">
+          <div className="prototype-note">Entorno conectado<br />Los cambios se guardan en SQL Server.</div>
+          <button type="button" className="nav-item" onClick={onLogout}><Icon name="logout" /><span>Cerrar sesión</span></button>
+          <div className="sidebar-profile"><div className="avatar">{initials(session.nombreCompleto)}</div><div><strong>{session.nombreCompleto ?? session.idUsuario}</strong><span>{session.puesto ?? session.area ?? 'Usuario'}</span></div></div>
         </div>
+      </aside>
 
-        <div className="bg-white rounded-lg shadow-lg p-6">
-          <h2 className="text-2xl font-semibold mb-4 text-gray-700">Ejemplo de Bootstrap y Tailwind</h2>
-          <div className="row">
-            <div className="col-md-4 mb-3">
-              <div className="card h-100">
-                <div className="card-body">
-                  <h5 className="card-title">Tailwind CSS</h5>
-                  <p className="card-text text-gray-600">
-                    Estilos utility-first para diseño rápido
-                  </p>
-                  <button className="btn btn-outline-primary btn-sm">Más info</button>
-                </div>
-              </div>
-            </div>
-            <div className="col-md-4 mb-3">
-              <div className="card h-100">
-                <div className="card-body">
-                  <h5 className="card-title">Bootstrap</h5>
-                  <p className="card-text text-gray-600">
-                    Framework CSS para componentes UI
-                  </p>
-                  <button className="btn btn-outline-secondary btn-sm">Más info</button>
-                </div>
-              </div>
-            </div>
-            <div className="col-md-4 mb-3">
-              <div className="card h-100">
-                <div className="card-body">
-                  <h5 className="card-title">Zustand</h5>
-                  <p className="card-text text-gray-600">
-                    State management ligero y simple
-                  </p>
-                  <button className="btn btn-outline-success btn-sm">Más info</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <main className="main">
+        <header className="topbar">
+          <button className="icon-button menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label="Abrir menú"><Icon name="menu" /></button>
+          <div className="breadcrumb"><span>Inicio</span><strong>{isApprovalsRoute ? 'Mis aprobaciones' : isPersonsRoute ? 'Personas y accesos' : editRoute ? 'Editar solicitud' : location.pathname === '/solicitudes/nueva' ? 'Nueva solicitud' : 'Solicitudes'}</strong></div>
+          <div className="top-actions"><button className="ghost-button"><Icon name="help" />Ayuda</button><button className="icon-button" aria-label="Notificaciones"><Icon name="bell" /><span className="dot" /></button><div className="avatar" title={session.nombreCompleto ?? session.idUsuario}>{initials(session.nombreCompleto)}</div></div>
+        </header>
+
+        <section className="content">
+          {success && <div className="alert success" role="status"><strong>Operación completada.</strong> {success.message ?? `Se creó ${success.numero ?? `la solicitud #${success.id}`}.`}</div>}
+
+          <Routes>
+            <Route path="/" element={<Navigate to="/solicitudes" replace />} />
+            <Route path="/solicitudes" element={<RequestsListPage items={solicitudes} loading={loading} onNew={openNew} onEdit={openEdit} onDelete={remove} />} />
+            <Route path="/solicitudes/nueva" element={<RequestFormPage form={form} options={options} loading={loading} saving={saving} editingId={null} step={step} selected={selected} onChange={change} onStepChange={goToStep} onNext={next} onBack={() => setStep((current) => current - 1)} onCancel={cancelForm} onSubmit={submit} />} />
+            <Route path="/solicitudes/:id/editar" element={<RequestFormPage form={form} options={options} loading={loading} saving={saving} editingId={activeEditingId} step={step} selected={selected} onChange={change} onStepChange={goToStep} onNext={next} onBack={() => setStep((current) => current - 1)} onCancel={cancelForm} onSubmit={submit} />} />
+            <Route path="/personas" element={<PersonAccessPage items={personas} selected={personaSeleccionada} loading={personLoading} onSelect={selectPerson} />} />
+            <Route path="/personas/:idPersona" element={<PersonAccessPage items={personas} selected={personaSeleccionada} loading={personLoading} onSelect={selectPerson} />} />
+            <Route path="/aprobaciones" element={session.esAprobador ? <ApprovalsPage items={aprobaciones} loading={approvalsLoading} saving={decisionSaving} onDecide={decideApproval} /> : <Navigate to="/solicitudes" replace />} />
+            <Route path="/login" element={<Navigate to="/solicitudes" replace />} />
+            <Route path="*" element={<Navigate to="/solicitudes" replace />} />
+          </Routes>
+        </section>
+      </main>
     </div>
   )
+}
+
+function Nav({ icon, label, count, active, onClick }) {
+  return <button type="button" className={`nav-item ${active ? 'active' : ''}`} onClick={onClick}><Icon name={icon} /><span>{label}</span>{count && <span className="nav-count">{count}</span>}</button>
+}
+
+function withDefaults(form, options, preferredUser) {
+  if (!options) return form
+  return {
+    ...form,
+    idTipoIngreso: form.idTipoIngreso || String(options.tiposIngreso[0]?.id ?? ''),
+    idEstadoSolicitud: form.idEstadoSolicitud || String(options.estadosSolicitud[0]?.id ?? ''),
+    idProveedor: form.idProveedor || String(options.proveedores[0]?.id ?? ''),
+    idAreaSolicitante: form.idAreaSolicitante || String(options.areas[0]?.id ?? ''),
+    idUbicacion: form.idUbicacion || String(options.ubicaciones[0]?.id ?? ''),
+    idUsuarioSolicitante: form.idUsuarioSolicitante || String(options.usuarios.find((item) => item.id === preferredUser)?.id ?? options.usuarios[0]?.id ?? ''),
+  }
+}
+
+function formFromDetail(item, options) {
+  return withDefaults({
+    idTipoIngreso: stringValue(item.idTipoIngreso), idEstadoSolicitud: stringValue(item.idEstadoSolicitud),
+    idProveedor: stringValue(item.idProveedor), fechaInicio: item.fechaInicio ?? today(), fechaFin: item.fechaFin ?? today(),
+    nombreActividad: item.nombreActividad ?? '', descripcionActividad: item.descripcionActividad ?? '',
+    numeroContrato: item.numeroContrato ?? '', cantidadEstimada: stringValue(item.cantidadEstimada ?? 1),
+    contactoProveedor: item.contactoProveedor ?? '', correoProveedor: item.correoProveedor ?? '',
+    idAreaSolicitante: stringValue(item.idAreaSolicitante), idUbicacion: stringValue(item.idUbicacion),
+    idUsuarioSolicitante: item.idUsuarioSolicitante ?? '', observaciones: item.observaciones ?? '',
+  }, options)
+}
+
+function validateStep(step, form) {
+  if (step === 1 && (!form.idTipoIngreso || !form.nombreActividad.trim() || !form.fechaInicio || !form.fechaFin)) return 'Completa el tipo, nombre y fechas de la actividad.'
+  if (step === 1 && form.fechaFin < form.fechaInicio) return 'La fecha final no puede ser anterior a la fecha inicial.'
+  if (step === 2 && (!form.idAreaSolicitante || !form.idUbicacion || !form.idUsuarioSolicitante)) return 'Selecciona el área, la ubicación y el usuario solicitante.'
+  return ''
+}
+
+const findOption = (items, id) => items?.find((item) => String(item.id) === String(id))
+const stringValue = (value) => value == null ? '' : String(value)
+const numberOrNull = (value) => value === '' ? null : Number(value)
+const textOrNull = (value) => value.trim() === '' ? null : value.trim()
+
+function readSession() {
+  try {
+    return JSON.parse(localStorage.getItem(sessionKey))
+  } catch {
+    localStorage.removeItem(sessionKey)
+    return null
+  }
 }
 
 export default App

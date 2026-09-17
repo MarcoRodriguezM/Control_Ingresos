@@ -1,6 +1,56 @@
 @Control_Ingresos_HostAddress = http://localhost:5250
 
-GET {{Control_Ingresos_HostAddress}}/weatherforecast/
+GET {{Control_Ingresos_HostAddress}}/api/catalogos/tipos-ingreso
 Accept: application/json
+
+###
+
+GET {{Control_Ingresos_HostAddress}}/api/solicitudes
+Accept: application/json
+
+###
+
+GET {{Control_Ingresos_HostAddress}}/api/solicitudes/formulario-datos
+Accept: application/json
+
+###
+
+POST {{Control_Ingresos_HostAddress}}/api/solicitudes
+Content-Type: application/json
+
+{
+  "idTipoIngreso": 1,
+  "idEstadoSolicitud": 1,
+  "fechaInicio": "2026-09-15",
+  "fechaFin": "2026-09-16",
+  "nombreActividad": "Mantenimiento preventivo",
+  "cantidadEstimada": 2,
+  "idAreaSolicitante": 1,
+  "idUsuarioSolicitante": "usuario.directorio",
+  "idUbicacion": 1,
+  "usuario": "usuario.directorio"
+}
+
+###
+
+PUT {{Control_Ingresos_HostAddress}}/api/solicitudes/1
+Content-Type: application/json
+
+{
+  "idTipoIngreso": 1,
+  "idEstadoSolicitud": 1,
+  "fechaInicio": "2026-09-15",
+  "fechaFin": "2026-09-16",
+  "nombreActividad": "Mantenimiento preventivo actualizado",
+  "cantidadEstimada": 3,
+  "idAreaSolicitante": 1,
+  "idUsuarioSolicitante": "usuario.demo",
+  "idUbicacion": 1,
+  "usuario": "usuario.demo"
+}
+
+###
+
+DELETE {{Control_Ingresos_HostAddress}}/api/solicitudes/1?usuario=usuario.demo
 
 ###

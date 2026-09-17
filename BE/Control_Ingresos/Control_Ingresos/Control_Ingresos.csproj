@@ -8,6 +8,16 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.1" />
+    <PackageReference Include="Scalar.AspNetCore" Version="2.16.17" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Controllers\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\Database\02_StoredProcedures.sql" Link="Database\02_StoredProcedures.sql" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
