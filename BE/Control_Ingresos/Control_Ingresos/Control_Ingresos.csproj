@@ -16,16 +16,4 @@
     <Folder Include="Controllers\" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Content Include="..\Database\02_StoredProcedures.sql" Link="Database\02_StoredProcedures.sql">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="..\Database\03_SeedData.sql" Link="Database\03_SeedData.sql">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="..\Database\04_DatosIniciales_Completos.sql" Link="Database\04_DatosIniciales_Completos.sql">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-  </ItemGroup>
-
 </Project>
