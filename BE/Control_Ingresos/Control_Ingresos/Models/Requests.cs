@@ -61,11 +61,20 @@ public sealed record RequerimientoSolicitudRequest(
     bool? ConfiguradoAutomatico,
     string? Observaciones);
 
-public sealed record IdCreadoResponse(long Id, string? Numero = null);
+public sealed record IdCreadoResponse(
+    long Id,
+    string? Numero = null);
 
-public sealed record CatalogoItem(int Id, string? Codigo, string? Nombre, string? Descripcion);
+public sealed record CatalogoItem(
+    int Id,
+    string? Codigo,
+    string? Nombre,
+    string? Descripcion);
 
-public sealed record OpcionFormulario<T>(T Id, string? Codigo, string? Nombre);
+public sealed record OpcionFormulario<T>(
+    T Id,
+    string? Codigo,
+    string? Nombre);
 
 public sealed record SolicitudFormularioDatos(
     IReadOnlyCollection<OpcionFormulario<short>> TiposIngreso,
@@ -150,3 +159,43 @@ public sealed record PersonaConAccesos(
     string? Empresa,
     string? Estado,
     IReadOnlyCollection<PersonaAccesoDetalle> Accesos);
+
+public sealed record AprobacionResumen(
+    long IdSolicitudPersonaArea,
+    long? IdSolicitud,
+    string? NumeroSolicitud,
+    long? IdPersona,
+    string? Persona,
+    string? NumeroDocumento,
+    string? Empresa,
+    int? IdArea,
+    string? Area,
+    string? Actividad,
+    string? Ubicacion,
+    DateOnly? FechaInicio,
+    DateOnly? FechaFin,
+    DateTime? FechaSolicitud,
+    short? IdEstadoAprobacion,
+    string? CodigoEstado,
+    string? Estado,
+    DateTime? FechaDecision,
+    string? ComentarioDecision);
+
+public sealed record DecidirAprobacionRequest(
+    [Required, MaxLength(50)] string IdUsuarioAprobador,
+    [Required, MaxLength(30)] string CodigoEstado,
+    [MaxLength(1000)] string? ComentarioDecision);
+
+public sealed record LoginRequest(
+    [Required, MaxLength(254)] string Usuario,
+    [Required, MaxLength(200)] string Contrasena);
+
+public sealed record SesionUsuario(
+    string IdUsuario,
+    string? NombreCompleto,
+    string? Correo,
+    string? Puesto,
+    int? IdArea,
+    string? Area,
+    bool EsAprobador,
+    bool PuedeSolicitar);
