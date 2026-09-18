@@ -2,24 +2,23 @@ using Control_Ingresos.Data;
 using Control_Ingresos.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
 namespace Control_Ingresos.Controllers;
 
 [ApiController]
-[Authorize]
+[Authorize(Roles = "Aprobador")]
 [Route("api/aprobaciones")]
 public sealed class AprobacionesController(ISolicitudesRepository repository) : ControllerBase
 {
     [HttpGet]
     [ProducesResponseType<IReadOnlyCollection<AprobacionResumen>>(StatusCodes.Status200OK)]
-    public async Task<ActionResult<IReadOnlyCollection<AprobacionResumen>>> Listar(
-        [FromQuery] string usuario,
-        CancellationToken cancellationToken)
+    public async Task<ActionResult<IReadOnlyCollection<AprobacionResumen>>> Listar(CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(usuario))
-            return BadRequest(new ProblemDetails { Title = "Usuario requerido", Detail = "Debe indicar el usuario aprobador." });
+        var idUsuarioAprobador = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(idUsuarioAprobador)) return Unauthorized();
 
-        return Ok(await repository.ListarAprobacionesAsync(usuario, cancellationToken));
+        return Ok(await repository.ListarAprobacionesAsync(idUsuarioAprobador, cancellationToken));
     }
 
     [HttpPut("{idSolicitudPersonaArea:long}/decision")]
@@ -29,7 +28,10 @@ public sealed class AprobacionesController(ISolicitudesRepository repository) : 
         DecidirAprobacionRequest request,
         CancellationToken cancellationToken)
     {
-        var id = await repository.DecidirAprobacionAsync(idSolicitudPersonaArea, request, cancellationToken);
+        var idUsuarioAprobador = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(idUsuarioAprobador)) return Unauthorized();
+
+        var id = await repository.DecidirAprobacionAsync(idSolicitudPersonaArea, idUsuarioAprobador, request, cancellationToken);
         return Ok(new IdCreadoResponse(id));
     }
 }

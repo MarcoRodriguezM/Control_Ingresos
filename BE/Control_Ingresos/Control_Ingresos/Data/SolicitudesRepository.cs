@@ -239,10 +239,9 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
                     GetNullableDateOnly(reader, 8),
                     GetNullable<bool>(reader, 9),
                     GetNullableString(reader, 10),
-                    GetNullable<DateTime>(reader, 11),
-                    GetNullableString(reader, 12)));
-            }
-        }
+                    GetNullableString(reader, 11),
+                    GetNullable<DateTime>(reader, 12),
+                    GetNullableString(reader, 13)));
 
         return persona with { Accesos = accesos };
     }
@@ -287,16 +286,13 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
         return items;
     }
 
-    public async Task<long> DecidirAprobacionAsync(
-        long idSolicitudPersonaArea,
-        DecidirAprobacionRequest request,
-        CancellationToken cancellationToken)
+    public async Task<long> DecidirAprobacionAsync(long idSolicitudPersonaArea, string idUsuarioAprobador, DecidirAprobacionRequest request, CancellationToken cancellationToken)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
         await using var command = StoredProcedure(connection, "dbo.usp_Aprobacion_Area_Decidir");
 
         Add(command, "@IdSolicitudPersonaArea", SqlDbType.BigInt, idSolicitudPersonaArea);
-        Add(command, "@IdUsuarioAprobador", SqlDbType.VarChar, request.IdUsuarioAprobador, 50);
+        Add(command, "@IdUsuarioAprobador", SqlDbType.VarChar, idUsuarioAprobador, 50);
         Add(command, "@CodigoEstado", SqlDbType.VarChar, request.CodigoEstado, 30);
         Add(command, "@ComentarioDecision", SqlDbType.NVarChar, request.ComentarioDecision, 1000);
 
@@ -401,8 +397,16 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
             await command.ExecuteScalarAsync(cancellationToken));
     }
 
-    public async Task<IReadOnlyCollection<SolicitudResumen>> ListarSolicitudesAsync(
-        CancellationToken cancellationToken)
+    public async Task ReenviarAprobacionAsync(long idSolicitudPersonaArea, string idUsuarioSolicitante, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = StoredProcedure(connection, "dbo.usp_Solicitud_Persona_Area_ReenviarAprobacion");
+        Add(command, "@IdSolicitudPersonaArea", SqlDbType.BigInt, idSolicitudPersonaArea);
+        Add(command, "@IdUsuarioSolicitante", SqlDbType.VarChar, idUsuarioSolicitante, 50);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyCollection<SolicitudResumen>> ListarSolicitudesAsync(CancellationToken cancellationToken)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
         await using var command = StoredProcedure(connection, "dbo.usp_Solicitud_Ingreso_Listar");

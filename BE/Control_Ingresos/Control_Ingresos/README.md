@@ -2,13 +2,12 @@
 
 ## Preparación
 
-1. Ejecute el script base que crea `Control_Ingresos_DB` y sus tablas.
-2. En Development, la API ejecuta automáticamente `../Database/02_StoredProcedures.sql` al arrancar. El script utiliza `CREATE OR ALTER`, por lo que puede ejecutarse más de una vez.
-3. Ajuste `ConnectionStrings:ControlIngresos` en `appsettings.json` o mediante una variable de entorno:
+1. Cree y mantenga `Control_Ingresos_DB`, sus tablas y procedimientos directamente en SQL Server.
+2. Ajuste `ConnectionStrings:ControlIngresos` en `appsettings.json` o mediante una variable de entorno:
 
    `ConnectionStrings__ControlIngresos=Server=...;Database=Control_Ingresos_DB;...`
 
-4. Inicie la API con `dotnet run`.
+3. Inicie la API con `dotnet run`.
 
 La URL HTTP de desarrollo es `http://localhost:5250`. Al ejecutar en Development:
 

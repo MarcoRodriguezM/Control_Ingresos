@@ -160,6 +160,7 @@ public sealed record PersonaAccesoDetalle(
     DateOnly? FechaFin,
     bool? RequiereAprobacion,
     string? EstadoAcceso,
+    string? CodigoEstadoAcceso,
     DateTime? FechaDecision,
     string? ComentarioDecision);
 
@@ -197,7 +198,6 @@ public sealed record AprobacionResumen(
     string? ComentarioDecision);
 
 public sealed record DecidirAprobacionRequest(
-    [Required, MaxLength(50)] string IdUsuarioAprobador,
     [Required, MaxLength(30)] string CodigoEstado,
     [MaxLength(1000)] string? ComentarioDecision);
 

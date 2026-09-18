@@ -2,6 +2,7 @@ using Control_Ingresos.Data;
 using Control_Ingresos.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using System.Security.Claims;
 
 namespace Control_Ingresos.Controllers;
 
@@ -133,5 +134,16 @@ public sealed class SolicitudesController(ISolicitudesRepository repository) : C
             nameof(Obtener),
             new { id },
             new IdCreadoResponse(idSolicitudPersona));
+    }
+
+    [HttpPost("personas-areas/{idSolicitudPersonaArea:long}/reenviar-aprobacion")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> ReenviarAprobacion(long idSolicitudPersonaArea, CancellationToken cancellationToken)
+    {
+        var idUsuarioSolicitante = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(idUsuarioSolicitante)) return Unauthorized();
+
+        await repository.ReenviarAprobacionAsync(idSolicitudPersonaArea, idUsuarioSolicitante, cancellationToken);
+        return NoContent();
     }
 }
