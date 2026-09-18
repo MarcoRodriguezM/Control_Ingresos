@@ -17,7 +17,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="..\Database\02_StoredProcedures.sql" Link="Database\02_StoredProcedures.sql" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\Database\02_StoredProcedures.sql"
+             Link="Database\02_StoredProcedures.sql"
+             CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

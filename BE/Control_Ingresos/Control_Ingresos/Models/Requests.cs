@@ -61,11 +61,20 @@ public sealed record RequerimientoSolicitudRequest(
     bool? ConfiguradoAutomatico,
     string? Observaciones);
 
-public sealed record IdCreadoResponse(long Id, string? Numero = null);
+public sealed record IdCreadoResponse(
+    long Id,
+    string? Numero = null);
 
-public sealed record CatalogoItem(int Id, string? Codigo, string? Nombre, string? Descripcion);
+public sealed record CatalogoItem(
+    int Id,
+    string? Codigo,
+    string? Nombre,
+    string? Descripcion);
 
-public sealed record OpcionFormulario<T>(T Id, string? Codigo, string? Nombre);
+public sealed record OpcionFormulario<T>(
+    T Id,
+    string? Codigo,
+    string? Nombre);
 
 public sealed record SolicitudFormularioDatos(
     IReadOnlyCollection<OpcionFormulario<short>> TiposIngreso,

@@ -12,9 +12,14 @@ public sealed class ProveedoresController(ISolicitudesRepository repository) : C
 {
     [HttpPost]
     [ProducesResponseType<IdCreadoResponse>(StatusCodes.Status201Created)]
-    public async Task<ActionResult<IdCreadoResponse>> Crear(CrearProveedorRequest request, CancellationToken cancellationToken)
+    public async Task<ActionResult<IdCreadoResponse>> Crear(
+        CrearProveedorRequest request,
+        CancellationToken cancellationToken)
     {
         var id = await repository.CrearProveedorAsync(request, cancellationToken);
-        return Created($"/api/proveedores/{id}", new IdCreadoResponse(id));
+
+        return Created(
+            $"/api/proveedores/{id}",
+            new IdCreadoResponse(id));
     }
 }
