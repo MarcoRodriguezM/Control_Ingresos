@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, Route, Routes, matchPath, useLocation, useNavigate } from 'react-router-dom'
 import { Icon } from './components/Icon'
 import { AlertModal } from './components/AlertModal'
-import { ApprovalsPage, DashboardPage, LoginPage, MyActivitiesPage, PersonAccessPage, ProfilePage, RequestFormPage, RequestsListPage } from './pages'
+import auraLogo from './assets/logo-aura.png'
+import { ApprovalsPage, LoginPage, PersonAccessPage, RequestApprovalDetailPage, RequestFormPage, RequestsListPage } from './pages'
 import { controlIngresosApi } from './services/api'
+import { showSuccessAlert } from './utils/alerts'
 import { initials } from './utils/formatters'
 import './App.css'
 
@@ -52,6 +54,7 @@ function AuthenticatedApp({ session, onLogout }) {
   const navigate = useNavigate()
   const editRoute = matchPath('/solicitudes/:id/editar', location.pathname)
   const personRoute = matchPath('/personas/:idPersona', location.pathname)
+  const approvalDetailRoute = matchPath('/aprobaciones/:idSolicitudPersonaArea/detalle', location.pathname)
   const isPersonsRoute = location.pathname.startsWith('/personas')
   const isRequestsRoute = location.pathname.startsWith('/solicitudes')
   const isApprovalsRoute = location.pathname.startsWith('/aprobaciones')
@@ -71,13 +74,13 @@ function AuthenticatedApp({ session, onLogout }) {
   const [profile, setProfile] = useState(null)
   const [profileLoading, setProfileLoading] = useState(true)
   const [approvalsLoading, setApprovalsLoading] = useState(false)
-  const [decisionSaving, setDecisionSaving] = useState(false)
+  const [approvalDetail, setApprovalDetail] = useState(null)
+  const [approvalDetailLoading, setApprovalDetailLoading] = useState(false)
   const [personLoading, setPersonLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState(null)
   const activeEditingId = editRoute ? editingId : null
 
   useEffect(() => {
@@ -216,6 +219,31 @@ function AuthenticatedApp({ session, onLogout }) {
     return () => { active = false }
   }, [isProfileRoute])
 
+  useEffect(() => {
+    const idSolicitudPersonaArea = Number(approvalDetailRoute?.params.idSolicitudPersonaArea)
+    if (!idSolicitudPersonaArea) return
+
+    const approval = aprobaciones.find((item) => item.idSolicitudPersonaArea === idSolicitudPersonaArea)
+    if (!approval?.idSolicitud) return
+
+    let active = true
+    const load = async () => {
+      setApprovalDetailLoading(true)
+      setApprovalDetail(null)
+      setError('')
+      try {
+        const detail = await controlIngresosApi.obtenerSolicitud(approval.idSolicitud)
+        if (active) setApprovalDetail(detail)
+      } catch (requestError) {
+        if (active) setError(requestError.message)
+      } finally {
+        if (active) setApprovalDetailLoading(false)
+      }
+    }
+    load()
+    return () => { active = false }
+  }, [approvalDetailRoute?.params.idSolicitudPersonaArea, aprobaciones])
+
   const selected = useMemo(() => ({
     tipo: findOption(options?.tiposIngreso, form.idTipoIngreso),
     proveedor: findOption(options?.proveedores, form.idProveedor),
@@ -251,7 +279,6 @@ function AuthenticatedApp({ session, onLogout }) {
     setForm(withDefaults(initialForm(), options, session.idUsuario))
     setStep(1)
     setError('')
-    setSuccess(null)
     navigate('/solicitudes/nueva')
   }
 
@@ -267,7 +294,7 @@ function AuthenticatedApp({ session, onLogout }) {
       const user = session.idUsuario
       await controlIngresosApi.eliminarSolicitud(id, user)
       setSolicitudes(await controlIngresosApi.listarSolicitudes())
-      setSuccess({ message: `La solicitud ${number ?? `#${id}`} fue eliminada.` })
+      showSuccessAlert(`La solicitud ${number ?? `#${id}`} fue eliminada.`)
     } catch (requestError) {
       setError(requestError.message)
     }
@@ -277,7 +304,6 @@ function AuthenticatedApp({ session, onLogout }) {
     navigate('/personas')
     setMenuOpen(false)
     setError('')
-    setSuccess(null)
   }
 
   function openProfile() {
@@ -292,25 +318,40 @@ function AuthenticatedApp({ session, onLogout }) {
     navigate(`/personas/${idPersona}`)
   }
 
-  async function decideApproval(idSolicitudPersonaArea, codigoEstado, comentarioDecision) {
-    setDecisionSaving(true)
+  function openApprovalDetail(idSolicitudPersonaArea) {
     setError('')
-    setSuccess(null)
+    navigate(`/aprobaciones/${idSolicitudPersonaArea}/detalle`)
+  }
+
+  async function decideApproval(idSolicitudPersonaArea, codigoEstado, comentarioDecision) {
+    const result = await decideApprovals([idSolicitudPersonaArea], codigoEstado, comentarioDecision)
+    const failure = result.failures.find((item) => item.idSolicitudPersonaArea === idSolicitudPersonaArea)
+    return failure ? { success: false, message: failure.message } : { success: true }
+  }
+
+  async function decideApprovals(idSolicitudPersonaAreas, codigoEstado, comentarioDecision) {
+    setError('')
+    const successIds = []
+    const failures = []
+    for (const idSolicitudPersonaArea of [...new Set(idSolicitudPersonaAreas)]) {
+      try {
+        await controlIngresosApi.decidirAprobacion(idSolicitudPersonaArea, {
+          idUsuarioAprobador: session.idUsuario,
+          codigoEstado,
+          comentarioDecision: comentarioDecision.trim() || null,
+        })
+        successIds.push(idSolicitudPersonaArea)
+      } catch (requestError) {
+        failures.push({ idSolicitudPersonaArea, message: requestError.message })
+      }
+    }
+
     try {
-      await controlIngresosApi.decidirAprobacion(idSolicitudPersonaArea, {
-        idUsuarioAprobador: session.idUsuario,
-        codigoEstado,
-        comentarioDecision: comentarioDecision.trim() || null,
-      })
       setAprobaciones(await controlIngresosApi.listarAprobaciones(session.idUsuario))
-      setSuccess({ message: codigoEstado === 'APROBADA' ? 'El acceso fue aprobado.' : 'El acceso fue rechazado.' })
-      return true
     } catch (requestError) {
       setError(requestError.message)
-      return false
-    } finally {
-      setDecisionSaving(false)
     }
+    return { successIds, failures }
   }
 
   async function submit() {
@@ -346,7 +387,7 @@ function AuthenticatedApp({ session, onLogout }) {
       const created = activeEditingId
         ? await controlIngresosApi.actualizarSolicitud(activeEditingId, payload)
         : await controlIngresosApi.crearSolicitud(payload)
-      setSuccess(activeEditingId ? { message: 'La solicitud fue actualizada correctamente.' } : created)
+      showSuccessAlert(activeEditingId ? 'La solicitud fue actualizada correctamente.' : `Se creó ${created.numero ?? `la solicitud #${created.id}`}.`)
       setSolicitudes(await controlIngresosApi.listarSolicitudes())
       setForm(withDefaults(initialForm(), options, session.idUsuario))
       setEditingId(null)
@@ -372,33 +413,35 @@ function AuthenticatedApp({ session, onLogout }) {
       <AlertModal message={error} onClose={() => setError('')} />
       {menuOpen && <button className="sidebar-backdrop" onClick={() => setMenuOpen(false)} aria-label="Cerrar menú" />}
       <aside className={`sidebar ${menuOpen ? 'open' : ''}`} aria-label="Navegación principal">
-        <div className="brand"><span className="brand-mark"><Icon name="logo" /></span><span>Entrada</span></div>
-        <p className="side-label">Gestión de ingresos</p>
+        <div className="sidebar-brand"><img className="sidebar-brand-logo" src={auraLogo} alt="Aura Minerals" /></div>
+        <p className="side-label">Control de ingresos</p>
         <nav className="main-nav">
-          <Nav icon="home" label="Dashboard" active={isDashboardRoute} onClick={() => { navigate('/dashboard'); setMenuOpen(false); setError('') }} />
+          <Nav icon="home" label="Dashboard" onClick={() => setMenuOpen(false)} />
           <Nav icon="file" label="Solicitudes" count={solicitudes.length} active={isRequestsRoute} onClick={() => { navigate('/solicitudes'); setMenuOpen(false); setError('') }} />
           {session.esAprobador && <Nav icon="check" label="Mis aprobaciones" count={aprobaciones.filter((item) => item.codigoEstado === 'PENDIENTE').length || undefined} active={isApprovalsRoute} onClick={() => { navigate('/aprobaciones'); setMenuOpen(false); setError(''); setSuccess(null) }} />}
-          <Nav icon="tasks" label="Mis actividades" count={actividades.filter((item) => !item.esEstadoFinal).length || undefined} active={isActivitiesRoute} onClick={() => { navigate('/mis-actividades'); setMenuOpen(false); setError('') }} />
+          <Nav icon="tasks" label="Mis actividades" count="7" onClick={() => setMenuOpen(false)} />
           <Nav icon="users" label="Personas" count={personas.length || undefined} active={isPersonsRoute} onClick={openPersons} />
           <Nav icon="settings" label="Configuración" onClick={() => setMenuOpen(false)} />
         </nav>
         <div className="sidebar-footer">
-          <div className="prototype-note">Entorno conectado<br />Los cambios se guardan en SQL Server.</div>
           <button type="button" className="nav-item" onClick={onLogout}><Icon name="logout" /><span>Cerrar sesión</span></button>
-          <button type="button" className="sidebar-profile" onClick={openProfile} aria-label="Abrir mi perfil"><span className="avatar">{initials(session.nombreCompleto)}</span><span><strong>{session.nombreCompleto ?? session.idUsuario}</strong><span>{session.puesto ?? session.area ?? 'Usuario'}</span></span></button>
+          <div className="sidebar-profile"><div className="avatar">{initials(session.nombreCompleto)}</div><div><strong>{session.nombreCompleto ?? session.idUsuario}</strong><span>{session.puesto ?? session.area ?? 'Usuario'}</span></div></div>
         </div>
       </aside>
 
       <main className="main">
         <header className="topbar">
           <button className="icon-button menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label="Abrir menú"><Icon name="menu" /></button>
-          <div className="breadcrumb"><Link to="/dashboard" onClick={() => { setError(''); setMenuOpen(false) }}>Inicio</Link><strong>{isDashboardRoute ? 'Dashboard' : isProfileRoute ? 'Mi perfil' : isActivitiesRoute ? 'Mis actividades' : isApprovalsRoute ? 'Mis aprobaciones' : isPersonsRoute ? 'Personas y accesos' : editRoute ? 'Editar solicitud' : location.pathname === '/solicitudes/nueva' ? 'Nueva solicitud' : 'Solicitudes'}</strong></div>
-          <div className="top-actions"><button className="ghost-button"><Icon name="help" />Ayuda</button><button className="icon-button" aria-label="Notificaciones"><Icon name="bell" /><span className="dot" /></button><button type="button" className="avatar profile-trigger" onClick={openProfile} aria-label="Abrir mi perfil" title="Mi perfil">{initials(session.nombreCompleto)}</button></div>
+          <div className="breadcrumb">
+            {/* <span>Inicio</span>
+              <strong>{approvalDetailRoute ? 'Detalle de solicitud' : isApprovalsRoute ? 'Mis aprobaciones' : isPersonsRoute ? 'Personas y accesos' : editRoute ? 'Editar solicitud' : location.pathname === '/solicitudes/nueva' ? 'Nueva solicitud' : 'Solicitudes'}</strong> */}
+            </div>
+          <div className="top-actions">
+            {/* <button className="ghost-button"><Icon name="help" />Ayuda</button> */}
+            <div className="top-profile"><div><strong>{session.nombreCompleto ?? session.idUsuario}</strong><span>{session.puesto ?? session.area ?? 'Usuario'}</span></div><div className="avatar" title={session.nombreCompleto ?? session.idUsuario}>{initials(session.nombreCompleto)}</div></div></div>
         </header>
 
         <section className="content">
-          {success && <div className="alert success" role="status"><strong>Operación completada.</strong> {success.message ?? `Se creó ${success.numero ?? `la solicitud #${success.id}`}.`}</div>}
-
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<DashboardPage session={session} requests={solicitudes} approvals={aprobaciones} loading={loading} approvalsLoading={approvalsLoading} onNew={openNew} onRequests={() => navigate('/solicitudes')} onRequest={openEdit} onApprovals={() => navigate('/aprobaciones')} onPersons={openPersons} />} />
@@ -409,9 +452,10 @@ function AuthenticatedApp({ session, onLogout }) {
             <Route path="/solicitudes/:id/editar" element={<RequestFormPage form={form} options={options} loading={loading} saving={saving} editingId={activeEditingId} step={step} selected={selected} onChange={change} onStepChange={goToStep} onNext={next} onBack={() => setStep((current) => current - 1)} onCancel={cancelForm} onSubmit={submit} />} />
             <Route path="/personas" element={<PersonAccessPage items={personas} selected={personaSeleccionada} loading={personLoading} onSelect={selectPerson} />} />
             <Route path="/personas/:idPersona" element={<PersonAccessPage items={personas} selected={personaSeleccionada} loading={personLoading} onSelect={selectPerson} />} />
-            <Route path="/aprobaciones" element={session.esAprobador ? <ApprovalsPage items={aprobaciones} loading={approvalsLoading} saving={decisionSaving} onDecide={decideApproval} /> : <Navigate to="/solicitudes" replace />} />
-            <Route path="/login" element={<Navigate to="/dashboard" replace />} />
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/aprobaciones" element={session.esAprobador ? <ApprovalsPage items={aprobaciones} loading={approvalsLoading} onDecide={decideApproval} onDecideMany={decideApprovals} onViewDetail={openApprovalDetail} /> : <Navigate to="/solicitudes" replace />} />
+            <Route path="/aprobaciones/:idSolicitudPersonaArea/detalle" element={session.esAprobador ? <RequestApprovalDetailPage request={approvalDetail} options={options} approvalItems={aprobaciones} loading={approvalDetailLoading || !approvalDetail} onBack={() => navigate('/aprobaciones')} onDecide={decideApproval} /> : <Navigate to="/solicitudes" replace />} />
+            <Route path="/login" element={<Navigate to="/solicitudes" replace />} />
+            <Route path="*" element={<Navigate to="/solicitudes" replace />} />
           </Routes>
         </section>
       </main>

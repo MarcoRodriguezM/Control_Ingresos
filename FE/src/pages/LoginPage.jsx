@@ -43,7 +43,6 @@ export function LoginPage({ onLogin }) {
         <label className="login-field"><span>Usuario o correo</span><div><Icon name="user" /><input name="usuario" value={form.usuario} onChange={change} autoComplete="username" placeholder="Ej. admin" autoFocus /></div></label>
         <label className="login-field"><span>Contraseña</span><div><Icon name="lock" /><input type="password" name="contrasena" value={form.contrasena} onChange={change} autoComplete="current-password" placeholder="Escribe tu contraseña" /></div></label>
         <button type="submit" className="primary-button login-button" disabled={loading}>{loading ? 'Ingresando…' : <>Ingresar <Icon name="arrow" /></>}</button>
-        <div className="demo-credentials"><strong>Credenciales de demostración</strong><span>Usuarios: admin, solicitante o aprobador</span><span>Contraseña: Control2026!</span></div>
       </form>
     </section>
   </main>

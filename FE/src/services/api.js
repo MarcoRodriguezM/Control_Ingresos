@@ -64,7 +64,7 @@ export const controlIngresosApi = {
   listarMisActividades: () => request('/api/actividades/mias'),
   decidirAprobacion: (idSolicitudPersonaArea, decision) => request(`/api/aprobaciones/${idSolicitudPersonaArea}/decision`, {
     method: 'PUT',
-    body: JSON.stringify(decision),
+    body: JSON.stringify({ codigoEstado, comentarioDecision }),
   }),
   listarSolicitudes: () => request('/api/solicitudes'),
   obtenerDatosFormularioSolicitud: () => request('/api/solicitudes/formulario-datos'),

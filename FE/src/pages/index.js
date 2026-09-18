@@ -1,4 +1,5 @@
 export { RequestFormPage } from './RequestFormPage'
+export { RequestApprovalDetailPage } from './RequestApprovalDetailPage'
 export { RequestsListPage } from './RequestsListPage'
 export { PersonAccessPage } from './PersonAccessPage'
 export { ApprovalsPage } from './ApprovalsPage'

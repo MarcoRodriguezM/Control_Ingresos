@@ -8,10 +8,9 @@ export const formatDateTime = (value) => value
 
 export const initials = (name) => name?.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || '—'
 
-export const accessStatusClass = (status = '') => {
-  const value = status.toLowerCase()
-  if (value.includes('aprob')) return 'approved'
-  if (value.includes('rechaz')) return 'rejected'
-  if (value.includes('no requiere')) return 'neutral'
-  return 'pending'
-}
+export const accessStatusClass = (codigoEstado = '') => ({
+  PENDIENTE: 'pending',
+  APROBADA: 'approved',
+  RECHAZADA: 'rejected',
+  NO_REQUIERE: 'neutral',
+}[codigoEstado.trim().toUpperCase()] ?? 'neutral')
