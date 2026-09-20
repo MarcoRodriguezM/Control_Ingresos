@@ -36,6 +36,38 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
             reader.GetBoolean(7));
     }
 
+    public async Task<PerfilUsuario?> ObtenerPerfilAsync(string idUsuario, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = StoredProcedure(connection, "dbo.usp_Usuario_Perfil_Obtener");
+        Add(command, "@IdUsuario", SqlDbType.VarChar, idUsuario, 50);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+
+        var perfil = new PerfilUsuario(
+            reader.GetString(0),
+            GetNullableString(reader, 1),
+            GetNullableString(reader, 2),
+            GetNullableString(reader, 3),
+            GetNullableString(reader, 4),
+            reader.GetBoolean(5),
+            reader.GetBoolean(6),
+            [],
+            []);
+
+        var areas = new List<AreaUsuarioPerfil>();
+        if (await reader.NextResultAsync(cancellationToken))
+            while (await reader.ReadAsync(cancellationToken))
+                areas.Add(new(reader.GetInt32(0), GetNullableString(reader, 1), reader.GetBoolean(2), reader.GetBoolean(3), reader.GetBoolean(4), reader.GetBoolean(5)));
+
+        var solicitudes = new List<SolicitudResumen>();
+        if (await reader.NextResultAsync(cancellationToken))
+            while (await reader.ReadAsync(cancellationToken))
+                solicitudes.Add(new(reader.GetInt64(0), GetNullableString(reader, 1), GetNullableString(reader, 2), GetNullableString(reader, 3), GetNullableDateOnly(reader, 4), GetNullableDateOnly(reader, 5), GetNullableString(reader, 6), GetNullableString(reader, 7), reader.GetInt32(8)));
+
+        return perfil with { Areas = areas, Solicitudes = solicitudes };
+    }
+
     public async Task<IReadOnlyCollection<CatalogoItem>> ListarCatalogoAsync(
         string catalogo,
         CancellationToken cancellationToken)
@@ -392,6 +424,31 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
                 reader.GetInt32(8)));
         }
 
+        return items;
+    }
+
+    public async Task<IReadOnlyCollection<ActividadResumen>> ListarMisActividadesAsync(string idUsuarioResponsable, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = StoredProcedure(connection, "dbo.usp_Actividad_Mis_Listar");
+        Add(command, "@IdUsuarioResponsable", SqlDbType.VarChar, idUsuarioResponsable, 50);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var items = new List<ActividadResumen>();
+        while (await reader.ReadAsync(cancellationToken))
+            items.Add(new(
+                reader.GetInt64(0),
+                GetNullable<long>(reader, 1),
+                GetNullableString(reader, 2),
+                GetNullableString(reader, 3),
+                GetNullableString(reader, 4),
+                GetNullableString(reader, 5),
+                GetNullableString(reader, 6),
+                reader.GetBoolean(7),
+                GetNullable<DateTime>(reader, 8),
+                GetNullable<DateTime>(reader, 9),
+                GetNullable<DateTime>(reader, 10),
+                GetNullableString(reader, 11),
+                reader.GetBoolean(12)));
         return items;
     }
 

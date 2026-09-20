@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from 'react-router-dom'
+import { Link, Navigate, Route, Routes, matchPath, useLocation, useNavigate } from 'react-router-dom'
 import { Icon } from './components/Icon'
 import { AlertModal } from './components/AlertModal'
-import { ApprovalsPage, LoginPage, PersonAccessPage, RequestFormPage, RequestsListPage } from './pages'
+import { ApprovalsPage, DashboardPage, LoginPage, MyActivitiesPage, PersonAccessPage, ProfilePage, RequestFormPage, RequestsListPage } from './pages'
 import { controlIngresosApi } from './services/api'
 import { initials } from './utils/formatters'
 import './App.css'
@@ -24,7 +24,7 @@ function App() {
     const authenticatedUser = await controlIngresosApi.iniciarSesion(credentials)
     localStorage.setItem(sessionKey, JSON.stringify(authenticatedUser))
     setSession(authenticatedUser)
-    navigate(authenticatedUser.esAprobador ? '/aprobaciones' : '/solicitudes', { replace: true })
+    navigate('/dashboard', { replace: true })
   }
 
   async function logout() {
@@ -55,6 +55,9 @@ function AuthenticatedApp({ session, onLogout }) {
   const isPersonsRoute = location.pathname.startsWith('/personas')
   const isRequestsRoute = location.pathname.startsWith('/solicitudes')
   const isApprovalsRoute = location.pathname.startsWith('/aprobaciones')
+  const isActivitiesRoute = location.pathname === '/mis-actividades'
+  const isProfileRoute = location.pathname === '/perfil'
+  const isDashboardRoute = location.pathname === '/dashboard' || location.pathname === '/'
   const [step, setStep] = useState(1)
   const [editingId, setEditingId] = useState(null)
   const [form, setForm] = useState(initialForm)
@@ -63,6 +66,10 @@ function AuthenticatedApp({ session, onLogout }) {
   const [personas, setPersonas] = useState([])
   const [personaSeleccionada, setPersonaSeleccionada] = useState(null)
   const [aprobaciones, setAprobaciones] = useState([])
+  const [actividades, setActividades] = useState([])
+  const [activitiesLoading, setActivitiesLoading] = useState(false)
+  const [profile, setProfile] = useState(null)
+  const [profileLoading, setProfileLoading] = useState(true)
   const [approvalsLoading, setApprovalsLoading] = useState(false)
   const [decisionSaving, setDecisionSaving] = useState(false)
   const [personLoading, setPersonLoading] = useState(false)
@@ -147,7 +154,7 @@ function AuthenticatedApp({ session, onLogout }) {
   }, [isPersonsRoute, personRoute?.params.idPersona, personas, personaSeleccionada?.idPersona])
 
   useEffect(() => {
-    if (!isApprovalsRoute || !session.esAprobador) return
+    if ((!isApprovalsRoute && !isDashboardRoute) || !session.esAprobador) return
     let active = true
     const load = async () => {
       await Promise.resolve()
@@ -165,7 +172,49 @@ function AuthenticatedApp({ session, onLogout }) {
     }
     load()
     return () => { active = false }
-  }, [isApprovalsRoute, session.esAprobador, session.idUsuario])
+  }, [isApprovalsRoute, isDashboardRoute, session.esAprobador, session.idUsuario])
+
+  useEffect(() => {
+    if (!isActivitiesRoute) return
+    let active = true
+    const load = async () => {
+      await Promise.resolve()
+      if (!active) return
+      setActivitiesLoading(true)
+      setError('')
+      try {
+        const records = await controlIngresosApi.listarMisActividades()
+        if (active) setActividades(records)
+      } catch (requestError) {
+        if (active) setError(requestError.message)
+      } finally {
+        if (active) setActivitiesLoading(false)
+      }
+    }
+    load()
+    return () => { active = false }
+  }, [isActivitiesRoute])
+
+  useEffect(() => {
+    if (!isProfileRoute) return
+    let active = true
+    const load = async () => {
+      await Promise.resolve()
+      if (!active) return
+      setProfileLoading(true)
+      setError('')
+      try {
+        const data = await controlIngresosApi.obtenerMiPerfil()
+        if (active) setProfile(data)
+      } catch (requestError) {
+        if (active) setError(requestError.message)
+      } finally {
+        if (active) setProfileLoading(false)
+      }
+    }
+    load()
+    return () => { active = false }
+  }, [isProfileRoute])
 
   const selected = useMemo(() => ({
     tipo: findOption(options?.tiposIngreso, form.idTipoIngreso),
@@ -226,6 +275,13 @@ function AuthenticatedApp({ session, onLogout }) {
 
   function openPersons() {
     navigate('/personas')
+    setMenuOpen(false)
+    setError('')
+    setSuccess(null)
+  }
+
+  function openProfile() {
+    navigate('/perfil')
     setMenuOpen(false)
     setError('')
     setSuccess(null)
@@ -319,40 +375,43 @@ function AuthenticatedApp({ session, onLogout }) {
         <div className="brand"><span className="brand-mark"><Icon name="logo" /></span><span>Entrada</span></div>
         <p className="side-label">Gestión de ingresos</p>
         <nav className="main-nav">
-          <Nav icon="home" label="Dashboard" onClick={() => setMenuOpen(false)} />
+          <Nav icon="home" label="Dashboard" active={isDashboardRoute} onClick={() => { navigate('/dashboard'); setMenuOpen(false); setError('') }} />
           <Nav icon="file" label="Solicitudes" count={solicitudes.length} active={isRequestsRoute} onClick={() => { navigate('/solicitudes'); setMenuOpen(false); setError('') }} />
           {session.esAprobador && <Nav icon="check" label="Mis aprobaciones" count={aprobaciones.filter((item) => item.codigoEstado === 'PENDIENTE').length || undefined} active={isApprovalsRoute} onClick={() => { navigate('/aprobaciones'); setMenuOpen(false); setError(''); setSuccess(null) }} />}
-          <Nav icon="tasks" label="Mis actividades" count="7" onClick={() => setMenuOpen(false)} />
+          <Nav icon="tasks" label="Mis actividades" count={actividades.filter((item) => !item.esEstadoFinal).length || undefined} active={isActivitiesRoute} onClick={() => { navigate('/mis-actividades'); setMenuOpen(false); setError('') }} />
           <Nav icon="users" label="Personas" count={personas.length || undefined} active={isPersonsRoute} onClick={openPersons} />
           <Nav icon="settings" label="Configuración" onClick={() => setMenuOpen(false)} />
         </nav>
         <div className="sidebar-footer">
           <div className="prototype-note">Entorno conectado<br />Los cambios se guardan en SQL Server.</div>
           <button type="button" className="nav-item" onClick={onLogout}><Icon name="logout" /><span>Cerrar sesión</span></button>
-          <div className="sidebar-profile"><div className="avatar">{initials(session.nombreCompleto)}</div><div><strong>{session.nombreCompleto ?? session.idUsuario}</strong><span>{session.puesto ?? session.area ?? 'Usuario'}</span></div></div>
+          <button type="button" className="sidebar-profile" onClick={openProfile} aria-label="Abrir mi perfil"><span className="avatar">{initials(session.nombreCompleto)}</span><span><strong>{session.nombreCompleto ?? session.idUsuario}</strong><span>{session.puesto ?? session.area ?? 'Usuario'}</span></span></button>
         </div>
       </aside>
 
       <main className="main">
         <header className="topbar">
           <button className="icon-button menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label="Abrir menú"><Icon name="menu" /></button>
-          <div className="breadcrumb"><span>Inicio</span><strong>{isApprovalsRoute ? 'Mis aprobaciones' : isPersonsRoute ? 'Personas y accesos' : editRoute ? 'Editar solicitud' : location.pathname === '/solicitudes/nueva' ? 'Nueva solicitud' : 'Solicitudes'}</strong></div>
-          <div className="top-actions"><button className="ghost-button"><Icon name="help" />Ayuda</button><button className="icon-button" aria-label="Notificaciones"><Icon name="bell" /><span className="dot" /></button><div className="avatar" title={session.nombreCompleto ?? session.idUsuario}>{initials(session.nombreCompleto)}</div></div>
+          <div className="breadcrumb"><Link to="/dashboard" onClick={() => { setError(''); setMenuOpen(false) }}>Inicio</Link><strong>{isDashboardRoute ? 'Dashboard' : isProfileRoute ? 'Mi perfil' : isActivitiesRoute ? 'Mis actividades' : isApprovalsRoute ? 'Mis aprobaciones' : isPersonsRoute ? 'Personas y accesos' : editRoute ? 'Editar solicitud' : location.pathname === '/solicitudes/nueva' ? 'Nueva solicitud' : 'Solicitudes'}</strong></div>
+          <div className="top-actions"><button className="ghost-button"><Icon name="help" />Ayuda</button><button className="icon-button" aria-label="Notificaciones"><Icon name="bell" /><span className="dot" /></button><button type="button" className="avatar profile-trigger" onClick={openProfile} aria-label="Abrir mi perfil" title="Mi perfil">{initials(session.nombreCompleto)}</button></div>
         </header>
 
         <section className="content">
           {success && <div className="alert success" role="status"><strong>Operación completada.</strong> {success.message ?? `Se creó ${success.numero ?? `la solicitud #${success.id}`}.`}</div>}
 
           <Routes>
-            <Route path="/" element={<Navigate to="/solicitudes" replace />} />
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<DashboardPage session={session} requests={solicitudes} approvals={aprobaciones} loading={loading} approvalsLoading={approvalsLoading} onNew={openNew} onRequests={() => navigate('/solicitudes')} onRequest={openEdit} onApprovals={() => navigate('/aprobaciones')} onPersons={openPersons} />} />
+            <Route path="/mis-actividades" element={<MyActivitiesPage items={actividades} loading={activitiesLoading} onRequest={openEdit} />} />
+            <Route path="/perfil" element={<ProfilePage profile={profile} loading={profileLoading} onOpenRequest={openEdit} />} />
             <Route path="/solicitudes" element={<RequestsListPage items={solicitudes} loading={loading} onNew={openNew} onEdit={openEdit} onDelete={remove} />} />
             <Route path="/solicitudes/nueva" element={<RequestFormPage form={form} options={options} loading={loading} saving={saving} editingId={null} step={step} selected={selected} onChange={change} onStepChange={goToStep} onNext={next} onBack={() => setStep((current) => current - 1)} onCancel={cancelForm} onSubmit={submit} />} />
             <Route path="/solicitudes/:id/editar" element={<RequestFormPage form={form} options={options} loading={loading} saving={saving} editingId={activeEditingId} step={step} selected={selected} onChange={change} onStepChange={goToStep} onNext={next} onBack={() => setStep((current) => current - 1)} onCancel={cancelForm} onSubmit={submit} />} />
             <Route path="/personas" element={<PersonAccessPage items={personas} selected={personaSeleccionada} loading={personLoading} onSelect={selectPerson} />} />
             <Route path="/personas/:idPersona" element={<PersonAccessPage items={personas} selected={personaSeleccionada} loading={personLoading} onSelect={selectPerson} />} />
             <Route path="/aprobaciones" element={session.esAprobador ? <ApprovalsPage items={aprobaciones} loading={approvalsLoading} saving={decisionSaving} onDecide={decideApproval} /> : <Navigate to="/solicitudes" replace />} />
-            <Route path="/login" element={<Navigate to="/solicitudes" replace />} />
-            <Route path="*" element={<Navigate to="/solicitudes" replace />} />
+            <Route path="/login" element={<Navigate to="/dashboard" replace />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </section>
       </main>

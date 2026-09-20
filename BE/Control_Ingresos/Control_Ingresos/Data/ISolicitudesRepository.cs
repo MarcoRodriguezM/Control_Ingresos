@@ -8,6 +8,10 @@ public interface ISolicitudesRepository
         LoginRequest request,
         CancellationToken cancellationToken);
 
+    Task<PerfilUsuario?> ObtenerPerfilAsync(
+        string idUsuario,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyCollection<CatalogoItem>> ListarCatalogoAsync(
         string catalogo,
         CancellationToken cancellationToken);
@@ -59,6 +63,10 @@ public interface ISolicitudesRepository
         CancellationToken cancellationToken);
 
     Task<IReadOnlyCollection<SolicitudResumen>> ListarSolicitudesAsync(
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<ActividadResumen>> ListarMisActividadesAsync(
+        string idUsuarioResponsable,
         CancellationToken cancellationToken);
 
     Task<SolicitudDetalle?> ObtenerSolicitudAsync(

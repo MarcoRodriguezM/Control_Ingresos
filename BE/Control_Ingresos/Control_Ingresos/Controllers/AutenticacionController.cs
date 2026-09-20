@@ -12,6 +12,19 @@ namespace Control_Ingresos.Controllers;
 [Route("api/autenticacion")]
 public sealed class AutenticacionController(ISolicitudesRepository repository) : ControllerBase
 {
+    [Authorize]
+    [HttpGet("perfil")]
+    [ProducesResponseType<PerfilUsuario>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<PerfilUsuario>> Perfil(CancellationToken cancellationToken)
+    {
+        var idUsuario = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(idUsuario)) return Unauthorized();
+        var perfil = await repository.ObtenerPerfilAsync(idUsuario, cancellationToken);
+        return perfil is null ? NotFound() : Ok(perfil);
+    }
+
     [HttpPost("login")]
     [ProducesResponseType<SesionUsuario>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

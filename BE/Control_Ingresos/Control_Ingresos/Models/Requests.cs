@@ -95,6 +95,21 @@ public sealed record SolicitudResumen(
     string? UsuarioSolicitante,
     int CantidadPersonas);
 
+public sealed record ActividadResumen(
+    long IdActividad,
+    long? IdSolicitud,
+    string? NumeroSolicitud,
+    string? NombreActividad,
+    string? AreaResponsable,
+    string? CodigoEstado,
+    string? Estado,
+    bool EsEstadoFinal,
+    DateTime? FechaLimite,
+    DateTime? FechaInicio,
+    DateTime? FechaFinalizacion,
+    string? Comentarios,
+    bool RequiereTicketExterno);
+
 public sealed record SolicitudDetalle(
     long IdSolicitud,
     string? NumeroSolicitud,
@@ -199,3 +214,22 @@ public sealed record SesionUsuario(
     string? Area,
     bool EsAprobador,
     bool PuedeSolicitar);
+
+public sealed record AreaUsuarioPerfil(
+    int IdArea,
+    string? Nombre,
+    bool EsAreaPrincipal,
+    bool PuedeSolicitar,
+    bool EsAprobador,
+    bool EsAprobadorPrincipal);
+
+public sealed record PerfilUsuario(
+    string IdUsuario,
+    string? NombreCompleto,
+    string? Correo,
+    string? Telefono,
+    string? Puesto,
+    bool EsAprobador,
+    bool PuedeSolicitar,
+    IReadOnlyCollection<AreaUsuarioPerfil> Areas,
+    IReadOnlyCollection<SolicitudResumen> Solicitudes);

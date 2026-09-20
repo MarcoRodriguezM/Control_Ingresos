@@ -46,14 +46,9 @@ export const controlIngresosApi = {
     method: 'POST',
     body: JSON.stringify(credentials),
   }),
-
-  cerrarSesion: () => request('/api/autenticacion/logout', {
-    method: 'POST',
-  }),
-
-  listarCatalogo: (catalogo) =>
-    request(`/api/catalogos/${encodeURIComponent(catalogo)}`),
-
+  cerrarSesion: () => request('/api/autenticacion/logout', { method: 'POST' }),
+  obtenerMiPerfil: () => request('/api/autenticacion/perfil'),
+  listarCatalogo: (catalogo) => request(`/api/catalogos/${encodeURIComponent(catalogo)}`),
   crearProveedor: (proveedor) => request('/api/proveedores', {
     method: 'POST',
     body: JSON.stringify(proveedor),
@@ -63,31 +58,17 @@ export const controlIngresosApi = {
     method: 'POST',
     body: JSON.stringify(persona),
   }),
-
-  listarPersonas: () =>
-    request('/api/personas'),
-
-  obtenerPersonaAccesos: (id) =>
-    request(`/api/personas/${id}/accesos`),
-
-  listarAprobaciones: (usuario) =>
-    request(`/api/aprobaciones?usuario=${encodeURIComponent(usuario)}`),
-
-  decidirAprobacion: (idSolicitudPersonaArea, decision) =>
-    request(`/api/aprobaciones/${idSolicitudPersonaArea}/decision`, {
-      method: 'PUT',
-      body: JSON.stringify(decision),
-    }),
-
-  listarSolicitudes: () =>
-    request('/api/solicitudes'),
-
-  obtenerDatosFormularioSolicitud: () =>
-    request('/api/solicitudes/formulario-datos'),
-
-  obtenerSolicitud: (id) =>
-    request(`/api/solicitudes/${id}`),
-
+  listarPersonas: () => request('/api/personas'),
+  obtenerPersonaAccesos: (id) => request(`/api/personas/${id}/accesos`),
+  listarAprobaciones: (usuario) => request(`/api/aprobaciones?usuario=${encodeURIComponent(usuario)}`),
+  listarMisActividades: () => request('/api/actividades/mias'),
+  decidirAprobacion: (idSolicitudPersonaArea, decision) => request(`/api/aprobaciones/${idSolicitudPersonaArea}/decision`, {
+    method: 'PUT',
+    body: JSON.stringify(decision),
+  }),
+  listarSolicitudes: () => request('/api/solicitudes'),
+  obtenerDatosFormularioSolicitud: () => request('/api/solicitudes/formulario-datos'),
+  obtenerSolicitud: (id) => request(`/api/solicitudes/${id}`),
   crearSolicitud: (solicitud) => request('/api/solicitudes', {
     method: 'POST',
     body: JSON.stringify(solicitud),
