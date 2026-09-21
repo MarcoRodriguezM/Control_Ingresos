@@ -242,6 +242,8 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
                     GetNullableString(reader, 11),
                     GetNullable<DateTime>(reader, 12),
                     GetNullableString(reader, 13)));
+            }
+        }
 
         return persona with { Accesos = accesos };
     }

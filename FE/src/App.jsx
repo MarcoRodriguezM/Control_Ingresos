@@ -3,7 +3,17 @@ import { Link, Navigate, Route, Routes, matchPath, useLocation, useNavigate } fr
 import { Icon } from './components/Icon'
 import { AlertModal } from './components/AlertModal'
 import auraLogo from './assets/logo-aura.png'
-import { ApprovalsPage, LoginPage, PersonAccessPage, RequestApprovalDetailPage, RequestFormPage, RequestsListPage } from './pages'
+import {
+  ApprovalsPage,
+  DashboardPage,
+  LoginPage,
+  MyActivitiesPage,
+  PersonAccessPage,
+  ProfilePage,
+  RequestApprovalDetailPage,
+  RequestFormPage,
+  RequestsListPage,
+} from './pages'
 import { controlIngresosApi } from './services/api'
 import { showSuccessAlert } from './utils/alerts'
 import { initials } from './utils/formatters'
@@ -310,7 +320,6 @@ function AuthenticatedApp({ session, onLogout }) {
     navigate('/perfil')
     setMenuOpen(false)
     setError('')
-    setSuccess(null)
   }
 
   function selectPerson(idPersona) {
@@ -416,16 +425,15 @@ function AuthenticatedApp({ session, onLogout }) {
         <div className="sidebar-brand"><img className="sidebar-brand-logo" src={auraLogo} alt="Aura Minerals" /></div>
         <p className="side-label">Control de ingresos</p>
         <nav className="main-nav">
-          <Nav icon="home" label="Dashboard" onClick={() => setMenuOpen(false)} />
+          <Nav icon="home" label="Dashboard" active={isDashboardRoute} onClick={() => { navigate('/dashboard'); setMenuOpen(false); setError('') }} />
           <Nav icon="file" label="Solicitudes" count={solicitudes.length} active={isRequestsRoute} onClick={() => { navigate('/solicitudes'); setMenuOpen(false); setError('') }} />
-          {session.esAprobador && <Nav icon="check" label="Mis aprobaciones" count={aprobaciones.filter((item) => item.codigoEstado === 'PENDIENTE').length || undefined} active={isApprovalsRoute} onClick={() => { navigate('/aprobaciones'); setMenuOpen(false); setError(''); setSuccess(null) }} />}
-          <Nav icon="tasks" label="Mis actividades" count="7" onClick={() => setMenuOpen(false)} />
+          {session.esAprobador && <Nav icon="check" label="Mis aprobaciones" count={aprobaciones.filter((item) => item.codigoEstado === 'PENDIENTE').length || undefined} active={isApprovalsRoute} onClick={() => { navigate('/aprobaciones'); setMenuOpen(false); setError('') }} />}
+          <Nav icon="tasks" label="Mis actividades" count={actividades.filter((item) => !item.esEstadoFinal).length || undefined} active={isActivitiesRoute} onClick={() => { navigate('/mis-actividades'); setMenuOpen(false); setError('') }} />
           <Nav icon="users" label="Personas" count={personas.length || undefined} active={isPersonsRoute} onClick={openPersons} />
           <Nav icon="settings" label="Configuración" onClick={() => setMenuOpen(false)} />
         </nav>
         <div className="sidebar-footer">
           <button type="button" className="nav-item" onClick={onLogout}><Icon name="logout" /><span>Cerrar sesión</span></button>
-          <div className="sidebar-profile"><div className="avatar">{initials(session.nombreCompleto)}</div><div><strong>{session.nombreCompleto ?? session.idUsuario}</strong><span>{session.puesto ?? session.area ?? 'Usuario'}</span></div></div>
         </div>
       </aside>
 
@@ -433,12 +441,13 @@ function AuthenticatedApp({ session, onLogout }) {
         <header className="topbar">
           <button className="icon-button menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label="Abrir menú"><Icon name="menu" /></button>
           <div className="breadcrumb">
-            {/* <span>Inicio</span>
-              <strong>{approvalDetailRoute ? 'Detalle de solicitud' : isApprovalsRoute ? 'Mis aprobaciones' : isPersonsRoute ? 'Personas y accesos' : editRoute ? 'Editar solicitud' : location.pathname === '/solicitudes/nueva' ? 'Nueva solicitud' : 'Solicitudes'}</strong> */}
-            </div>
+            <Link to="/dashboard" onClick={() => { setError(''); setMenuOpen(false) }}>Inicio</Link>
+            <strong>{approvalDetailRoute ? 'Detalle de solicitud' : isDashboardRoute ? 'Dashboard' : isProfileRoute ? 'Mi perfil' : isActivitiesRoute ? 'Mis actividades' : isApprovalsRoute ? 'Mis aprobaciones' : isPersonsRoute ? 'Personas y accesos' : editRoute ? 'Editar solicitud' : location.pathname === '/solicitudes/nueva' ? 'Nueva solicitud' : 'Solicitudes'}</strong>
+          </div>
           <div className="top-actions">
             {/* <button className="ghost-button"><Icon name="help" />Ayuda</button> */}
-            <div className="top-profile"><div><strong>{session.nombreCompleto ?? session.idUsuario}</strong><span>{session.puesto ?? session.area ?? 'Usuario'}</span></div><div className="avatar" title={session.nombreCompleto ?? session.idUsuario}>{initials(session.nombreCompleto)}</div></div></div>
+            <div className="top-profile"><div><strong>{session.nombreCompleto ?? session.idUsuario}</strong><span>{session.puesto ?? session.area ?? 'Usuario'}</span></div><button type="button" className="avatar profile-trigger" onClick={openProfile} aria-label="Abrir mi perfil" title="Mi perfil">{initials(session.nombreCompleto)}</button></div>
+          </div>
         </header>
 
         <section className="content">

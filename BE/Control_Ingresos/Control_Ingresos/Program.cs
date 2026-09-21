@@ -58,14 +58,6 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment() &&
-    app.Configuration.GetValue<bool>("Database:ApplyScriptsOnStartup"))
-{
-    await DatabaseInitializer.ApplyScriptsAsync(
-        app.Configuration,
-        app.Logger);
-}
-
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {

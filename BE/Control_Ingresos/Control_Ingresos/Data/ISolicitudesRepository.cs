@@ -5,6 +5,7 @@ namespace Control_Ingresos.Data;
 public interface ISolicitudesRepository
 {
     Task<SesionUsuario?> AutenticarAsync(LoginRequest request, CancellationToken cancellationToken);
+    Task<PerfilUsuario?> ObtenerPerfilAsync(string idUsuario, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<CatalogoItem>> ListarCatalogoAsync(string catalogo, CancellationToken cancellationToken);
     Task<SolicitudFormularioDatos> ObtenerDatosFormularioSolicitudAsync(CancellationToken cancellationToken);
     Task<long> CrearProveedorAsync(CrearProveedorRequest request, CancellationToken cancellationToken);
@@ -19,5 +20,6 @@ public interface ISolicitudesRepository
     Task<long> AgregarPersonaAsync(long idSolicitud, AgregarPersonaSolicitudRequest request, CancellationToken cancellationToken);
     Task ReenviarAprobacionAsync(long idSolicitudPersonaArea, string idUsuarioSolicitante, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<SolicitudResumen>> ListarSolicitudesAsync(CancellationToken cancellationToken);
+    Task<IReadOnlyCollection<ActividadResumen>> ListarMisActividadesAsync(string idUsuarioResponsable, CancellationToken cancellationToken);
     Task<SolicitudDetalle?> ObtenerSolicitudAsync(long idSolicitud, CancellationToken cancellationToken);
 }
