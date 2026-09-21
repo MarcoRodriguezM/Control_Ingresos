@@ -1,4 +1,4 @@
-const API_URL = (import.meta.env.VITE_API_URL ?? 'https://localhost:7230').replace(/\/$/, '')
+const API_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:5250').replace(/\/$/, '')
 
 async function request(path, options = {}) {
   const response = await fetch(`${API_URL}${path}`, {
@@ -48,6 +48,11 @@ export const controlIngresosApi = {
   }),
   cerrarSesion: () => request('/api/autenticacion/logout', { method: 'POST' }),
   obtenerMiPerfil: () => request('/api/autenticacion/perfil'),
+  listarUsuarios: () => request('/api/usuarios'),
+  crearUsuario: (usuario) => request('/api/usuarios', {
+    method: 'POST',
+    body: JSON.stringify(usuario),
+  }),
   listarCatalogo: (catalogo) => request(`/api/catalogos/${encodeURIComponent(catalogo)}`),
   crearProveedor: (proveedor) => request('/api/proveedores', {
     method: 'POST',
@@ -60,11 +65,15 @@ export const controlIngresosApi = {
   }),
   listarPersonas: () => request('/api/personas'),
   obtenerPersonaAccesos: (id) => request(`/api/personas/${id}/accesos`),
-  listarAprobaciones: (usuario) => request(`/api/aprobaciones?usuario=${encodeURIComponent(usuario)}`),
+  listarAprobaciones: () => request('/api/aprobaciones'),
   listarMisActividades: () => request('/api/actividades/mias'),
   decidirAprobacion: (idSolicitudPersonaArea, decision) => request(`/api/aprobaciones/${idSolicitudPersonaArea}/decision`, {
     method: 'PUT',
-    body: JSON.stringify({ codigoEstado, comentarioDecision }),
+    body: JSON.stringify(decision),
+  }),
+  completarActividad: (idActividad, comentarios) => request(`/api/actividades/${idActividad}/completar`, {
+    method: 'PUT',
+    body: JSON.stringify({ comentarios }),
   }),
   listarSolicitudes: () => request('/api/solicitudes'),
   obtenerDatosFormularioSolicitud: () => request('/api/solicitudes/formulario-datos'),

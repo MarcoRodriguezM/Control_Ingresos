@@ -2,15 +2,16 @@ import { useState } from 'react'
 import { Icon } from '../components/Icon'
 import { accessStatusClass, formatDate, formatDateTime, initials } from '../utils/formatters'
 
-export function PersonAccessPage({ items, selected, loading, onSelect }) {
+export function PersonAccessPage({ items, selected, loading, onSelect, onNew }) {
   const [query, setQuery] = useState('')
   const normalizedQuery = query.trim().toLowerCase()
   const filtered = items.filter((item) => !normalizedQuery || [item.nombreCompleto, item.numeroDocumento, item.empresa]
     .some((value) => value?.toLowerCase().includes(normalizedQuery)))
 
   return <>
-    <div className="page-heading">
+    <div className="page-heading requests-heading">
       <div><p className="eyebrow">Control de acceso</p><h1>Persona con sus accesos</h1><p>Consulta la información personal, solicitudes, áreas autorizadas y estado de aprobación.</p></div>
+      <button type="button" className="primary-button" onClick={onNew}><Icon name="users" />Nueva persona</button>
     </div>
     <div className="people-layout">
       <aside className="panel people-panel">

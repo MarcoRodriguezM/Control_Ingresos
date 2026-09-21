@@ -4,7 +4,7 @@ import { formatDateTime } from '../utils/formatters'
 
 const isOverdue = (item) => !item.esEstadoFinal && item.fechaLimite && new Date(item.fechaLimite) < new Date()
 
-export function MyActivitiesPage({ items, loading, onRequest }) {
+export function MyActivitiesPage({ items, loading, onRequest, onComplete }) {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('pendientes')
   const pending = items.filter((item) => !item.esEstadoFinal).length
@@ -46,7 +46,11 @@ export function MyActivitiesPage({ items, loading, onRequest }) {
             <div className="activity-meta"><span><strong>Fecha límite</strong>{formatDateTime(item.fechaLimite)}</span><span><strong>Inicio</strong>{formatDateTime(item.fechaInicio)}</span><span><strong>Finalización</strong>{formatDateTime(item.fechaFinalizacion)}</span>{item.requiereTicketExterno && <span className="activity-ticket">Requiere ticket externo</span>}</div>
             {item.comentarios && <p className="activity-comment">{item.comentarios}</p>}
           </div>
-          {item.idSolicitud && <button type="button" className="secondary-button activity-open" onClick={() => onRequest(item.idSolicitud)}>Abrir solicitud <Icon name="arrow" /></button>}
+          <div className="activity-row-actions">
+            {!item.esEstadoFinal && item.codigoEstado !== 'PENDIENTE_APROBACION' && <button type="button" className="primary-button teal activity-complete" onClick={() => onComplete(item.idActividad)}>Marcar completada</button>}
+            {item.codigoEstado === 'PENDIENTE_APROBACION' && <span className="activity-waiting">Esperando aprobación</span>}
+            {item.idSolicitud && <button type="button" className="secondary-button activity-open" onClick={() => onRequest(item.idSolicitud)}>Abrir solicitud <Icon name="arrow" /></button>}
+          </div>
         </article>)}
     </section>
   </div>

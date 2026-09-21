@@ -68,6 +68,47 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
         return perfil with { Areas = areas, Solicitudes = solicitudes };
     }
 
+    public async Task<IReadOnlyCollection<UsuarioAdministracionResumen>> ListarUsuariosAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = StoredProcedure(connection, "dbo.usp_Usuario_Administracion_Listar");
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var items = new List<UsuarioAdministracionResumen>();
+        while (await reader.ReadAsync(cancellationToken))
+            items.Add(new(
+                reader.GetString(0),
+                GetNullableString(reader, 1),
+                GetNullableString(reader, 2),
+                GetNullableString(reader, 3),
+                GetNullableString(reader, 4),
+                GetNullable<int>(reader, 5),
+                GetNullableString(reader, 6),
+                reader.GetBoolean(7),
+                reader.GetBoolean(8),
+                reader.GetBoolean(9),
+                GetNullable<DateTime>(reader, 10)));
+        return items;
+    }
+
+    public async Task<string> CrearUsuarioAsync(CrearUsuarioRequest request, string usuarioCreacion, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = StoredProcedure(connection, "dbo.usp_Usuario_Crear");
+        Add(command, "@IdUsuario", SqlDbType.VarChar, request.IdUsuario, 50);
+        Add(command, "@NombreCompleto", SqlDbType.NVarChar, request.NombreCompleto, 200);
+        Add(command, "@Correo", SqlDbType.VarChar, request.Correo, 254);
+        Add(command, "@Telefono", SqlDbType.VarChar, request.Telefono, 30);
+        Add(command, "@Puesto", SqlDbType.NVarChar, request.Puesto, 150);
+        Add(command, "@Contrasena", SqlDbType.VarChar, request.Contrasena, 200);
+        Add(command, "@IdArea", SqlDbType.Int, request.IdArea);
+        Add(command, "@PuedeSolicitar", SqlDbType.Bit, request.PuedeSolicitar);
+        Add(command, "@EsAprobador", SqlDbType.Bit, request.EsAprobador);
+        Add(command, "@Activo", SqlDbType.Bit, request.Activo);
+        Add(command, "@UsuarioCreacion", SqlDbType.VarChar, usuarioCreacion, 50);
+        return Convert.ToString(await command.ExecuteScalarAsync(cancellationToken))
+            ?? throw new InvalidOperationException("No se recibió el identificador del usuario creado.");
+    }
+
     public async Task<IReadOnlyCollection<CatalogoItem>> ListarCatalogoAsync(
         string catalogo,
         CancellationToken cancellationToken)
@@ -456,6 +497,73 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
                 GetNullableString(reader, 11),
                 reader.GetBoolean(12)));
         return items;
+    }
+
+    public async Task<IReadOnlyCollection<ActividadAdministracionResumen>> ListarActividadesAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = StoredProcedure(connection, "dbo.usp_Actividad_Administracion_Listar");
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var items = new List<ActividadAdministracionResumen>();
+        while (await reader.ReadAsync(cancellationToken))
+            items.Add(new(
+                reader.GetInt64(0),
+                GetNullable<long>(reader, 1),
+                GetNullableString(reader, 2),
+                GetNullableString(reader, 3),
+                GetNullable<int>(reader, 4),
+                GetNullableString(reader, 5),
+                GetNullableString(reader, 6),
+                GetNullableString(reader, 7),
+                GetNullable<short>(reader, 8),
+                GetNullableString(reader, 9),
+                GetNullableString(reader, 10),
+                reader.GetBoolean(11),
+                GetNullable<DateTime>(reader, 12),
+                GetNullable<DateTime>(reader, 13),
+                GetNullable<DateTime>(reader, 14),
+                GetNullableString(reader, 15),
+                reader.GetBoolean(16),
+                GetNullableString(reader, 17),
+                GetNullable<DateTime>(reader, 18),
+                GetNullableString(reader, 19)));
+        return items;
+    }
+
+    public async Task<long> CrearActividadAsync(CrearActividadRequest request, string usuario, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = StoredProcedure(connection, "dbo.usp_Actividad_Crear");
+        Add(command, "@IdSolicitud", SqlDbType.BigInt, request.IdSolicitud);
+        Add(command, "@IdAreaResponsable", SqlDbType.Int, request.IdAreaResponsable);
+        Add(command, "@IdUsuarioResponsable", SqlDbType.VarChar, request.IdUsuarioResponsable, 50);
+        Add(command, "@NombreActividad", SqlDbType.NVarChar, request.NombreActividad, 200);
+        Add(command, "@FechaLimite", SqlDbType.DateTime2, request.FechaLimite);
+        Add(command, "@Comentarios", SqlDbType.NVarChar, request.Comentarios, 1000);
+        Add(command, "@RequiereTicketExterno", SqlDbType.Bit, request.RequiereTicketExterno);
+        Add(command, "@Usuario", SqlDbType.VarChar, usuario, 50);
+        return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken));
+    }
+
+    public async Task<long> CompletarActividadAsync(long idActividad, string idUsuarioResponsable, CompletarActividadRequest request, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = StoredProcedure(connection, "dbo.usp_Actividad_Completar");
+        Add(command, "@IdActividad", SqlDbType.BigInt, idActividad);
+        Add(command, "@IdUsuarioResponsable", SqlDbType.VarChar, idUsuarioResponsable, 50);
+        Add(command, "@Comentarios", SqlDbType.NVarChar, request.Comentarios, 1000);
+        return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken));
+    }
+
+    public async Task<long> DecidirActividadAsync(long idActividad, string idUsuarioAprobador, DecidirActividadRequest request, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = StoredProcedure(connection, "dbo.usp_Actividad_Decidir");
+        Add(command, "@IdActividad", SqlDbType.BigInt, idActividad);
+        Add(command, "@IdUsuarioAprobador", SqlDbType.VarChar, idUsuarioAprobador, 50);
+        Add(command, "@CodigoEstado", SqlDbType.VarChar, request.CodigoEstado, 30);
+        Add(command, "@ComentarioDecision", SqlDbType.NVarChar, request.ComentarioDecision, 1000);
+        return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken));
     }
 
     public async Task<SolicitudDetalle?> ObtenerSolicitudAsync(

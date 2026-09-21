@@ -110,6 +110,44 @@ public sealed record ActividadResumen(
     string? Comentarios,
     bool RequiereTicketExterno);
 
+public sealed record ActividadAdministracionResumen(
+    long IdActividad,
+    long? IdSolicitud,
+    string? NumeroSolicitud,
+    string? NombreActividad,
+    int? IdAreaResponsable,
+    string? AreaResponsable,
+    string? IdUsuarioResponsable,
+    string? UsuarioResponsable,
+    short? IdEstadoActividad,
+    string? CodigoEstado,
+    string? Estado,
+    bool EsEstadoFinal,
+    DateTime? FechaLimite,
+    DateTime? FechaInicio,
+    DateTime? FechaFinalizacion,
+    string? Comentarios,
+    bool RequiereTicketExterno,
+    string? IdUsuarioAprobador,
+    DateTime? FechaDecision,
+    string? ComentarioDecision);
+
+public sealed record CrearActividadRequest(
+    long? IdSolicitud,
+    int? IdAreaResponsable,
+    [Required, MaxLength(50)] string IdUsuarioResponsable,
+    [Required, MaxLength(200)] string NombreActividad,
+    DateTime? FechaLimite,
+    [MaxLength(1000)] string? Comentarios,
+    bool RequiereTicketExterno);
+
+public sealed record CompletarActividadRequest(
+    [MaxLength(1000)] string? Comentarios);
+
+public sealed record DecidirActividadRequest(
+    [Required, MaxLength(30)] string CodigoEstado,
+    [MaxLength(1000)] string? ComentarioDecision);
+
 public sealed record SolicitudDetalle(
     long IdSolicitud,
     string? NumeroSolicitud,
@@ -233,3 +271,28 @@ public sealed record PerfilUsuario(
     bool PuedeSolicitar,
     IReadOnlyCollection<AreaUsuarioPerfil> Areas,
     IReadOnlyCollection<SolicitudResumen> Solicitudes);
+
+public sealed record UsuarioAdministracionResumen(
+    string IdUsuario,
+    string? NombreCompleto,
+    string? Correo,
+    string? Telefono,
+    string? Puesto,
+    int? IdArea,
+    string? Area,
+    bool PuedeSolicitar,
+    bool EsAprobador,
+    bool Activo,
+    DateTime? FechaCreacion);
+
+public sealed record CrearUsuarioRequest(
+    [Required, MaxLength(50)] string IdUsuario,
+    [Required, MaxLength(200)] string NombreCompleto,
+    [EmailAddress, MaxLength(254)] string? Correo,
+    [MaxLength(30)] string? Telefono,
+    [MaxLength(150)] string? Puesto,
+    [Required, MinLength(8), MaxLength(200)] string Contrasena,
+    int? IdArea,
+    bool PuedeSolicitar,
+    bool EsAprobador,
+    bool Activo);

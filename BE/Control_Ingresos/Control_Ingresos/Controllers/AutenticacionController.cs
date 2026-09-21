@@ -43,7 +43,9 @@ public sealed class AutenticacionController(ISolicitudesRepository repository) :
             new(ClaimTypes.NameIdentifier, usuario.IdUsuario),
             new(ClaimTypes.Name, usuario.NombreCompleto ?? usuario.IdUsuario),
             new(ClaimTypes.Email, usuario.Correo ?? string.Empty),
-            new(ClaimTypes.Role, usuario.EsAprobador ? "Aprobador" : "Usuario")
+            new(ClaimTypes.Role, usuario.Puesto?.Contains("Administrador", StringComparison.OrdinalIgnoreCase) == true
+                ? "Administrador"
+                : usuario.EsAprobador ? "Aprobador" : "Usuario")
         };
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
         await HttpContext.SignInAsync(
