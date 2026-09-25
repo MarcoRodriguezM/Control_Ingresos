@@ -42,11 +42,9 @@ public sealed class AutenticacionController(ISolicitudesRepository repository) :
         {
             new(ClaimTypes.NameIdentifier, usuario.IdUsuario),
             new(ClaimTypes.Name, usuario.NombreCompleto ?? usuario.IdUsuario),
-            new(ClaimTypes.Email, usuario.Correo ?? string.Empty),
-            new(ClaimTypes.Role, usuario.Puesto?.Contains("Administrador", StringComparison.OrdinalIgnoreCase) == true
-                ? "Administrador"
-                : usuario.EsAprobador ? "Aprobador" : "Usuario")
+            new(ClaimTypes.Email, usuario.Correo ?? string.Empty)
         };
+        claims.AddRange(usuario.Roles.Select(role => new Claim(ClaimTypes.Role, role)));
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
         await HttpContext.SignInAsync(
             CookieAuthenticationDefaults.AuthenticationScheme,

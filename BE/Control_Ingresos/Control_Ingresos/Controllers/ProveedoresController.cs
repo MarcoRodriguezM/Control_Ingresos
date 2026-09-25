@@ -2,6 +2,7 @@ using Control_Ingresos.Data;
 using Control_Ingresos.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using System.Security.Claims;
 
 namespace Control_Ingresos.Controllers;
 
@@ -16,6 +17,9 @@ public sealed class ProveedoresController(ISolicitudesRepository repository) : C
         CrearProveedorRequest request,
         CancellationToken cancellationToken)
     {
+        var usuario = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(usuario)) return Unauthorized();
+        request = request with { Usuario = usuario };
         var id = await repository.CrearProveedorAsync(request, cancellationToken);
 
         return Created(

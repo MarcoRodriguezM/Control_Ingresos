@@ -2,6 +2,7 @@ using Control_Ingresos.Data;
 using Control_Ingresos.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using System.Security.Claims;
 
 namespace Control_Ingresos.Controllers;
 
@@ -36,6 +37,9 @@ public sealed class PersonasController(ISolicitudesRepository repository) : Cont
         CrearPersonaRequest request,
         CancellationToken cancellationToken)
     {
+        var usuario = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(usuario)) return Unauthorized();
+        request = request with { Usuario = usuario };
         var id = await repository.CrearPersonaAsync(request, cancellationToken);
 
         return Created(

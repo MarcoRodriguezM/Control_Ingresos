@@ -17,15 +17,19 @@ public interface ISolicitudesRepository
     Task<IReadOnlyCollection<AprobacionResumen>> ListarAprobacionesAsync(string idUsuarioAprobador, CancellationToken cancellationToken);
     Task<long> DecidirAprobacionAsync(long idSolicitudPersonaArea, string idUsuarioAprobador, DecidirAprobacionRequest request, CancellationToken cancellationToken);
     Task<IdCreadoResponse> CrearSolicitudAsync(CrearSolicitudRequest request, CancellationToken cancellationToken);
+    Task<IdCreadoResponse> CrearSolicitudCompletaAsync(CrearSolicitudCompletaRequest request, CancellationToken cancellationToken);
     Task<bool> ActualizarSolicitudAsync(long idSolicitud, CrearSolicitudRequest request, CancellationToken cancellationToken);
     Task<bool> EliminarSolicitudAsync(long idSolicitud, string usuario, CancellationToken cancellationToken);
     Task<long> AgregarPersonaAsync(long idSolicitud, AgregarPersonaSolicitudRequest request, CancellationToken cancellationToken);
     Task ReenviarAprobacionAsync(long idSolicitudPersonaArea, string idUsuarioSolicitante, CancellationToken cancellationToken);
-    Task<IReadOnlyCollection<SolicitudResumen>> ListarSolicitudesAsync(CancellationToken cancellationToken);
+    Task EnviarSolicitudAsync(long idSolicitud, string idUsuario, CancellationToken cancellationToken);
+    Task<IReadOnlyCollection<SolicitudResumen>> ListarSolicitudesAsync(string idUsuario, bool accesoTotal, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<ActividadResumen>> ListarMisActividadesAsync(string idUsuarioResponsable, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<ActividadAdministracionResumen>> ListarActividadesAsync(CancellationToken cancellationToken);
     Task<long> CrearActividadAsync(CrearActividadRequest request, string usuario, CancellationToken cancellationToken);
     Task<long> CompletarActividadAsync(long idActividad, string idUsuarioResponsable, CompletarActividadRequest request, CancellationToken cancellationToken);
     Task<long> DecidirActividadAsync(long idActividad, string idUsuarioAprobador, DecidirActividadRequest request, CancellationToken cancellationToken);
     Task<SolicitudDetalle?> ObtenerSolicitudAsync(long idSolicitud, CancellationToken cancellationToken);
+    Task<IReadOnlyCollection<RegistroIngresoResumen>> ListarRegistrosIngresoAsync(CancellationToken cancellationToken);
+    Task<long> RegistrarIngresoAsync(RegistrarIngresoRequest request, string idUsuarioSeguridad, CancellationToken cancellationToken);
 }

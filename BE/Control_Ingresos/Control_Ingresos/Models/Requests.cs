@@ -251,7 +251,31 @@ public sealed record SesionUsuario(
     int? IdArea,
     string? Area,
     bool EsAprobador,
-    bool PuedeSolicitar);
+    bool PuedeSolicitar,
+    IReadOnlyCollection<string> Roles);
+
+public sealed record CrearSolicitudCompletaRequest(
+    [Required] CrearSolicitudRequest Solicitud,
+    IReadOnlyCollection<AgregarPersonaSolicitudRequest>? Personas);
+
+public sealed record RegistroIngresoResumen(
+    long IdRegistroIngreso,
+    long IdPersona,
+    string? NumeroDocumento,
+    string? NombreCompleto,
+    long IdSolicitud,
+    string? NumeroSolicitud,
+    string? Actividad,
+    string TipoMovimiento,
+    DateTime FechaMovimiento,
+    string? IdUsuarioSeguridad,
+    string? UsuarioSeguridad,
+    string? Observaciones);
+
+public sealed record RegistrarIngresoRequest(
+    long IdPersona,
+    [Required, MaxLength(10)] string TipoMovimiento,
+    [MaxLength(500)] string? Observaciones);
 
 public sealed record AreaUsuarioPerfil(
     int IdArea,
@@ -283,7 +307,8 @@ public sealed record UsuarioAdministracionResumen(
     bool PuedeSolicitar,
     bool EsAprobador,
     bool Activo,
-    DateTime? FechaCreacion);
+    DateTime? FechaCreacion,
+    string? Roles);
 
 public sealed record CrearUsuarioRequest(
     [Required, MaxLength(50)] string IdUsuario,
@@ -295,4 +320,5 @@ public sealed record CrearUsuarioRequest(
     int? IdArea,
     bool PuedeSolicitar,
     bool EsAprobador,
+    bool EsSeguridad,
     bool Activo);

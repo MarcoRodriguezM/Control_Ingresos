@@ -4,6 +4,7 @@ import { Icon } from './components/Icon'
 import { AlertModal } from './components/AlertModal'
 import auraLogo from './assets/logo-aura.png'
 import {
+  AccessControlPage,
   ApprovalsPage,
   DashboardPage,
   LoginPage,
@@ -44,6 +45,8 @@ function App() {
   async function logout() {
     try {
       await controlIngresosApi.cerrarSesion()
+    } catch {
+      // La sesión local siempre debe cerrarse, incluso si la API no está disponible.
     } finally {
       localStorage.removeItem(sessionKey)
       setSession(null)
@@ -64,7 +67,9 @@ function App() {
 function AuthenticatedApp({ session, onLogout }) {
   const location = useLocation()
   const navigate = useNavigate()
-  const isAdministrator = session.puesto?.toLowerCase().includes('administrador')
+  const isAdministrator = hasRole(session, 'Administrador')
+  const canApprove = isAdministrator || hasRole(session, 'Aprobador')
+  const canUseGate = isAdministrator || hasRole(session, 'Seguridad')
   const editRoute = matchPath('/solicitudes/:id/editar', location.pathname)
   const personRoute = matchPath('/personas/:idPersona', location.pathname)
   const isNewPersonRoute = location.pathname === '/personas/nueva'
@@ -74,6 +79,7 @@ function AuthenticatedApp({ session, onLogout }) {
   const isApprovalsRoute = location.pathname.startsWith('/aprobaciones')
   const isActivitiesRoute = location.pathname === '/mis-actividades'
   const isUsersRoute = location.pathname === '/usuarios'
+  const isAccessControlRoute = location.pathname === '/control-accesos'
   const isProfileRoute = location.pathname === '/perfil'
   const isDashboardRoute = location.pathname === '/dashboard' || location.pathname === '/'
   const [step, setStep] = useState(1)
@@ -82,11 +88,17 @@ function AuthenticatedApp({ session, onLogout }) {
   const [options, setOptions] = useState(null)
   const [solicitudes, setSolicitudes] = useState([])
   const [personas, setPersonas] = useState([])
+  const [requestPeople, setRequestPeople] = useState([])
+  const [existingRequestPeople, setExistingRequestPeople] = useState([])
+  const [peopleEntryMode, setPeopleEntryMode] = useState('')
   const [personaSeleccionada, setPersonaSeleccionada] = useState(null)
   const [aprobaciones, setAprobaciones] = useState([])
   const [actividades, setActividades] = useState([])
   const [activitiesLoading, setActivitiesLoading] = useState(false)
   const [usuarios, setUsuarios] = useState([])
+  const [movements, setMovements] = useState([])
+  const [gateLoading, setGateLoading] = useState(false)
+  const [gateSaving, setGateSaving] = useState(false)
   const [usersLoading, setUsersLoading] = useState(false)
   const [profile, setProfile] = useState(null)
   const [profileLoading, setProfileLoading] = useState(true)
@@ -102,11 +114,12 @@ function AuthenticatedApp({ session, onLogout }) {
 
   useEffect(() => {
     let active = true
-    Promise.all([controlIngresosApi.obtenerDatosFormularioSolicitud(), controlIngresosApi.listarSolicitudes()])
-      .then(([data, records]) => {
+    Promise.all([controlIngresosApi.obtenerDatosFormularioSolicitud(), controlIngresosApi.listarSolicitudes(), controlIngresosApi.listarPersonas()])
+      .then(([data, records, people]) => {
         if (!active) return
         setOptions(data)
         setSolicitudes(records)
+        setPersonas(people)
         setForm((current) => withDefaults(current, data, session.idUsuario))
       })
       .catch((requestError) => active && setError(requestError.message))
@@ -128,6 +141,9 @@ function AuthenticatedApp({ session, onLogout }) {
         if (!active) return
         setEditingId(id)
         setForm(formFromDetail(item, options))
+        setExistingRequestPeople(item.personas ?? [])
+        setRequestPeople([])
+        setPeopleEntryMode(item.personas?.length ? 'manual' : '')
         setStep(1)
       } catch (requestError) {
         if (active) setError(requestError.message)
@@ -174,7 +190,7 @@ function AuthenticatedApp({ session, onLogout }) {
   }, [isPersonsRoute, isNewPersonRoute, personRoute?.params.idPersona, personas, personaSeleccionada?.idPersona])
 
   useEffect(() => {
-    if ((!isApprovalsRoute && !isDashboardRoute) || !session.esAprobador) return
+    if ((!isApprovalsRoute && !isDashboardRoute) || !canApprove) return
     let active = true
     const load = async () => {
       await Promise.resolve()
@@ -192,7 +208,7 @@ function AuthenticatedApp({ session, onLogout }) {
     }
     load()
     return () => { active = false }
-  }, [isApprovalsRoute, isDashboardRoute, session.esAprobador, session.idUsuario])
+  }, [isApprovalsRoute, isDashboardRoute, canApprove, session.idUsuario])
 
   useEffect(() => {
     if (!isActivitiesRoute) return
@@ -235,6 +251,17 @@ function AuthenticatedApp({ session, onLogout }) {
     load()
     return () => { active = false }
   }, [isUsersRoute, isAdministrator])
+
+  useEffect(() => {
+    if (!isAccessControlRoute || !canUseGate) return
+    let active = true
+    setGateLoading(true)
+    controlIngresosApi.listarMovimientosIngreso()
+      .then((records) => active && setMovements(records))
+      .catch((requestError) => active && setError(requestError.message))
+      .finally(() => active && setGateLoading(false))
+    return () => { active = false }
+  }, [isAccessControlRoute, canUseGate])
 
   useEffect(() => {
     if (!isProfileRoute) return
@@ -296,11 +323,14 @@ function AuthenticatedApp({ session, onLogout }) {
     setError('')
   }
 
-  function next() { goToStep(Math.min(3, step + 1)) }
+  function next() { goToStep(Math.min(4, step + 1)) }
 
   function goToStep(targetStep) {
     for (let currentStep = 1; currentStep < targetStep; currentStep += 1) {
       const validation = validateStep(currentStep, form)
+        || (currentStep === 3 && !peopleEntryMode ? 'Indica quién ingresará las personas de la solicitud.' : '')
+        || (currentStep === 3 && peopleEntryMode === 'provider' && !form.idProveedor ? 'Selecciona un proveedor en el paso de información básica.' : '')
+        || (currentStep === 3 && peopleEntryMode === 'manual' && requestPeople.some((person) => person.areas.length === 0) ? 'Selecciona al menos un área para cada persona agregada.' : '')
       if (validation) {
         setStep(currentStep)
         setError(validation)
@@ -315,6 +345,9 @@ function AuthenticatedApp({ session, onLogout }) {
   function openNew() {
     setEditingId(null)
     setForm(withDefaults(initialForm(), options, session.idUsuario))
+    setRequestPeople([])
+    setExistingRequestPeople([])
+    setPeopleEntryMode('')
     setStep(1)
     setError('')
     navigate('/solicitudes/nueva')
@@ -329,8 +362,7 @@ function AuthenticatedApp({ session, onLogout }) {
     if (!window.confirm(`¿Deseas eliminar la solicitud ${number ?? `#${id}`}?`)) return
     setError('')
     try {
-      const user = session.idUsuario
-      await controlIngresosApi.eliminarSolicitud(id, user)
+      await controlIngresosApi.eliminarSolicitud(id)
       setSolicitudes(await controlIngresosApi.listarSolicitudes())
       showSuccessAlert(`La solicitud ${number ?? `#${id}`} fue eliminada.`)
     } catch (requestError) {
@@ -435,8 +467,24 @@ function AuthenticatedApp({ session, onLogout }) {
     }
   }
 
+  async function registerMovement(movement) {
+    setGateSaving(true)
+    setError('')
+    try {
+      await controlIngresosApi.registrarMovimientoIngreso(movement)
+      setMovements(await controlIngresosApi.listarMovimientosIngreso())
+      showSuccessAlert(`${movement.tipoMovimiento === 'ENTRADA' ? 'Entrada' : 'Salida'} registrada correctamente.`)
+      return { success: true }
+    } catch (requestError) {
+      setError(requestError.message)
+      return { success: false, message: requestError.message }
+    } finally {
+      setGateSaving(false)
+    }
+  }
+
   async function submit() {
-    if (step !== 3) return
+    if (step !== 4) return
     if (editRoute && !activeEditingId) {
       setError('No fue posible cargar la solicitud que deseas editar.')
       return
@@ -446,10 +494,9 @@ function AuthenticatedApp({ session, onLogout }) {
     setSaving(true)
     setError('')
     try {
-      const sentStatus = options.estadosSolicitud.find((item) => item.codigo === 'ENVIADA')
       const payload = {
         idTipoIngreso: numberOrNull(form.idTipoIngreso),
-        idEstadoSolicitud: activeEditingId ? numberOrNull(form.idEstadoSolicitud) : sentStatus?.id ?? numberOrNull(form.idEstadoSolicitud),
+        idEstadoSolicitud: activeEditingId ? numberOrNull(form.idEstadoSolicitud) : null,
         fechaInicio: form.fechaInicio,
         fechaFin: form.fechaFin,
         nombreActividad: form.nombreActividad.trim(),
@@ -465,12 +512,41 @@ function AuthenticatedApp({ session, onLogout }) {
         observaciones: textOrNull(form.observaciones),
         usuario: session.idUsuario,
       }
+      const personPayloads = requestPeople.map((person) => ({
+        idPersona: person.idPersona,
+        idEstadoPersonaSolicitud: null,
+        datosCompletos: true,
+        observacionesRevision: null,
+        areas: person.areas,
+        requerimientos: null,
+        usuario: session.idUsuario,
+      }))
       const created = activeEditingId
         ? await controlIngresosApi.actualizarSolicitud(activeEditingId, payload)
-        : await controlIngresosApi.crearSolicitud(payload)
-      showSuccessAlert(activeEditingId ? 'La solicitud fue actualizada correctamente.' : `Se creó ${created.numero ?? `la solicitud #${created.id}`}.`)
+        : await controlIngresosApi.crearSolicitudCompleta({ solicitud: payload, personas: personPayloads })
+      const requestId = activeEditingId ?? created.id
+      const failedPeople = []
+      for (const person of activeEditingId ? personPayloads : []) {
+        try {
+          await controlIngresosApi.agregarPersonaSolicitud(requestId, person)
+        } catch (personError) {
+          failedPeople.push({ ...person, error: personError.message })
+        }
+      }
+      if (failedPeople.length > 0) {
+        setRequestPeople(failedPeople)
+        setEditingId(requestId)
+        navigate(`/solicitudes/${requestId}/editar`, { replace: true })
+        setError(`La solicitud fue guardada, pero no se pudieron agregar ${failedPeople.length} persona(s): ${failedPeople.map((person) => person.error).join(' ')}`)
+        return
+      }
+      await controlIngresosApi.enviarSolicitud(requestId)
+      showSuccessAlert(activeEditingId ? 'La solicitud fue actualizada y enviada correctamente.' : `Se creó y envió ${created.numero ?? `la solicitud #${created.id}`}.`)
       setSolicitudes(await controlIngresosApi.listarSolicitudes())
       setForm(withDefaults(initialForm(), options, session.idUsuario))
+      setRequestPeople([])
+      setExistingRequestPeople([])
+      setPeopleEntryMode('')
       setEditingId(null)
       setStep(1)
       navigate('/solicitudes')
@@ -483,6 +559,9 @@ function AuthenticatedApp({ session, onLogout }) {
 
   function cancelForm() {
     setForm(withDefaults(initialForm(), options, session.idUsuario))
+    setRequestPeople([])
+    setExistingRequestPeople([])
+    setPeopleEntryMode('')
     setStep(1)
     setEditingId(null)
     setError('')
@@ -499,9 +578,10 @@ function AuthenticatedApp({ session, onLogout }) {
         <nav className="main-nav">
           <Nav icon="home" label="Dashboard" active={isDashboardRoute} onClick={() => { navigate('/dashboard'); setMenuOpen(false); setError('') }} />
           <Nav icon="file" label="Solicitudes" count={solicitudes.length} active={isRequestsRoute} onClick={() => { navigate('/solicitudes'); setMenuOpen(false); setError('') }} />
-          {session.esAprobador && <Nav icon="check" label="Mis aprobaciones" count={aprobaciones.filter((item) => item.codigoEstado === 'PENDIENTE').length || undefined} active={isApprovalsRoute} onClick={() => { navigate('/aprobaciones'); setMenuOpen(false); setError('') }} />}
+          {canApprove && <Nav icon="check" label="Mis aprobaciones" count={aprobaciones.filter((item) => item.codigoEstado === 'PENDIENTE').length || undefined} active={isApprovalsRoute} onClick={() => { navigate('/aprobaciones'); setMenuOpen(false); setError('') }} />}
           <Nav icon="tasks" label="Mis actividades" count={actividades.filter((item) => !item.esEstadoFinal).length || undefined} active={isActivitiesRoute} onClick={() => { navigate('/mis-actividades'); setMenuOpen(false); setError('') }} />
           <Nav icon="users" label="Personas" count={personas.length || undefined} active={isPersonsRoute} onClick={openPersons} />
+          {canUseGate && <Nav icon="shield" label="Control de accesos" active={isAccessControlRoute} onClick={() => { navigate('/control-accesos'); setMenuOpen(false); setError('') }} />}
           {isAdministrator && <Nav icon="settings" label="Usuarios" count={usuarios.length || undefined} active={isUsersRoute} onClick={() => { navigate('/usuarios'); setMenuOpen(false); setError('') }} />}
         </nav>
         <div className="sidebar-footer">
@@ -514,7 +594,7 @@ function AuthenticatedApp({ session, onLogout }) {
           <button className="icon-button menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label="Abrir menú"><Icon name="menu" /></button>
           <div className="breadcrumb">
             <Link to="/dashboard" onClick={() => { setError(''); setMenuOpen(false) }}>Inicio</Link>
-            <strong>{approvalDetailRoute ? 'Detalle de solicitud' : isDashboardRoute ? 'Dashboard' : isProfileRoute ? 'Mi perfil' : isUsersRoute ? 'Usuarios' : isActivitiesRoute ? 'Mis actividades' : isApprovalsRoute ? 'Mis aprobaciones' : isNewPersonRoute ? 'Nueva persona' : isPersonsRoute ? 'Personas y accesos' : editRoute ? 'Editar solicitud' : location.pathname === '/solicitudes/nueva' ? 'Nueva solicitud' : 'Solicitudes'}</strong>
+            <strong>{approvalDetailRoute ? 'Detalle de solicitud' : isDashboardRoute ? 'Dashboard' : isProfileRoute ? 'Mi perfil' : isAccessControlRoute ? 'Control de accesos' : isUsersRoute ? 'Usuarios' : isActivitiesRoute ? 'Mis actividades' : isApprovalsRoute ? 'Mis aprobaciones' : isNewPersonRoute ? 'Nueva persona' : isPersonsRoute ? 'Personas y accesos' : editRoute ? 'Editar solicitud' : location.pathname === '/solicitudes/nueva' ? 'Nueva solicitud' : 'Solicitudes'}</strong>
           </div>
           <div className="top-actions">
             {/* <button className="ghost-button"><Icon name="help" />Ayuda</button> */}
@@ -525,20 +605,21 @@ function AuthenticatedApp({ session, onLogout }) {
         <section className="content">
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/dashboard" element={<DashboardPage session={session} requests={solicitudes} approvals={aprobaciones} loading={loading} approvalsLoading={approvalsLoading} onNew={openNew} onRequests={() => navigate('/solicitudes')} onRequest={openEdit} onApprovals={() => navigate('/aprobaciones')} onPersons={openPersons} />} />
+            <Route path="/dashboard" element={<DashboardPage session={{ ...session, esAprobador: canApprove }} requests={solicitudes} approvals={aprobaciones} loading={loading} approvalsLoading={approvalsLoading} onNew={openNew} onRequests={() => navigate('/solicitudes')} onRequest={openEdit} onApprovals={() => navigate('/aprobaciones')} onPersons={openPersons} />} />
             <Route path="/mis-actividades" element={<MyActivitiesPage items={actividades} loading={activitiesLoading} onRequest={openEdit} onComplete={completeActivity} />} />
             <Route path="/usuarios" element={isAdministrator ? <UserManagementPage items={usuarios} loading={usersLoading} areas={options?.areas ?? []} onCreate={createUser} /> : <Navigate to="/dashboard" replace />} />
+            <Route path="/control-accesos" element={canUseGate ? <AccessControlPage people={personas} movements={movements} loading={gateLoading} saving={gateSaving} onRegister={registerMovement} /> : <Navigate to="/dashboard" replace />} />
             <Route path="/perfil" element={<ProfilePage profile={profile} loading={profileLoading} onOpenRequest={openEdit} />} />
             <Route path="/solicitudes" element={<RequestsListPage items={solicitudes} loading={loading} onNew={openNew} onEdit={openEdit} onDelete={remove} />} />
-            <Route path="/solicitudes/nueva" element={<RequestFormPage form={form} options={options} loading={loading} saving={saving} editingId={null} step={step} selected={selected} onChange={change} onStepChange={goToStep} onNext={next} onBack={() => setStep((current) => current - 1)} onCancel={cancelForm} onSubmit={submit} />} />
-            <Route path="/solicitudes/:id/editar" element={<RequestFormPage form={form} options={options} loading={loading} saving={saving} editingId={activeEditingId} step={step} selected={selected} onChange={change} onStepChange={goToStep} onNext={next} onBack={() => setStep((current) => current - 1)} onCancel={cancelForm} onSubmit={submit} />} />
+            <Route path="/solicitudes/nueva" element={<RequestFormPage form={form} options={options} people={personas} requestPeople={requestPeople} existingPeople={existingRequestPeople} peopleEntryMode={peopleEntryMode} loading={loading} saving={saving} editingId={null} step={step} selected={selected} onPeopleEntryModeChange={(mode) => { setPeopleEntryMode(mode); if (mode === 'provider') setRequestPeople([]) }} onPeopleChange={setRequestPeople} onChange={change} onStepChange={goToStep} onNext={next} onBack={() => setStep((current) => current - 1)} onCancel={cancelForm} onSubmit={submit} />} />
+            <Route path="/solicitudes/:id/editar" element={<RequestFormPage form={form} options={options} people={personas} requestPeople={requestPeople} existingPeople={existingRequestPeople} peopleEntryMode={peopleEntryMode} loading={loading} saving={saving} editingId={activeEditingId} step={step} selected={selected} onPeopleEntryModeChange={(mode) => { setPeopleEntryMode(mode); if (mode === 'provider') setRequestPeople([]) }} onPeopleChange={setRequestPeople} onChange={change} onStepChange={goToStep} onNext={next} onBack={() => setStep((current) => current - 1)} onCancel={cancelForm} onSubmit={submit} />} />
             <Route path="/personas" element={<PersonAccessPage items={personas} selected={personaSeleccionada} loading={personLoading} onSelect={selectPerson} onNew={openNewPerson} />} />
             <Route path="/personas/nueva" element={<PersonFormPage session={session} providers={options?.proveedores} onCancel={openPersons} onCreated={personCreated} onError={setError} />} />
             <Route path="/personas/:idPersona" element={<PersonAccessPage items={personas} selected={personaSeleccionada} loading={personLoading} onSelect={selectPerson} onNew={openNewPerson} />} />
-            <Route path="/aprobaciones" element={session.esAprobador ? <ApprovalsPage items={aprobaciones} loading={approvalsLoading} onDecide={decideApproval} onDecideMany={decideApprovals} onViewDetail={openApprovalDetail} /> : <Navigate to="/solicitudes" replace />} />
-            <Route path="/aprobaciones/:idSolicitudPersonaArea/detalle" element={session.esAprobador ? <RequestApprovalDetailPage request={approvalDetail} options={options} approvalItems={aprobaciones} loading={approvalDetailLoading || !approvalDetail} onBack={() => navigate('/aprobaciones')} onDecide={decideApproval} /> : <Navigate to="/solicitudes" replace />} />
-            <Route path="/login" element={<Navigate to="/solicitudes" replace />} />
-            <Route path="*" element={<Navigate to="/solicitudes" replace />} />
+            <Route path="/aprobaciones" element={canApprove ? <ApprovalsPage items={aprobaciones} loading={approvalsLoading} onDecide={decideApproval} onDecideMany={decideApprovals} onViewDetail={openApprovalDetail} /> : <Navigate to="/solicitudes" replace />} />
+            <Route path="/aprobaciones/:idSolicitudPersonaArea/detalle" element={canApprove ? <RequestApprovalDetailPage request={approvalDetail} options={options} approvalItems={aprobaciones} loading={approvalDetailLoading || !approvalDetail} onBack={() => navigate('/aprobaciones')} onDecide={decideApproval} /> : <Navigate to="/solicitudes" replace />} />
+            <Route path="/login" element={<Navigate to="/dashboard" replace />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </section>
       </main>
@@ -586,6 +667,11 @@ const findOption = (items, id) => items?.find((item) => String(item.id) === Stri
 const stringValue = (value) => value == null ? '' : String(value)
 const numberOrNull = (value) => value === '' ? null : Number(value)
 const textOrNull = (value) => value.trim() === '' ? null : value.trim()
+const hasRole = (session, role) => Boolean(
+  session.roles?.some((item) => item.toLowerCase() === role.toLowerCase())
+  || (role === 'Administrador' && session.puesto?.toLowerCase().includes('administrador'))
+  || (role === 'Aprobador' && session.esAprobador),
+)
 
 function readSession() {
   try {

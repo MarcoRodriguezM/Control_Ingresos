@@ -5,9 +5,10 @@ import { formatDate } from '../utils/formatters'
 export function RequestsListPage({ items, loading, onNew, onEdit, onDelete }) {
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState('')
-  const statuses = [...new Set(items.map((item) => item.estado).filter(Boolean))]
+  const activeItems = items.filter((item) => item.estado?.toLowerCase() !== 'cancelada')
+  const statuses = [...new Set(activeItems.map((item) => item.estado).filter(Boolean))]
   const normalizedQuery = query.trim().toLowerCase()
-  const filtered = items.filter((item) => {
+  const filtered = activeItems.filter((item) => {
     const matchesQuery = !normalizedQuery || [item.numeroSolicitud, item.nombreActividad, item.tipoIngreso, item.usuarioSolicitante]
       .some((value) => value?.toLowerCase().includes(normalizedQuery))
     return matchesQuery && (!status || item.estado === status)

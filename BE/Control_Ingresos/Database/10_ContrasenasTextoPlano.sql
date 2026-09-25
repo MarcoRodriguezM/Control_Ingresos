@@ -1,33 +1,109 @@
-/* Listado y creación de usuarios compatibles con el inicio de sesión actual. */
+/*
+    Migra las credenciales al almacenamiento en texto plano solicitado.
+    ADVERTENCIA: este diseño expone las contraseñas ante una filtración de la base de datos.
+*/
 USE [Control_Ingresos_DB];
+GO
+
+SET NOCOUNT ON;
+SET XACT_ABORT ON;
 GO
 
 IF COL_LENGTH('dbo.Usuario_Credencial', 'Contrasena') IS NULL
 BEGIN
-    ALTER TABLE dbo.Usuario_Credencial ADD Contrasena VARCHAR(200) NULL;
+    ALTER TABLE dbo.Usuario_Credencial
+        ADD Contrasena VARCHAR(200) NULL;
 END;
 GO
 
-ALTER TABLE dbo.Usuario_Credencial ALTER COLUMN PasswordHash VARBINARY(32) NULL;
+/* La columna heredada debe aceptar NULL porque deja de utilizarse. */
+ALTER TABLE dbo.Usuario_Credencial
+    ALTER COLUMN PasswordHash VARBINARY(32) NULL;
 GO
 
+/*
+   Las credenciales existentes fueron verificadas contra la clave de demostración.
+   Solo se migra una fila si su hash realmente coincide; no se adivinan contraseñas.
+*/
 UPDATE credencial
 SET credencial.Contrasena = 'Control2026!',
     credencial.FechaModificacion = SYSDATETIME(),
     credencial.UsuarioModificacion = 'MIGRACION_TEXTO_PLANO'
 FROM dbo.Usuario_Credencial AS credencial
 WHERE credencial.Contrasena IS NULL
-  AND credencial.PasswordHash = HASHBYTES('SHA2_256', CONVERT(VARBINARY(MAX), CONCAT(credencial.IdUsuario, ':', 'Control2026!')));
+  AND credencial.PasswordHash = HASHBYTES(
+      'SHA2_256',
+      CONVERT(VARBINARY(MAX), CONCAT(credencial.IdUsuario, ':', 'Control2026!'))
+  );
 GO
 
 IF EXISTS (SELECT 1 FROM dbo.Usuario_Credencial WHERE Contrasena IS NULL)
+BEGIN
     THROW 50400, 'Hay credenciales cuyo texto original no puede recuperarse. Asigne una contraseña antes de completar la migración.', 1;
+END;
 GO
 
-ALTER TABLE dbo.Usuario_Credencial ALTER COLUMN Contrasena VARCHAR(200) NOT NULL;
+ALTER TABLE dbo.Usuario_Credencial
+    ALTER COLUMN Contrasena VARCHAR(200) NOT NULL;
 GO
 
-UPDATE dbo.Usuario_Credencial SET PasswordHash = NULL;
+/* Elimina los hashes anteriores; desde este punto la fuente válida es Contrasena. */
+UPDATE dbo.Usuario_Credencial
+SET PasswordHash = NULL;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.usp_Usuario_Autenticar
+    @Usuario VARCHAR(254),
+    @Contrasena VARCHAR(200)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF NULLIF(LTRIM(RTRIM(@Usuario)), '') IS NULL
+       OR NULLIF(@Contrasena, '') IS NULL
+        RETURN;
+
+    SELECT TOP (1)
+        u.IdUsuario,
+        u.NombreCompleto,
+        u.Correo,
+        u.Puesto,
+        areaPrincipal.IdArea,
+        areaPrincipal.Area,
+        CONVERT(BIT, CASE WHEN EXISTS
+        (
+            SELECT 1
+            FROM dbo.Config_Aprobador_Area AS ca
+            WHERE ca.IdUsuarioAprobador = u.IdUsuario
+              AND (ca.FechaInicio IS NULL OR ca.FechaInicio <= CONVERT(DATE, SYSDATETIME()))
+              AND (ca.FechaFin IS NULL OR ca.FechaFin >= CONVERT(DATE, SYSDATETIME()))
+        ) THEN 1 ELSE 0 END) AS EsAprobador,
+        CONVERT(BIT, CASE WHEN EXISTS
+        (
+            SELECT 1
+            FROM dbo.Usuario_Area AS ua
+            WHERE ua.IdUsuario = u.IdUsuario
+              AND ISNULL(ua.PuedeSolicitar, 0) = 1
+              AND (ua.FechaInicio IS NULL OR ua.FechaInicio <= CONVERT(DATE, SYSDATETIME()))
+              AND (ua.FechaFin IS NULL OR ua.FechaFin >= CONVERT(DATE, SYSDATETIME()))
+        ) THEN 1 ELSE 0 END) AS PuedeSolicitar
+    FROM dbo.Usuario AS u
+    INNER JOIN dbo.Usuario_Credencial AS c ON c.IdUsuario = u.IdUsuario
+    LEFT JOIN dbo.Cat_Estado_General AS eg ON eg.IdEstadoGeneral = u.IdEstadoGeneral
+    OUTER APPLY
+    (
+        SELECT TOP (1) ua.IdArea, a.Nombre AS Area
+        FROM dbo.Usuario_Area AS ua
+        LEFT JOIN dbo.Cat_Area AS a ON a.IdArea = ua.IdArea
+        WHERE ua.IdUsuario = u.IdUsuario
+          AND (ua.FechaInicio IS NULL OR ua.FechaInicio <= CONVERT(DATE, SYSDATETIME()))
+          AND (ua.FechaFin IS NULL OR ua.FechaFin >= CONVERT(DATE, SYSDATETIME()))
+        ORDER BY ISNULL(ua.EsAreaPrincipal, 0) DESC, ua.IdUsuarioArea
+    ) AS areaPrincipal
+    WHERE (u.IdUsuario = @Usuario OR u.Correo = @Usuario)
+      AND c.Contrasena = @Contrasena
+      AND ISNULL(eg.EsActivo, 1) = 1;
+END;
 GO
 
 CREATE OR ALTER PROCEDURE dbo.usp_Usuario_Administracion_Listar

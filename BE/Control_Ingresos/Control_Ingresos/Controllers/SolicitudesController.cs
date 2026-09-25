@@ -20,8 +20,13 @@ public sealed class SolicitudesController(ISolicitudesRepository repository) : C
     [HttpGet]
     [ProducesResponseType<IReadOnlyCollection<SolicitudResumen>>(StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyCollection<SolicitudResumen>>> Listar(
-        CancellationToken cancellationToken) =>
-        Ok(await repository.ListarSolicitudesAsync(cancellationToken));
+        CancellationToken cancellationToken)
+    {
+        var usuario = CurrentUserId();
+        if (usuario is null) return Unauthorized();
+        var accesoTotal = User.IsInRole("Administrador") || User.IsInRole("Aprobador") || User.IsInRole("Seguridad") || User.IsInRole("Auditor");
+        return Ok(await repository.ListarSolicitudesAsync(usuario, accesoTotal, cancellationToken));
+    }
 
     [HttpGet("{id:long}")]
     [ProducesResponseType<SolicitudDetalle>(StatusCodes.Status200OK)]
@@ -38,11 +43,15 @@ public sealed class SolicitudesController(ISolicitudesRepository repository) : C
     }
 
     [HttpPost]
+    [Authorize(Roles = "Solicitante,Administrador")]
     [ProducesResponseType<IdCreadoResponse>(StatusCodes.Status201Created)]
     public async Task<ActionResult<IdCreadoResponse>> Crear(
         CrearSolicitudRequest request,
         CancellationToken cancellationToken)
     {
+        var idUsuario = CurrentUserId();
+        if (idUsuario is null) return Unauthorized();
+        request = request with { IdEstadoSolicitud = null, IdUsuarioSolicitante = idUsuario, Usuario = idUsuario };
         if (request.FechaInicio.HasValue &&
             request.FechaFin.HasValue &&
             request.FechaFin < request.FechaInicio)
@@ -65,7 +74,32 @@ public sealed class SolicitudesController(ISolicitudesRepository repository) : C
             creado);
     }
 
+    [HttpPost("completa")]
+    [Authorize(Roles = "Solicitante,Administrador")]
+    [ProducesResponseType<IdCreadoResponse>(StatusCodes.Status201Created)]
+    public async Task<ActionResult<IdCreadoResponse>> CrearCompleta(
+        CrearSolicitudCompletaRequest request,
+        CancellationToken cancellationToken)
+    {
+        var idUsuario = CurrentUserId();
+        if (idUsuario is null) return Unauthorized();
+        if (request.Solicitud.FechaInicio.HasValue && request.Solicitud.FechaFin < request.Solicitud.FechaInicio)
+        {
+            ModelState.AddModelError("fechaFin", "La fecha final no puede ser anterior a la fecha inicial.");
+            return ValidationProblem(ModelState);
+        }
+
+        var normalized = request with
+        {
+            Solicitud = request.Solicitud with { IdEstadoSolicitud = null, IdUsuarioSolicitante = idUsuario, Usuario = idUsuario },
+            Personas = request.Personas?.Select(person => person with { Usuario = idUsuario }).ToArray()
+        };
+        var created = await repository.CrearSolicitudCompletaAsync(normalized, cancellationToken);
+        return CreatedAtAction(nameof(Obtener), new { id = created.Id }, created);
+    }
+
     [HttpPut("{id:long}")]
+    [Authorize(Roles = "Solicitante,Administrador")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Actualizar(
@@ -73,6 +107,17 @@ public sealed class SolicitudesController(ISolicitudesRepository repository) : C
         CrearSolicitudRequest request,
         CancellationToken cancellationToken)
     {
+        var idUsuario = CurrentUserId();
+        if (idUsuario is null) return Unauthorized();
+        var existing = await repository.ObtenerSolicitudAsync(id, cancellationToken);
+        if (existing is null) return NotFound();
+        if (!User.IsInRole("Administrador") && existing.IdUsuarioSolicitante != idUsuario) return Forbid();
+        request = request with
+        {
+            IdEstadoSolicitud = existing.IdEstadoSolicitud,
+            IdUsuarioSolicitante = existing.IdUsuarioSolicitante ?? idUsuario,
+            Usuario = idUsuario
+        };
         if (request.FechaInicio.HasValue &&
             request.FechaFin.HasValue &&
             request.FechaFin < request.FechaInicio)
@@ -94,21 +139,18 @@ public sealed class SolicitudesController(ISolicitudesRepository repository) : C
     }
 
     [HttpDelete("{id:long}")]
+    [Authorize(Roles = "Solicitante,Administrador")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Eliminar(
         long id,
-        [FromQuery] string usuario,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(usuario))
-        {
-            return BadRequest(new ProblemDetails
-            {
-                Title = "Usuario requerido",
-                Detail = "Debe indicar el usuario que elimina la solicitud."
-            });
-        }
+        var usuario = CurrentUserId();
+        if (usuario is null) return Unauthorized();
+        var existing = await repository.ObtenerSolicitudAsync(id, cancellationToken);
+        if (existing is null) return NotFound();
+        if (!User.IsInRole("Administrador") && existing.IdUsuarioSolicitante != usuario) return Forbid();
 
         return await repository.EliminarSolicitudAsync(
             id,
@@ -119,12 +161,19 @@ public sealed class SolicitudesController(ISolicitudesRepository repository) : C
     }
 
     [HttpPost("{id:long}/personas")]
+    [Authorize(Roles = "Solicitante,Administrador")]
     [ProducesResponseType<IdCreadoResponse>(StatusCodes.Status201Created)]
     public async Task<ActionResult<IdCreadoResponse>> AgregarPersona(
         long id,
         AgregarPersonaSolicitudRequest request,
         CancellationToken cancellationToken)
     {
+        var usuario = CurrentUserId();
+        if (usuario is null) return Unauthorized();
+        var existing = await repository.ObtenerSolicitudAsync(id, cancellationToken);
+        if (existing is null) return NotFound();
+        if (!User.IsInRole("Administrador") && existing.IdUsuarioSolicitante != usuario) return Forbid();
+        request = request with { Usuario = usuario };
         var idSolicitudPersona = await repository.AgregarPersonaAsync(
             id,
             request,
@@ -134,6 +183,20 @@ public sealed class SolicitudesController(ISolicitudesRepository repository) : C
             nameof(Obtener),
             new { id },
             new IdCreadoResponse(idSolicitudPersona));
+    }
+
+    [HttpPost("{id:long}/enviar")]
+    [Authorize(Roles = "Solicitante,Administrador")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> Enviar(long id, CancellationToken cancellationToken)
+    {
+        var usuario = CurrentUserId();
+        if (usuario is null) return Unauthorized();
+        var existing = await repository.ObtenerSolicitudAsync(id, cancellationToken);
+        if (existing is null) return NotFound();
+        if (!User.IsInRole("Administrador") && existing.IdUsuarioSolicitante != usuario) return Forbid();
+        await repository.EnviarSolicitudAsync(id, usuario, cancellationToken);
+        return NoContent();
     }
 
     [HttpPost("personas-areas/{idSolicitudPersonaArea:long}/reenviar-aprobacion")]
@@ -146,4 +209,6 @@ public sealed class SolicitudesController(ISolicitudesRepository repository) : C
         await repository.ReenviarAprobacionAsync(idSolicitudPersonaArea, idUsuarioSolicitante, cancellationToken);
         return NoContent();
     }
+
+    private string? CurrentUserId() => User.FindFirstValue(ClaimTypes.NameIdentifier);
 }

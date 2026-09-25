@@ -33,7 +33,9 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
             GetNullable<int>(reader, 4),
             GetNullableString(reader, 5),
             reader.GetBoolean(6),
-            reader.GetBoolean(7));
+            reader.GetBoolean(7),
+            (GetNullableString(reader, 8) ?? string.Empty)
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
     }
 
     public async Task<PerfilUsuario?> ObtenerPerfilAsync(string idUsuario, CancellationToken cancellationToken)
@@ -86,7 +88,8 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
                 reader.GetBoolean(7),
                 reader.GetBoolean(8),
                 reader.GetBoolean(9),
-                GetNullable<DateTime>(reader, 10)));
+                GetNullable<DateTime>(reader, 10),
+                GetNullableString(reader, 11)));
         return items;
     }
 
@@ -105,8 +108,17 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
         Add(command, "@EsAprobador", SqlDbType.Bit, request.EsAprobador);
         Add(command, "@Activo", SqlDbType.Bit, request.Activo);
         Add(command, "@UsuarioCreacion", SqlDbType.VarChar, usuarioCreacion, 50);
-        return Convert.ToString(await command.ExecuteScalarAsync(cancellationToken))
+        var idUsuario = Convert.ToString(await command.ExecuteScalarAsync(cancellationToken))
             ?? throw new InvalidOperationException("No se recibió el identificador del usuario creado.");
+        if (request.EsSeguridad)
+        {
+            await using var roleCommand = StoredProcedure(connection, "dbo.usp_Usuario_Rol_Asignar");
+            Add(roleCommand, "@IdUsuario", SqlDbType.VarChar, idUsuario, 50);
+            Add(roleCommand, "@CodigoRol", SqlDbType.VarChar, "SEGURIDAD", 30);
+            Add(roleCommand, "@UsuarioAsignacion", SqlDbType.VarChar, usuarioCreacion, 50);
+            await roleCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+        return idUsuario;
     }
 
     public async Task<IReadOnlyCollection<CatalogoItem>> ListarCatalogoAsync(
@@ -339,8 +351,14 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
         Add(command, "@CodigoEstado", SqlDbType.VarChar, request.CodigoEstado, 30);
         Add(command, "@ComentarioDecision", SqlDbType.NVarChar, request.ComentarioDecision, 1000);
 
-        return Convert.ToInt64(
+        var idAprobacion = Convert.ToInt64(
             await command.ExecuteScalarAsync(cancellationToken));
+
+        await using var recalculate = StoredProcedure(connection, "dbo.usp_Solicitud_Estado_Recalcular");
+        Add(recalculate, "@IdSolicitudPersonaArea", SqlDbType.BigInt, idSolicitudPersonaArea);
+        Add(recalculate, "@IdUsuario", SqlDbType.VarChar, idUsuarioAprobador, 50);
+        await recalculate.ExecuteNonQueryAsync(cancellationToken);
+        return idAprobacion;
     }
 
     public async Task<IdCreadoResponse> CrearSolicitudAsync(
@@ -374,6 +392,43 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
         return new(
             reader.GetInt64(0),
             reader.GetString(1));
+    }
+
+    public async Task<IdCreadoResponse> CrearSolicitudCompletaAsync(
+        CrearSolicitudCompletaRequest request,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
+
+        try
+        {
+            var solicitud = request.Solicitud;
+            await using var createCommand = StoredProcedure(connection, "dbo.usp_Solicitud_Ingreso_Crear", transaction);
+            AddSolicitudParameters(createCommand, solicitud);
+
+            IdCreadoResponse created;
+            await using (var reader = await createCommand.ExecuteReaderAsync(cancellationToken))
+            {
+                await reader.ReadAsync(cancellationToken);
+                created = new(reader.GetInt64(0), reader.GetString(1));
+            }
+
+            foreach (var person in request.Personas ?? [])
+            {
+                await using var personCommand = StoredProcedure(connection, "dbo.usp_Solicitud_Persona_Agregar", transaction);
+                AddPersonaSolicitudParameters(personCommand, created.Id, person);
+                await personCommand.ExecuteScalarAsync(cancellationToken);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+            return created;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
     }
 
     public async Task<bool> ActualizarSolicitudAsync(
@@ -414,27 +469,7 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
         await using var connection = await OpenConnectionAsync(cancellationToken);
         await using var command = StoredProcedure(connection, "dbo.usp_Solicitud_Persona_Agregar");
 
-        Add(command, "@IdSolicitud", SqlDbType.BigInt, idSolicitud);
-        Add(command, "@IdPersona", SqlDbType.BigInt, request.IdPersona);
-        Add(command, "@IdEstadoPersonaSolicitud", SqlDbType.SmallInt, request.IdEstadoPersonaSolicitud);
-        Add(command, "@DatosCompletos", SqlDbType.Bit, request.DatosCompletos);
-        Add(command, "@ObservacionesRevision", SqlDbType.NVarChar, request.ObservacionesRevision, 1000);
-
-        Add(
-            command,
-            "@AreasJson",
-            SqlDbType.NVarChar,
-            request.Areas is null ? null : JsonSerializer.Serialize(request.Areas),
-            -1);
-
-        Add(
-            command,
-            "@RequerimientosJson",
-            SqlDbType.NVarChar,
-            request.Requerimientos is null ? null : JsonSerializer.Serialize(request.Requerimientos),
-            -1);
-
-        Add(command, "@Usuario", SqlDbType.VarChar, request.Usuario, 50);
+        AddPersonaSolicitudParameters(command, idSolicitud, request);
 
         return Convert.ToInt64(
             await command.ExecuteScalarAsync(cancellationToken));
@@ -449,10 +484,47 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyCollection<SolicitudResumen>> ListarSolicitudesAsync(CancellationToken cancellationToken)
+    public async Task EnviarSolicitudAsync(long idSolicitud, string idUsuario, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = StoredProcedure(connection, "dbo.usp_Solicitud_Enviar");
+        Add(command, "@IdSolicitud", SqlDbType.BigInt, idSolicitud);
+        Add(command, "@IdUsuario", SqlDbType.VarChar, idUsuario, 50);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyCollection<RegistroIngresoResumen>> ListarRegistrosIngresoAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = StoredProcedure(connection, "dbo.usp_Registro_Ingreso_Listar");
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var items = new List<RegistroIngresoResumen>();
+        while (await reader.ReadAsync(cancellationToken))
+            items.Add(new(
+                reader.GetInt64(0), reader.GetInt64(1), GetNullableString(reader, 2),
+                GetNullableString(reader, 3), reader.GetInt64(4), GetNullableString(reader, 5),
+                GetNullableString(reader, 6), reader.GetString(7), reader.GetDateTime(8),
+                GetNullableString(reader, 9), GetNullableString(reader, 10), GetNullableString(reader, 11)));
+        return items;
+    }
+
+    public async Task<long> RegistrarIngresoAsync(RegistrarIngresoRequest request, string idUsuarioSeguridad, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = StoredProcedure(connection, "dbo.usp_Registro_Ingreso_Registrar");
+        Add(command, "@IdPersona", SqlDbType.BigInt, request.IdPersona);
+        Add(command, "@TipoMovimiento", SqlDbType.VarChar, request.TipoMovimiento, 10);
+        Add(command, "@IdUsuarioSeguridad", SqlDbType.VarChar, idUsuarioSeguridad, 50);
+        Add(command, "@Observaciones", SqlDbType.NVarChar, request.Observaciones, 500);
+        return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken));
+    }
+
+    public async Task<IReadOnlyCollection<SolicitudResumen>> ListarSolicitudesAsync(string idUsuario, bool accesoTotal, CancellationToken cancellationToken)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
         await using var command = StoredProcedure(connection, "dbo.usp_Solicitud_Ingreso_Listar");
+        Add(command, "@IdUsuario", SqlDbType.VarChar, idUsuario, 50);
+        Add(command, "@AccesoTotal", SqlDbType.Bit, accesoTotal);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
         var items = new List<SolicitudResumen>();
@@ -632,11 +704,25 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
 
     private static SqlCommand StoredProcedure(
         SqlConnection connection,
-        string name) =>
+        string name,
+        SqlTransaction? transaction = null) =>
         new(name, connection)
         {
-            CommandType = CommandType.StoredProcedure
+            CommandType = CommandType.StoredProcedure,
+            Transaction = transaction
         };
+
+    private static void AddPersonaSolicitudParameters(SqlCommand command, long idSolicitud, AgregarPersonaSolicitudRequest request)
+    {
+        Add(command, "@IdSolicitud", SqlDbType.BigInt, idSolicitud);
+        Add(command, "@IdPersona", SqlDbType.BigInt, request.IdPersona);
+        Add(command, "@IdEstadoPersonaSolicitud", SqlDbType.SmallInt, request.IdEstadoPersonaSolicitud);
+        Add(command, "@DatosCompletos", SqlDbType.Bit, request.DatosCompletos);
+        Add(command, "@ObservacionesRevision", SqlDbType.NVarChar, request.ObservacionesRevision, 1000);
+        Add(command, "@AreasJson", SqlDbType.NVarChar, request.Areas is null ? null : JsonSerializer.Serialize(request.Areas), -1);
+        Add(command, "@RequerimientosJson", SqlDbType.NVarChar, request.Requerimientos is null ? null : JsonSerializer.Serialize(request.Requerimientos), -1);
+        Add(command, "@Usuario", SqlDbType.VarChar, request.Usuario, 50);
+    }
 
     private static void AddSolicitudParameters(
         SqlCommand command,

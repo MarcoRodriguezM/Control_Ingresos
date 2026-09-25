@@ -4,7 +4,7 @@ import { formatDateTime, initials } from '../utils/formatters'
 
 const initialForm = {
   idUsuario: '', nombreCompleto: '', correo: '', telefono: '', puesto: '', contrasena: '',
-  idArea: '', puedeSolicitar: true, esAprobador: false, activo: true,
+  idArea: '', puedeSolicitar: true, esAprobador: false, esSeguridad: false, activo: true,
 }
 
 export function UserManagementPage({ items, loading, areas, onCreate }) {
@@ -40,6 +40,7 @@ export function UserManagementPage({ items, loading, areas, onCreate }) {
       idArea: numberOrNull(form.idArea),
       puedeSolicitar: form.puedeSolicitar,
       esAprobador: form.esAprobador,
+      esSeguridad: form.esSeguridad,
       activo: form.activo,
     })
     setSaving(false)
@@ -68,6 +69,7 @@ export function UserManagementPage({ items, loading, areas, onCreate }) {
       <div className="user-permissions">
         <Check name="puedeSolicitar" checked={form.puedeSolicitar} onChange={change} label="Puede crear solicitudes" description="Permite registrar solicitudes de ingreso para su área." />
         <Check name="esAprobador" checked={form.esAprobador} onChange={change} label="Es aprobador" description="Permite aprobar accesos y administrar actividades y usuarios." />
+        <Check name="esSeguridad" checked={form.esSeguridad} onChange={change} label="Personal de seguridad" description="Permite validar autorizaciones y registrar entradas y salidas." />
         <Check name="activo" checked={form.activo} onChange={change} label="Usuario activo" description="Permite iniciar sesión inmediatamente." />
       </div>
       <div className="form-footer"><button type="button" className="ghost-button" onClick={() => setShowForm(false)}>Cancelar</button><button type="submit" className="primary-button teal" disabled={saving}>{saving ? 'Guardando…' : 'Crear usuario'}</button></div>
@@ -87,7 +89,7 @@ export function UserManagementPage({ items, loading, areas, onCreate }) {
             <td><div className="user-cell"><span className="person-avatar">{initials(item.nombreCompleto)}</span><span><strong>{item.nombreCompleto || item.idUsuario}</strong><small>{item.idUsuario}</small></span></div></td>
             <td>{item.correo || '—'}<span className="cell-sub">{item.telefono || 'Sin teléfono'}</span></td>
             <td>{item.area || 'Sin área'}<span className="cell-sub">{item.puesto || 'Sin puesto'}</span></td>
-            <td><div className="user-role-list">{item.puedeSolicitar && <span>Solicitante</span>}{item.esAprobador && <span>Aprobador</span>}{!item.puedeSolicitar && !item.esAprobador && <span className="muted">Usuario</span>}</div></td>
+            <td><div className="user-role-list">{(item.roles?.split(',') ?? []).map((role) => <span key={role}>{role}</span>)}{!item.roles && <span className="muted">Usuario</span>}</div></td>
             <td><span className={`access-status ${item.activo ? 'approved' : 'rejected'}`}>{item.activo ? 'Activo' : 'Inactivo'}</span></td>
             <td>{formatDateTime(item.fechaCreacion)}</td>
           </tr>)}

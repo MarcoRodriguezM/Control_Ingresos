@@ -7,7 +7,7 @@ using System.Security.Claims;
 namespace Control_Ingresos.Controllers;
 
 [ApiController]
-[Authorize(Roles = "Aprobador")]
+[Authorize(Roles = "Aprobador,Administrador")]
 [Route("api/aprobaciones")]
 public sealed class AprobacionesController(ISolicitudesRepository repository) : ControllerBase
 {

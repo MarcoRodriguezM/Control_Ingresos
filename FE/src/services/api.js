@@ -1,4 +1,4 @@
-const API_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:5250').replace(/\/$/, '')
+const API_URL = (import.meta.env.VITE_API_URL ?? 'https://localhost:7230').replace(/\/$/, '')
 
 async function request(path, options = {}) {
   const response = await fetch(`${API_URL}${path}`, {
@@ -82,6 +82,11 @@ export const controlIngresosApi = {
     method: 'POST',
     body: JSON.stringify(solicitud),
   }),
+  crearSolicitudCompleta: (payload) => request('/api/solicitudes/completa', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+  enviarSolicitud: (id) => request(`/api/solicitudes/${id}/enviar`, { method: 'POST' }),
 
   actualizarSolicitud: (id, solicitud) =>
     request(`/api/solicitudes/${id}`, {
@@ -89,17 +94,16 @@ export const controlIngresosApi = {
       body: JSON.stringify(solicitud),
     }),
 
-  eliminarSolicitud: (id, usuario) =>
-    request(
-      `/api/solicitudes/${id}?usuario=${encodeURIComponent(usuario)}`,
-      {
-        method: 'DELETE',
-      },
-    ),
+  eliminarSolicitud: (id) => request(`/api/solicitudes/${id}`, { method: 'DELETE' }),
 
   agregarPersonaSolicitud: (idSolicitud, persona) =>
     request(`/api/solicitudes/${idSolicitud}/personas`, {
       method: 'POST',
       body: JSON.stringify(persona),
     }),
+  listarMovimientosIngreso: () => request('/api/control-accesos/movimientos'),
+  registrarMovimientoIngreso: (movimiento) => request('/api/control-accesos/movimientos', {
+    method: 'POST',
+    body: JSON.stringify(movimiento),
+  }),
 }
