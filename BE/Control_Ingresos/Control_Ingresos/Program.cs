@@ -58,6 +58,11 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+await DatabaseProcedureInstaller.EnsureInstalledAsync(
+    builder.Configuration,
+    app.Logger,
+    app.Lifetime.ApplicationStopping);
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
@@ -66,6 +71,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+app.UseStaticFiles();
 
 app.UseExceptionHandler();
 

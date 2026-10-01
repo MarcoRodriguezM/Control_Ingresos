@@ -15,3 +15,7 @@ dist/
 # Environment
 .env
 .env.local
+
+# Fotografías cargadas en ejecución
+BE/Control_Ingresos/Control_Ingresos/wwwroot/uploads/personas/*
+!BE/Control_Ingresos/Control_Ingresos/wwwroot/uploads/personas/.gitkeep

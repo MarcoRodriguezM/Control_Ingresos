@@ -93,6 +93,54 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
         return items;
     }
 
+    public async Task<UsuarioAdministracionDetalle?> ObtenerUsuarioAsync(
+        string idUsuario,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = StoredProcedure(connection, "dbo.usp_Usuario_Administracion_Obtener");
+        Add(command, "@IdUsuario", SqlDbType.VarChar, idUsuario, 50);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+
+        var usuario = new UsuarioAdministracionDetalle(
+            reader.GetString(0),
+            GetNullableString(reader, 1),
+            GetNullableString(reader, 2),
+            GetNullableString(reader, 3),
+            GetNullableString(reader, 4),
+            GetNullableString(reader, 5),
+            reader.GetBoolean(6),
+            GetNullable<DateTime>(reader, 7),
+            GetNullableString(reader, 8),
+            GetNullable<DateTime>(reader, 9),
+            GetNullableString(reader, 10),
+            GetNullableString(reader, 11),
+            []);
+
+        var areas = new List<AreaUsuarioAdministracion>();
+        if (await reader.NextResultAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                areas.Add(new(
+                    reader.GetInt32(0),
+                    GetNullableString(reader, 1),
+                    GetNullableString(reader, 2),
+                    reader.GetBoolean(3),
+                    reader.GetBoolean(4),
+                    reader.GetBoolean(5),
+                    reader.GetBoolean(6),
+                    GetNullableDateOnly(reader, 7),
+                    GetNullableDateOnly(reader, 8),
+                    reader.GetBoolean(9)));
+            }
+        }
+
+        return usuario with { Areas = areas };
+    }
+
     public async Task<string> CrearUsuarioAsync(CrearUsuarioRequest request, string usuarioCreacion, CancellationToken cancellationToken)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
@@ -119,6 +167,28 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
             await roleCommand.ExecuteNonQueryAsync(cancellationToken);
         }
         return idUsuario;
+    }
+
+    public async Task<bool> ActualizarUsuarioAsync(
+        string idUsuario,
+        ActualizarUsuarioRequest request,
+        string usuarioModificacion,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = StoredProcedure(connection, "dbo.usp_Usuario_Actualizar");
+        Add(command, "@IdUsuario", SqlDbType.VarChar, idUsuario, 50);
+        Add(command, "@NombreCompleto", SqlDbType.NVarChar, request.NombreCompleto, 200);
+        Add(command, "@Correo", SqlDbType.VarChar, request.Correo, 254);
+        Add(command, "@Telefono", SqlDbType.VarChar, request.Telefono, 30);
+        Add(command, "@Puesto", SqlDbType.NVarChar, request.Puesto, 150);
+        Add(command, "@IdArea", SqlDbType.Int, request.IdArea);
+        Add(command, "@PuedeSolicitar", SqlDbType.Bit, request.PuedeSolicitar);
+        Add(command, "@EsAprobador", SqlDbType.Bit, request.EsAprobador);
+        Add(command, "@EsSeguridad", SqlDbType.Bit, request.EsSeguridad);
+        Add(command, "@Activo", SqlDbType.Bit, request.Activo);
+        Add(command, "@UsuarioModificacion", SqlDbType.VarChar, usuarioModificacion, 50);
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken)) > 0;
     }
 
     public async Task<IReadOnlyCollection<CatalogoItem>> ListarCatalogoAsync(
@@ -327,6 +397,68 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
         }
 
         return persona with { Accesos = accesos };
+    }
+
+    public async Task<string?> ObtenerCodigoQrPersonaAsync(
+        long idPersona,
+        string idUsuario,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = StoredProcedure(connection, "dbo.usp_Persona_Qr_Obtener");
+
+        Add(command, "@IdPersona", SqlDbType.BigInt, idPersona);
+        Add(command, "@IdUsuario", SqlDbType.VarChar, idUsuario, 50);
+
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is null or DBNull ? null : Convert.ToString(result);
+    }
+
+    public async Task<PersonaQrDetalle?> ConsultarPersonaQrAsync(
+        string codigoQr,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = StoredProcedure(connection, "dbo.usp_Persona_Qr_Consultar");
+        Add(command, "@CodigoQr", SqlDbType.VarChar, codigoQr.Trim().ToLowerInvariant(), 64);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+
+        var persona = new PersonaQrDetalle(
+            reader.GetInt64(0),
+            GetNullableString(reader, 1),
+            GetNullableString(reader, 2),
+            GetNullableString(reader, 3),
+            GetNullableString(reader, 4),
+            GetNullableString(reader, 5),
+            GetNullableString(reader, 6),
+            GetNullableString(reader, 7),
+            GetNullableString(reader, 8),
+            []);
+
+        var areas = new List<AreaAccesoQr>();
+        if (await reader.NextResultAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                areas.Add(new(
+                    reader.GetInt32(0),
+                    GetNullableString(reader, 1),
+                    GetNullableString(reader, 2),
+                    GetNullableString(reader, 3),
+                    GetNullableString(reader, 4),
+                    reader.GetBoolean(5),
+                    GetNullableString(reader, 6),
+                    GetNullableString(reader, 7),
+                    GetNullableString(reader, 8),
+                    GetNullableDateOnly(reader, 9),
+                    GetNullableDateOnly(reader, 10),
+                    GetNullableString(reader, 11)));
+            }
+        }
+
+        return persona with { Areas = areas };
     }
 
     public async Task<IReadOnlyCollection<AprobacionResumen>> ListarAprobacionesAsync(
@@ -713,7 +845,13 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
                     GetNullableString(reader, 2),
                     GetNullableString(reader, 3),
                     GetNullable<short>(reader, 4),
-                    GetNullable<bool>(reader, 5)));
+                    GetNullable<bool>(reader, 5),
+                    GetNullableString(reader, 6),
+                    GetNullableString(reader, 7),
+                    reader.GetInt32(8),
+                    reader.GetInt32(9),
+                    reader.GetInt32(10),
+                    GetNullableString(reader, 11)));
             }
         }
 

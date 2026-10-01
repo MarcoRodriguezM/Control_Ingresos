@@ -7,7 +7,6 @@ const initialForm = {
   idTipoDocumento: '',
   numeroDocumento: '',
   nombreCompleto: '',
-  fotografiaUrl: '',
   telefono: '',
   correo: '',
   cargoFuncion: '',
@@ -20,6 +19,8 @@ const initialForm = {
 export function PersonFormPage({ session, providers = [], onCancel, onCreated, onError }) {
   const [form, setForm] = useState(initialForm)
   const [catalogs, setCatalogs] = useState({ documentTypes: [], statuses: [] })
+  const [photograph, setPhotograph] = useState(null)
+  const [photographPreview, setPhotographPreview] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
@@ -46,9 +47,39 @@ export function PersonFormPage({ session, providers = [], onCancel, onCreated, o
     return () => { active = false }
   }, [onError])
 
+  useEffect(() => () => {
+    if (photographPreview) URL.revokeObjectURL(photographPreview)
+  }, [photographPreview])
+
   function change(event) {
     const { name, value } = event.target
     setForm((current) => ({ ...current, [name]: value }))
+  }
+
+  function changePhotograph(event) {
+    const file = event.target.files?.[0] ?? null
+    onError('')
+
+    if (!file) {
+      setPhotograph(null)
+      setPhotographPreview('')
+      return
+    }
+
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      event.target.value = ''
+      onError('La fotografía debe estar en formato JPG, PNG o WebP.')
+      return
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      event.target.value = ''
+      onError('La fotografía no puede superar los 5 MB.')
+      return
+    }
+
+    setPhotograph(file)
+    setPhotographPreview(URL.createObjectURL(file))
   }
 
   async function submit(event) {
@@ -62,11 +93,15 @@ export function PersonFormPage({ session, providers = [], onCancel, onCreated, o
 
     setSaving(true)
     try {
+      const uploadedPhotograph = photograph
+        ? await controlIngresosApi.subirFotografiaPersona(photograph)
+        : null
+
       const created = await controlIngresosApi.crearPersona({
         idTipoDocumento: numberOrNull(form.idTipoDocumento),
         numeroDocumento: form.numeroDocumento.trim(),
         nombreCompleto: form.nombreCompleto.trim(),
-        fotografiaUrl: textOrNull(form.fotografiaUrl),
+        fotografiaUrl: uploadedPhotograph?.url ?? null,
         telefono: textOrNull(form.telefono),
         correo: textOrNull(form.correo),
         cargoFuncion: textOrNull(form.cargoFuncion),
@@ -124,8 +159,28 @@ export function PersonFormPage({ session, providers = [], onCancel, onCreated, o
         <Field label="Empresa">
           <input name="empresaTexto" maxLength="200" value={form.empresaTexto} onChange={change} placeholder="Nombre de la empresa" />
         </Field>
-        <Field label="URL de fotografía" full>
-          <input type="url" name="fotografiaUrl" maxLength="500" value={form.fotografiaUrl} onChange={change} placeholder="https://..." />
+        <Field label="Fotografía" full>
+          <div className="photograph-picker">
+            <div className={`photograph-preview ${photographPreview ? 'has-image' : ''}`}>
+              {photographPreview
+                ? <img src={photographPreview} alt="Vista previa de la fotografía seleccionada" />
+                : <Icon name="user" />}
+            </div>
+            <div className="photograph-picker-copy">
+              <label className="photograph-button" htmlFor="person-photograph">
+                <Icon name="file" />
+                {photograph ? 'Cambiar fotografía' : 'Seleccionar fotografía'}
+              </label>
+              <input
+                id="person-photograph"
+                className="photograph-input"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={changePhotograph}
+              />
+              <span>{photograph ? photograph.name : 'JPG, PNG o WebP. Tamaño máximo: 5 MB.'}</span>
+            </div>
+          </div>
         </Field>
         <Field label="Información adicional" full>
           <textarea name="informacionAdicional" maxLength="1000" value={form.informacionAdicional} onChange={change} placeholder="Observaciones relevantes sobre la persona" />

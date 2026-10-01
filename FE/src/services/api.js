@@ -1,12 +1,13 @@
 const API_URL = (import.meta.env.VITE_API_URL ?? 'https://localhost:7230').replace(/\/$/, '')
 
 async function request(path, options = {}) {
+  const bodyIsFormData = options.body instanceof FormData
   const response = await fetch(`${API_URL}${path}`, {
     ...options,
     credentials: 'include',
     headers: {
       Accept: 'application/json',
-      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(options.body && !bodyIsFormData ? { 'Content-Type': 'application/json' } : {}),
       ...options.headers,
     },
   })
@@ -49,8 +50,13 @@ export const controlIngresosApi = {
   cerrarSesion: () => request('/api/autenticacion/logout', { method: 'POST' }),
   obtenerMiPerfil: () => request('/api/autenticacion/perfil'),
   listarUsuarios: () => request('/api/usuarios'),
+  obtenerUsuario: (idUsuario) => request(`/api/usuarios/${encodeURIComponent(idUsuario)}`),
   crearUsuario: (usuario) => request('/api/usuarios', {
     method: 'POST',
+    body: JSON.stringify(usuario),
+  }),
+  actualizarUsuario: (idUsuario, usuario) => request(`/api/usuarios/${encodeURIComponent(idUsuario)}`, {
+    method: 'PUT',
     body: JSON.stringify(usuario),
   }),
   listarCatalogo: (catalogo) => request(`/api/catalogos/${encodeURIComponent(catalogo)}`),
@@ -63,9 +69,19 @@ export const controlIngresosApi = {
     method: 'POST',
     body: JSON.stringify(persona),
   }),
+  subirFotografiaPersona: (archivo) => {
+    const formData = new FormData()
+    formData.append('archivo', archivo)
+    return request('/api/personas/fotografia', {
+      method: 'POST',
+      body: formData,
+    })
+  },
   listarPersonas: () => request('/api/personas'),
   listarPersonasConAccesos: () => request('/api/personas/accesos'),
   obtenerPersonaAccesos: (id) => request(`/api/personas/${id}/accesos`),
+  obtenerQrPersona: (id) => request(`/api/personas/${id}/qr`),
+  consultarQrPersona: (codigoQr) => request(`/api/personas/qr/${encodeURIComponent(codigoQr)}`),
   listarAprobaciones: () => request('/api/aprobaciones'),
   listarMisActividades: () => request('/api/actividades/mias'),
   decidirAprobacion: (idSolicitudPersonaArea, decision) => request(`/api/aprobaciones/${idSolicitudPersonaArea}/decision`, {
@@ -102,9 +118,4 @@ export const controlIngresosApi = {
       method: 'POST',
       body: JSON.stringify(persona),
     }),
-  listarMovimientosIngreso: () => request('/api/control-accesos/movimientos'),
-  registrarMovimientoIngreso: (movimiento) => request('/api/control-accesos/movimientos', {
-    method: 'POST',
-    body: JSON.stringify(movimiento),
-  }),
 }

@@ -7,7 +7,6 @@ BEGIN
     ALTER TABLE dbo.Usuario_Credencial ADD Contrasena VARCHAR(200) NULL;
 END;
 GO
-
 ALTER TABLE dbo.Usuario_Credencial ALTER COLUMN PasswordHash VARBINARY(32) NULL;
 GO
 
@@ -135,3 +134,4 @@ BEGIN
     SELECT @IdUsuario;
 END;
 GO
+

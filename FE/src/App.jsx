@@ -4,17 +4,21 @@ import { Icon } from './components/Icon'
 import { AlertModal } from './components/AlertModal'
 import auraLogo from './assets/logo-aura.png'
 import {
-  AccessControlPage,
   ApprovalsPage,
   DashboardPage,
   LoginPage,
   MyActivitiesPage,
   PersonAccessPage,
   PersonFormPage,
+  PersonQrPage,
   ProfilePage,
+  QrScannerPage,
   RequestApprovalDetailPage,
   RequestFormPage,
   RequestsListPage,
+  UserDetailPage,
+  UserEditPage,
+  UserFormPage,
   UserManagementPage,
 } from './pages'
 import { controlIngresosApi } from './services/api'
@@ -33,13 +37,22 @@ const initialForm = () => ({
 
 function App() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [session, setSession] = useState(readSession)
+
+  useEffect(() => {
+    if (!session && location.pathname !== '/login') {
+      sessionStorage.setItem('control-ingresos-return-to', `${location.pathname}${location.search}`)
+    }
+  }, [session, location.pathname, location.search])
 
   async function login(credentials) {
     const authenticatedUser = await controlIngresosApi.iniciarSesion(credentials)
     localStorage.setItem(sessionKey, JSON.stringify(authenticatedUser))
     setSession(authenticatedUser)
-    navigate('/dashboard', { replace: true })
+    const returnTo = sessionStorage.getItem('control-ingresos-return-to') || '/dashboard'
+    sessionStorage.removeItem('control-ingresos-return-to')
+    navigate(returnTo, { replace: true })
   }
 
   async function logout() {
@@ -69,17 +82,20 @@ function AuthenticatedApp({ session, onLogout }) {
   const navigate = useNavigate()
   const isAdministrator = hasRole(session, 'Administrador')
   const canApprove = isAdministrator || hasRole(session, 'Aprobador')
-  const canUseGate = isAdministrator || hasRole(session, 'Seguridad')
   const editRoute = matchPath('/solicitudes/:id/editar', location.pathname)
+  const personQrRoute = matchPath('/personas/:idPersona/qr', location.pathname)
   const personRoute = matchPath('/personas/:idPersona', location.pathname)
   const isNewPersonRoute = location.pathname === '/personas/nueva'
   const approvalDetailRoute = matchPath('/aprobaciones/:idSolicitudPersonaArea/detalle', location.pathname)
   const isPersonsRoute = location.pathname.startsWith('/personas')
+  const isQrScannerRoute = location.pathname === '/escanear-qr'
   const isRequestsRoute = location.pathname.startsWith('/solicitudes')
   const isApprovalsRoute = location.pathname.startsWith('/aprobaciones')
   const isActivitiesRoute = location.pathname === '/mis-actividades'
-  const isUsersRoute = location.pathname === '/usuarios'
-  const isAccessControlRoute = location.pathname === '/control-accesos'
+  const isUsersRoute = location.pathname.startsWith('/usuarios')
+  const isNewUserRoute = location.pathname === '/usuarios/nuevo'
+  const userEditRoute = matchPath('/usuarios/:idUsuario/editar', location.pathname)
+  const userDetailRoute = !isNewUserRoute && !userEditRoute ? matchPath('/usuarios/:idUsuario', location.pathname) : null
   const isProfileRoute = location.pathname === '/perfil'
   const isDashboardRoute = location.pathname === '/dashboard' || location.pathname === '/'
   const [step, setStep] = useState(1)
@@ -97,9 +113,6 @@ function AuthenticatedApp({ session, onLogout }) {
   const [actividades, setActividades] = useState([])
   const [activitiesLoading, setActivitiesLoading] = useState(false)
   const [usuarios, setUsuarios] = useState([])
-  const [movements, setMovements] = useState([])
-  const [gateLoading, setGateLoading] = useState(false)
-  const [gateSaving, setGateSaving] = useState(false)
   const [usersLoading, setUsersLoading] = useState(false)
   const [profile, setProfile] = useState(null)
   const [profileLoading, setProfileLoading] = useState(true)
@@ -157,7 +170,16 @@ function AuthenticatedApp({ session, onLogout }) {
   }, [location.pathname, options, editRoute?.params.id, editingId])
 
   useEffect(() => {
-    if (!isPersonsRoute || isNewPersonRoute) return
+    if (!isRequestsRoute) return
+    let active = true
+    controlIngresosApi.listarSolicitudes()
+      .then((records) => active && setSolicitudes(records))
+      .catch((requestError) => active && setError(requestError.message))
+    return () => { active = false }
+  }, [isRequestsRoute])
+
+  useEffect(() => {
+    if (!isPersonsRoute || isNewPersonRoute || personQrRoute) return
     let active = true
     const load = async () => {
       await Promise.resolve()
@@ -186,7 +208,7 @@ function AuthenticatedApp({ session, onLogout }) {
     }
     load()
     return () => { active = false }
-  }, [isPersonsRoute, isNewPersonRoute, personRoute?.params.idPersona, session.idUsuario])
+  }, [isPersonsRoute, isNewPersonRoute, personQrRoute, personRoute?.params.idPersona, session.idUsuario])
 
   useEffect(() => {
     if ((!isApprovalsRoute && !isDashboardRoute) || !canApprove) return
@@ -250,17 +272,6 @@ function AuthenticatedApp({ session, onLogout }) {
     load()
     return () => { active = false }
   }, [isUsersRoute, isAdministrator])
-
-  useEffect(() => {
-    if (!isAccessControlRoute || !canUseGate) return
-    let active = true
-    setGateLoading(true)
-    controlIngresosApi.listarMovimientosIngreso()
-      .then((records) => active && setMovements(records))
-      .catch((requestError) => active && setError(requestError.message))
-      .finally(() => active && setGateLoading(false))
-    return () => { active = false }
-  }, [isAccessControlRoute, canUseGate])
 
   useEffect(() => {
     if (!isProfileRoute) return
@@ -433,7 +444,12 @@ function AuthenticatedApp({ session, onLogout }) {
     }
 
     try {
-      setAprobaciones(await controlIngresosApi.listarAprobaciones())
+      const [approvalRecords, requestRecords] = await Promise.all([
+        controlIngresosApi.listarAprobaciones(),
+        controlIngresosApi.listarSolicitudes(),
+      ])
+      setAprobaciones(approvalRecords)
+      setSolicitudes(requestRecords)
     } catch (requestError) {
       setError(requestError.message)
     }
@@ -463,7 +479,8 @@ function AuthenticatedApp({ session, onLogout }) {
       ])
       setUsuarios(records)
       setOptions(refreshedOptions)
-      showSuccessAlert('El usuario fue creado correctamente.')
+      await showSuccessAlert('El usuario fue creado correctamente.')
+      navigate('/usuarios')
       return { success: true }
     } catch (requestError) {
       setError(requestError.message)
@@ -471,19 +488,17 @@ function AuthenticatedApp({ session, onLogout }) {
     }
   }
 
-  async function registerMovement(movement) {
-    setGateSaving(true)
+  async function updateUser(idUsuario, user) {
     setError('')
     try {
-      await controlIngresosApi.registrarMovimientoIngreso(movement)
-      setMovements(await controlIngresosApi.listarMovimientosIngreso())
-      showSuccessAlert(`${movement.tipoMovimiento === 'ENTRADA' ? 'Entrada' : 'Salida'} registrada correctamente.`)
+      await controlIngresosApi.actualizarUsuario(idUsuario, user)
+      setUsuarios(await controlIngresosApi.listarUsuarios())
+      await showSuccessAlert('El usuario fue actualizado correctamente.')
+      navigate(`/usuarios/${encodeURIComponent(idUsuario)}`)
       return { success: true }
     } catch (requestError) {
       setError(requestError.message)
       return { success: false, message: requestError.message }
-    } finally {
-      setGateSaving(false)
     }
   }
 
@@ -604,7 +619,7 @@ function AuthenticatedApp({ session, onLogout }) {
           {canApprove && <Nav icon="check" label="Mis aprobaciones" count={aprobaciones.filter((item) => item.codigoEstado === 'PENDIENTE').length || undefined} active={isApprovalsRoute} onClick={() => { navigate('/aprobaciones'); setMenuOpen(false); setError('') }} />}
           <Nav icon="tasks" label="Mis actividades" count={actividades.filter((item) => !item.esEstadoFinal).length || undefined} active={isActivitiesRoute} onClick={() => { navigate('/mis-actividades'); setMenuOpen(false); setError('') }} />
           <Nav icon="users" label="Personas" count={personas.length || undefined} active={isPersonsRoute} onClick={openPersons} />
-          {canUseGate && <Nav icon="shield" label="Control de accesos" active={isAccessControlRoute} onClick={() => { navigate('/control-accesos'); setMenuOpen(false); setError('') }} />}
+          <Nav icon="qr" label="Escanear QR" active={isQrScannerRoute} onClick={() => { navigate('/escanear-qr'); setMenuOpen(false); setError('') }} />
           {isAdministrator && <Nav icon="settings" label="Usuarios" count={usuarios.length || undefined} active={isUsersRoute} onClick={() => { navigate('/usuarios'); setMenuOpen(false); setError('') }} />}
         </nav>
         <div className="sidebar-footer">
@@ -617,7 +632,7 @@ function AuthenticatedApp({ session, onLogout }) {
           <button className="icon-button menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label="Abrir menú"><Icon name="menu" /></button>
           <div className="breadcrumb">
             <Link to="/dashboard" onClick={() => { setError(''); setMenuOpen(false) }}>Inicio</Link>
-            <strong>{approvalDetailRoute ? 'Detalle de solicitud' : isDashboardRoute ? 'Dashboard' : isProfileRoute ? 'Mi perfil' : isAccessControlRoute ? 'Control de accesos' : isUsersRoute ? 'Usuarios' : isActivitiesRoute ? 'Mis actividades' : isApprovalsRoute ? 'Mis aprobaciones' : isNewPersonRoute ? 'Nueva persona' : isPersonsRoute ? 'Personas y accesos' : editRoute ? 'Editar solicitud' : location.pathname === '/solicitudes/nueva' ? 'Nueva solicitud' : 'Solicitudes'}</strong>
+            <strong>{approvalDetailRoute ? 'Detalle de solicitud' : isDashboardRoute ? 'Dashboard' : isProfileRoute ? 'Mi perfil' : isNewUserRoute ? 'Crear usuario' : userEditRoute ? 'Editar usuario' : userDetailRoute ? 'Detalle del usuario' : isUsersRoute ? 'Usuarios' : isActivitiesRoute ? 'Mis actividades' : isApprovalsRoute ? 'Mis aprobaciones' : isQrScannerRoute ? 'Escanear QR' : personQrRoute ? 'QR de la persona' : isNewPersonRoute ? 'Nueva persona' : isPersonsRoute ? 'Personas y accesos' : editRoute ? 'Editar solicitud' : location.pathname === '/solicitudes/nueva' ? 'Nueva solicitud' : 'Solicitudes'}</strong>
           </div>
           <div className="top-actions">
             {/* <button className="ghost-button"><Icon name="help" />Ayuda</button> */}
@@ -630,15 +645,19 @@ function AuthenticatedApp({ session, onLogout }) {
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<DashboardPage session={{ ...session, esAprobador: canApprove }} requests={solicitudes} approvals={aprobaciones} loading={loading} approvalsLoading={approvalsLoading} onNew={openNew} onRequests={() => navigate('/solicitudes')} onRequest={openEdit} onApprovals={() => navigate('/aprobaciones')} onPersons={openPersons} />} />
             <Route path="/mis-actividades" element={<MyActivitiesPage items={actividades} loading={activitiesLoading} onRequest={openEdit} onComplete={completeActivity} />} />
-            <Route path="/usuarios" element={isAdministrator ? <UserManagementPage items={usuarios} loading={usersLoading} areas={options?.areas ?? []} onCreate={createUser} /> : <Navigate to="/dashboard" replace />} />
-            <Route path="/control-accesos" element={canUseGate ? <AccessControlPage people={personas} movements={movements} loading={gateLoading} saving={gateSaving} onRegister={registerMovement} /> : <Navigate to="/dashboard" replace />} />
+            <Route path="/usuarios" element={isAdministrator ? <UserManagementPage items={usuarios} loading={usersLoading} onNew={() => { setError(''); navigate('/usuarios/nuevo') }} onSelect={(idUsuario) => { setError(''); navigate(`/usuarios/${encodeURIComponent(idUsuario)}`) }} /> : <Navigate to="/dashboard" replace />} />
+            <Route path="/usuarios/nuevo" element={isAdministrator ? <UserFormPage areas={options?.areas ?? []} onCreate={createUser} onCancel={() => { setError(''); navigate('/usuarios') }} /> : <Navigate to="/dashboard" replace />} />
+            <Route path="/usuarios/:idUsuario" element={isAdministrator ? <UserDetailPage idUsuario={userDetailRoute?.params.idUsuario ?? ''} onBack={() => { setError(''); navigate('/usuarios') }} onEdit={() => { setError(''); navigate(`/usuarios/${encodeURIComponent(userDetailRoute?.params.idUsuario ?? '')}/editar`) }} onError={setError} /> : <Navigate to="/dashboard" replace />} />
+            <Route path="/usuarios/:idUsuario/editar" element={isAdministrator ? <UserEditPage idUsuario={userEditRoute?.params.idUsuario ?? ''} areas={options?.areas ?? []} onUpdate={(user) => updateUser(userEditRoute?.params.idUsuario ?? '', user)} onCancel={() => { setError(''); navigate(`/usuarios/${encodeURIComponent(userEditRoute?.params.idUsuario ?? '')}`) }} onError={setError} /> : <Navigate to="/dashboard" replace />} />
             <Route path="/perfil" element={<ProfilePage profile={profile} loading={profileLoading} onOpenRequest={openEdit} />} />
             <Route path="/solicitudes" element={<RequestsListPage items={solicitudes} loading={loading} onNew={openNew} onEdit={openEdit} onDelete={remove} />} />
             <Route path="/solicitudes/nueva" element={<RequestFormPage form={form} options={options} people={personas} requestPeople={requestPeople} existingPeople={existingRequestPeople} peopleEntryMode={peopleEntryMode} loading={loading} saving={saving} editingId={null} step={step} selected={selected} canSend={canSendRequest} onPeopleEntryModeChange={(mode) => { setPeopleEntryMode(mode); if (mode === 'provider') setRequestPeople([]) }} onPeopleChange={setRequestPeople} onChange={change} onStepChange={goToStep} onNext={next} onBack={() => setStep((current) => current - 1)} onCancel={cancelForm} onSubmit={submit} />} />
             <Route path="/solicitudes/:id/editar" element={<RequestFormPage form={form} options={options} people={personas} requestPeople={requestPeople} existingPeople={existingRequestPeople} peopleEntryMode={peopleEntryMode} loading={loading} saving={saving} editingId={activeEditingId} step={step} selected={selected} canSend={canSendRequest} onPeopleEntryModeChange={(mode) => { setPeopleEntryMode(mode); if (mode === 'provider') setRequestPeople([]) }} onPeopleChange={setRequestPeople} onChange={change} onStepChange={goToStep} onNext={next} onBack={() => setStep((current) => current - 1)} onCancel={cancelForm} onSubmit={submit} />} />
-            <Route path="/personas" element={<PersonAccessPage items={personasConAccesos} selected={personaSeleccionada} loading={personLoading} onSelect={selectPerson} onNew={openNewPerson} />} />
+            <Route path="/personas" element={<PersonAccessPage items={personasConAccesos} selected={personaSeleccionada} loading={personLoading} onSelect={selectPerson} onNew={openNewPerson} onQr={(idPersona) => navigate(`/personas/${idPersona}/qr`)} />} />
             <Route path="/personas/nueva" element={<PersonFormPage session={session} providers={options?.proveedores} onCancel={openPersons} onCreated={personCreated} onError={setError} />} />
-            <Route path="/personas/:idPersona" element={<PersonAccessPage items={personasConAccesos} selected={personaSeleccionada} loading={personLoading} onSelect={selectPerson} onNew={openNewPerson} />} />
+            <Route path="/personas/:idPersona/qr" element={<PersonQrPage idPersona={Number(personQrRoute?.params.idPersona)} onBack={() => navigate(`/personas/${personQrRoute?.params.idPersona}`)} onError={setError} />} />
+            <Route path="/personas/:idPersona" element={<PersonAccessPage items={personasConAccesos} selected={personaSeleccionada} loading={personLoading} onSelect={selectPerson} onNew={openNewPerson} onQr={(idPersona) => navigate(`/personas/${idPersona}/qr`)} />} />
+            <Route path="/escanear-qr" element={<QrScannerPage onError={setError} />} />
             <Route path="/aprobaciones" element={canApprove ? <ApprovalsPage items={aprobaciones} loading={approvalsLoading} onDecide={decideApproval} onDecideMany={decideApprovals} onViewDetail={openApprovalDetail} /> : <Navigate to="/solicitudes" replace />} />
             <Route path="/aprobaciones/:idSolicitudPersonaArea/detalle" element={canApprove ? <RequestApprovalDetailPage request={approvalDetail} options={options} approvalItems={aprobaciones} loading={approvalDetailLoading || !approvalDetail} onBack={() => navigate('/aprobaciones')} onDecide={decideApproval} /> : <Navigate to="/solicitudes" replace />} />
             <Route path="/login" element={<Navigate to="/dashboard" replace />} />

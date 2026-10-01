@@ -7,7 +7,9 @@ public interface ISolicitudesRepository
     Task<SesionUsuario?> AutenticarAsync(LoginRequest request, CancellationToken cancellationToken);
     Task<PerfilUsuario?> ObtenerPerfilAsync(string idUsuario, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<UsuarioAdministracionResumen>> ListarUsuariosAsync(CancellationToken cancellationToken);
+    Task<UsuarioAdministracionDetalle?> ObtenerUsuarioAsync(string idUsuario, CancellationToken cancellationToken);
     Task<string> CrearUsuarioAsync(CrearUsuarioRequest request, string usuarioCreacion, CancellationToken cancellationToken);
+    Task<bool> ActualizarUsuarioAsync(string idUsuario, ActualizarUsuarioRequest request, string usuarioModificacion, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<CatalogoItem>> ListarCatalogoAsync(string catalogo, CancellationToken cancellationToken);
     Task<SolicitudFormularioDatos> ObtenerDatosFormularioSolicitudAsync(CancellationToken cancellationToken);
     Task<long> CrearProveedorAsync(CrearProveedorRequest request, CancellationToken cancellationToken);
@@ -15,6 +17,8 @@ public interface ISolicitudesRepository
     Task<IReadOnlyCollection<PersonaResumen>> ListarPersonasAsync(CancellationToken cancellationToken);
     Task<IReadOnlyCollection<PersonaResumen>> ListarPersonasConAccesosAsync(string idUsuario, CancellationToken cancellationToken);
     Task<PersonaConAccesos?> ObtenerPersonaAccesosAsync(long idPersona, string idUsuario, CancellationToken cancellationToken);
+    Task<string?> ObtenerCodigoQrPersonaAsync(long idPersona, string idUsuario, CancellationToken cancellationToken);
+    Task<PersonaQrDetalle?> ConsultarPersonaQrAsync(string codigoQr, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<AprobacionResumen>> ListarAprobacionesAsync(string idUsuarioAprobador, CancellationToken cancellationToken);
     Task<long> DecidirAprobacionAsync(long idSolicitudPersonaArea, string idUsuarioAprobador, DecidirAprobacionRequest request, CancellationToken cancellationToken);
     Task<IdCreadoResponse> CrearSolicitudAsync(CrearSolicitudRequest request, CancellationToken cancellationToken);

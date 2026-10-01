@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Icon } from '../components/Icon'
-import { formatDate } from '../utils/formatters'
+import { accessStatusClass, formatDate } from '../utils/formatters'
 
 export function RequestFormPage({ form, options, people, requestPeople, existingPeople, peopleEntryMode, loading, saving, editingId, step, selected, canSend, onPeopleEntryModeChange, onPeopleChange, onChange, onStepChange, onNext, onBack, onCancel, onSubmit }) {
   return <>
@@ -28,7 +28,18 @@ export function RequestFormPage({ form, options, people, requestPeople, existing
 }
 
 function StepOne({ form, options, loading, change }) {
-  return <><SectionHeading title="Información general" text="Define el tipo, las fechas y el propósito del ingreso." /><div className="form-grid"><Field label="Tipo de ingreso" required><Select name="idTipoIngreso" value={form.idTipoIngreso} onChange={change} items={options?.tiposIngreso} loading={loading} /></Field><Field label="Empresa / proveedor"><Select name="idProveedor" value={form.idProveedor} onChange={change} items={options?.proveedores} loading={loading} emptyLabel="Sin proveedor" /></Field><Field label="Fecha de inicio" required><input type="date" name="fechaInicio" value={form.fechaInicio} onChange={change} /></Field><Field label="Fecha de finalización" required><input type="date" name="fechaFin" min={form.fechaInicio} value={form.fechaFin} onChange={change} /></Field><Field label="Nombre de la actividad" required full><input name="nombreActividad" maxLength="200" value={form.nombreActividad} onChange={change} placeholder="Ej. Mantenimiento preventivo de infraestructura" /></Field><Field label="Descripción general" full><textarea name="descripcionActividad" maxLength="1000" value={form.descripcionActividad} onChange={change} placeholder="Describe el propósito del ingreso" /></Field><Field label="Contrato, cuando aplique"><input name="numeroContrato" maxLength="60" value={form.numeroContrato} onChange={change} placeholder="Ej. CT-2026-084" /></Field><Field label="Cantidad estimada de personas" required><input type="number" name="cantidadEstimada" min="1" step="1" value={form.cantidadEstimada} onChange={change} /></Field></div></>
+  function changeEstimatedPeople(event) {
+    const value = event.target.value
+    if (value === '' || (Number.isInteger(Number(value)) && Number(value) >= 1)) change(event)
+  }
+
+  function normalizeEstimatedPeople(event) {
+    if (!Number.isInteger(Number(event.target.value)) || Number(event.target.value) < 1) {
+      change({ target: { name: 'cantidadEstimada', value: '1' } })
+    }
+  }
+
+  return <><SectionHeading title="Información general" text="Define el tipo, las fechas y el propósito del ingreso." /><div className="form-grid"><Field label="Tipo de ingreso" required><Select name="idTipoIngreso" value={form.idTipoIngreso} onChange={change} items={options?.tiposIngreso} loading={loading} /></Field><Field label="Empresa / proveedor"><Select name="idProveedor" value={form.idProveedor} onChange={change} items={options?.proveedores} loading={loading} emptyLabel="Sin proveedor" /></Field><Field label="Fecha de inicio" required><input type="date" name="fechaInicio" value={form.fechaInicio} onChange={change} /></Field><Field label="Fecha de finalización" required><input type="date" name="fechaFin" min={form.fechaInicio} value={form.fechaFin} onChange={change} /></Field><Field label="Nombre de la actividad" required full><input name="nombreActividad" maxLength="200" value={form.nombreActividad} onChange={change} placeholder="Ej. Mantenimiento preventivo de infraestructura" /></Field><Field label="Descripción general" full><textarea name="descripcionActividad" maxLength="1000" value={form.descripcionActividad} onChange={change} placeholder="Describe el propósito del ingreso" /></Field><Field label="Contrato, cuando aplique"><input name="numeroContrato" maxLength="60" value={form.numeroContrato} onChange={change} placeholder="Ej. CT-2026-084" /></Field><Field label="Cantidad estimada de personas" required><input type="number" name="cantidadEstimada" min="1" step="1" value={form.cantidadEstimada} onChange={changeEstimatedPeople} onBlur={normalizeEstimatedPeople} required /><small className="field-help">Mínimo una persona.</small></Field></div></>
 }
 
 function StepTwo({ form, options, selectedType, loading, change }) {
@@ -82,7 +93,7 @@ function PeopleStep({ mode, provider, estimatedCount, people, selectedPeople, ex
         <button type="button" className="primary-button" disabled={!personId || limitReached} onClick={addPerson}><Icon name="users" />Agregar persona</button>
       </div>
 
-      {existingPeople.length > 0 && <section className="existing-request-people"><h3>Personas ya asociadas</h3><div>{existingPeople.map((person) => <span key={person.idPersona}>{person.nombreCompleto || person.numeroDocumento || `Persona #${person.idPersona}`}</span>)}</div></section>}
+      {existingPeople.length > 0 && <section className="existing-request-people"><h3>Personas ya asociadas</h3><div>{existingPeople.map((person) => <article className={`existing-person-status ${person.codigoEstadoAprobacion?.toLowerCase() ?? 'pendiente'}`} key={person.idSolicitudPersona ?? person.idPersona}><div><strong>{person.nombreCompleto || person.numeroDocumento || `Persona #${person.idPersona}`}</strong><span>{person.numeroDocumento || 'Sin documento'}</span></div><span className={`access-status ${accessStatusClass(person.codigoEstadoAprobacion)}`}>{person.estadoAprobacion || 'Pendiente'}</span><small>{person.areasAprobadas ?? 0} aprobada(s) · {person.areasPendientes ?? 0} pendiente(s) · {person.areasRechazadas ?? 0} rechazada(s)</small>{person.detalleRechazos && <p><strong>Motivo del rechazo:</strong> {person.detalleRechazos}</p>}</article>)}</div></section>}
 
       <div className="request-people-list">
         {selectedPeople.length === 0 && <div className="request-people-empty"><Icon name="users" /><strong>No has agregado personas nuevas</strong><span>Puedes continuar sin personas y agregarlas después al editar la solicitud.</span></div>}
@@ -105,7 +116,13 @@ function Review({ form, selected, people, selectedPeople, existingPeople, people
   const providerWillRegister = peopleEntryMode === 'provider'
   const isEmployee = selected.tipo?.codigo?.toUpperCase() === 'EMPLEADO' || selected.tipo?.nombre?.trim().toLocaleLowerCase('es') === 'empleado'
   const rows = [['Tipo de ingreso', selected.tipo?.nombre], ['Empresa', selected.proveedor?.nombre ?? 'Sin proveedor'], ['Actividad', form.nombreActividad], ['Periodo', `${formatDate(form.fechaInicio)} – ${formatDate(form.fechaFin)}`], [isEmployee ? 'Contacto del empleado' : 'Contacto del proveedor', form.contactoProveedor], [isEmployee ? 'Correo del empleado' : 'Correo del proveedor', form.correoProveedor], ['Área solicitante', selected.area?.nombre], ['Ubicación', selected.ubicacion?.nombre], ['Registro de personas', providerWillRegister ? 'A cargo del proveedor' : 'Ingreso manual'], ['Personas asociadas', providerWillRegister ? 'Pendientes de registro' : `${totalPeople} de ${form.cantidadEstimada}`]]
-  return <><SectionHeading title="Revisa antes de guardar" text="Confirma los datos y quién será responsable de registrar las personas." /><div className="info-list">{rows.map(([label, value]) => <div className="info-item" key={label}><span>{label}</span><strong>{value || '—'}</strong></div>)}</div>{selectedPeople.length > 0 && <div className="review-people"><h3>Personas nuevas</h3>{selectedPeople.map((entry) => { const person = people.find((item) => Number(item.idPersona) === Number(entry.idPersona)); return <span key={entry.idPersona}>{person?.nombreCompleto || `Persona #${entry.idPersona}`} · {entry.areas.length} área(s)</span> })}</div>}<div className="ticket-box"><div><h3>La solicitud se guardará como borrador</h3><p>Podrás enviarla inmediatamente después de crearla o conservarla para completar y enviar más tarde.</p></div></div></>
+  return <><SectionHeading title="Revisa antes de guardar" text="Confirma los datos y quién será responsable de registrar las personas." /><div className="info-list">{rows.map(([label, value]) => <div className="info-item" key={label}><span>{label}</span><strong>{value || '—'}</strong></div>)}</div>{selectedPeople.length > 0 && <div className="review-people"><h3>Personas nuevas</h3>{selectedPeople.map((entry) => { const person = people.find((item) => Number(item.idPersona) === Number(entry.idPersona)); return <span key={entry.idPersona}>{person?.nombreCompleto || `Persona #${entry.idPersona}`} · {entry.areas.length} área(s)</span> })}</div>}{existingPeople.length > 0 && <div className="review-people"><h3>Estado de personas asociadas</h3>{existingPeople.map((person) => <span className={`review-person-state ${person.codigoEstadoAprobacion?.toLowerCase() ?? 'pendiente'}`} key={person.idSolicitudPersona ?? person.idPersona}>{person.nombreCompleto || `Persona #${person.idPersona}`} · {person.estadoAprobacion || 'Pendiente'}</span>)}</div>}<div className="ticket-box"><div><h3>{editingIdMessage(existingPeople)}</h3><p>Las personas rechazadas permanecerán visibles, pero no estarán autorizadas para ingresar.</p></div></div></>
+}
+
+function editingIdMessage(existingPeople) {
+  return existingPeople.some((person) => person.codigoEstadoAprobacion === 'RECHAZADA')
+    ? 'La solicitud contiene personas rechazadas'
+    : 'La solicitud se guardará como borrador'
 }
 
 function Progress({ step, onStepChange }) {

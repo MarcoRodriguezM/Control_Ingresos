@@ -65,6 +65,8 @@ public sealed record IdCreadoResponse(
     long Id,
     string? Numero = null);
 
+public sealed record FotografiaSubidaResponse(string Url);
+
 public sealed record CatalogoItem(
     int Id,
     string? Codigo,
@@ -175,7 +177,13 @@ public sealed record PersonaSolicitudDetalle(
     string? NumeroDocumento,
     string? NombreCompleto,
     short? IdEstadoPersonaSolicitud,
-    bool? DatosCompletos);
+    bool? DatosCompletos,
+    string? CodigoEstadoAprobacion,
+    string? EstadoAprobacion,
+    int AreasAprobadas,
+    int AreasPendientes,
+    int AreasRechazadas,
+    string? DetalleRechazos);
 
 public sealed record PersonaResumen(
     long IdPersona,
@@ -213,6 +221,34 @@ public sealed record PersonaConAccesos(
     string? Empresa,
     string? Estado,
     IReadOnlyCollection<PersonaAccesoDetalle> Accesos);
+
+public sealed record AreaAccesoQr(
+    int IdArea,
+    string? Codigo,
+    string? Area,
+    string? CodigoAcceso,
+    string? EstadoAcceso,
+    bool TieneAcceso,
+    string? NumeroSolicitud,
+    string? Actividad,
+    string? Ubicacion,
+    DateOnly? FechaInicio,
+    DateOnly? FechaFin,
+    string? ComentarioDecision);
+
+public sealed record PersonaQrDetalle(
+    long IdPersona,
+    string? NumeroDocumento,
+    string? NombreCompleto,
+    string? FotografiaUrl,
+    string? Telefono,
+    string? Correo,
+    string? CargoFuncion,
+    string? Empresa,
+    string? Estado,
+    IReadOnlyCollection<AreaAccesoQr> Areas);
+
+public sealed record PersonaQrResponse(string CodigoQr);
 
 public sealed record AprobacionResumen(
     long IdSolicitudPersonaArea,
@@ -310,6 +346,33 @@ public sealed record UsuarioAdministracionResumen(
     DateTime? FechaCreacion,
     string? Roles);
 
+public sealed record AreaUsuarioAdministracion(
+    int IdArea,
+    string? Codigo,
+    string? Nombre,
+    bool PuedeSolicitar,
+    bool EsAreaPrincipal,
+    bool EsAprobador,
+    bool EsAprobadorPrincipal,
+    DateOnly? FechaInicio,
+    DateOnly? FechaFin,
+    bool Activo);
+
+public sealed record UsuarioAdministracionDetalle(
+    string IdUsuario,
+    string? NombreCompleto,
+    string? Correo,
+    string? Telefono,
+    string? Puesto,
+    string? Estado,
+    bool Activo,
+    DateTime? FechaCreacion,
+    string? UsuarioCreacion,
+    DateTime? FechaModificacion,
+    string? UsuarioModificacion,
+    string? Roles,
+    IReadOnlyCollection<AreaUsuarioAdministracion> Areas);
+
 public sealed record CrearUsuarioRequest(
     [Required, MaxLength(50)] string IdUsuario,
     [Required, MaxLength(200)] string NombreCompleto,
@@ -317,6 +380,17 @@ public sealed record CrearUsuarioRequest(
     [MaxLength(30)] string? Telefono,
     [MaxLength(150)] string? Puesto,
     [Required, MinLength(8), MaxLength(200)] string Contrasena,
+    int? IdArea,
+    bool PuedeSolicitar,
+    bool EsAprobador,
+    bool EsSeguridad,
+    bool Activo);
+
+public sealed record ActualizarUsuarioRequest(
+    [Required, MaxLength(200)] string NombreCompleto,
+    [EmailAddress, MaxLength(254)] string? Correo,
+    [MaxLength(30)] string? Telefono,
+    [MaxLength(150)] string? Puesto,
     int? IdArea,
     bool PuedeSolicitar,
     bool EsAprobador,

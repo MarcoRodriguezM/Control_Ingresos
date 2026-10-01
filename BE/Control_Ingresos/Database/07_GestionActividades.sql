@@ -62,7 +62,6 @@ BEGIN
              a.IdActividad DESC;
 END;
 GO
-
 CREATE OR ALTER PROCEDURE dbo.usp_Actividad_Crear
     @IdSolicitud BIGINT = NULL,
     @IdAreaResponsable INT = NULL,
@@ -192,3 +191,4 @@ BEGIN
     SELECT @IdActividad;
 END;
 GO
+

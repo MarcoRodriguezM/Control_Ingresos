@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Icon } from '../components/Icon'
 import { accessStatusClass, formatDate, formatDateTime, initials } from '../utils/formatters'
 
-export function PersonAccessPage({ items, selected, loading, onSelect, onNew }) {
+export function PersonAccessPage({ items, selected, loading, onSelect, onNew, onQr }) {
   const [query, setQuery] = useState('')
   const normalizedQuery = query.trim().toLowerCase()
   const filtered = items.filter((item) => !normalizedQuery || [item.nombreCompleto, item.numeroDocumento, item.empresa]
@@ -31,7 +31,7 @@ export function PersonAccessPage({ items, selected, loading, onSelect, onNew }) 
         {loading && !selected && <div className="person-placeholder">Cargando información…</div>}
         {!loading && !selected && <div className="person-placeholder">Selecciona una persona para consultar sus accesos.</div>}
         {selected && <>
-          <div className="person-profile"><div className="person-avatar large">{initials(selected.nombreCompleto)}</div><div><div className="profile-title"><h2>{selected.nombreCompleto}</h2><span className="status-badge success">{selected.estado || 'Sin estado'}</span></div><p>{selected.cargoFuncion || 'Cargo no indicado'} · {selected.empresa || 'Empresa no indicada'}</p></div></div>
+          <div className="person-profile person-profile-with-action"><div className="person-avatar large"><span>{initials(selected.nombreCompleto)}</span>{selected.fotografiaUrl && <img src={selected.fotografiaUrl} alt={`Fotografía de ${selected.nombreCompleto || 'la persona'}`} onError={(event) => { event.currentTarget.style.display = 'none' }} />}</div><div><div className="profile-title"><h2>{selected.nombreCompleto}</h2><span className="status-badge success">{selected.estado || 'Sin estado'}</span></div><p>{selected.cargoFuncion || 'Cargo no indicado'} · {selected.empresa || 'Empresa no indicada'}</p></div><button type="button" className="primary-button person-qr-button" onClick={() => onQr(selected.idPersona)}><Icon name="qr" />Ver QR</button></div>
           <div className="person-data-grid"><InfoValue label="Documento" value={selected.numeroDocumento} /><InfoValue label="Teléfono" value={selected.telefono} /><InfoValue label="Correo" value={selected.correo} /><InfoValue label="Total de accesos" value={String(selected.accesos?.length ?? 0)} /></div>
           <div className="access-heading"><div><h3>Accesos asignados</h3><p>Áreas vinculadas a las solicitudes de ingreso de esta persona.</p></div><span>{selected.accesos?.length ?? 0} accesos</span></div>
           <div className="access-list">

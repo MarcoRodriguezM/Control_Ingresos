@@ -15,7 +15,6 @@ BEGIN
         ADD Contrasena VARCHAR(200) NULL;
 END;
 GO
-
 /* La columna heredada debe aceptar NULL porque deja de utilizarse. */
 ALTER TABLE dbo.Usuario_Credencial
     ALTER COLUMN PasswordHash VARBINARY(32) NULL;
@@ -211,3 +210,4 @@ BEGIN
     SELECT @IdUsuario;
 END;
 GO
+

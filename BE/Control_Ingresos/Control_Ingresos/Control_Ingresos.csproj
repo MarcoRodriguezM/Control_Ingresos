@@ -16,4 +16,8 @@
     <Folder Include="Controllers\" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Database\StoredProcedures.sql" />
+  </ItemGroup>
+
 </Project>
