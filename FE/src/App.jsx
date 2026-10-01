@@ -18,7 +18,7 @@ import {
   UserManagementPage,
 } from './pages'
 import { controlIngresosApi } from './services/api'
-import { showSuccessAlert } from './utils/alerts'
+import { confirmSendDraft, showSuccessAlert } from './utils/alerts'
 import { initials } from './utils/formatters'
 import './App.css'
 
@@ -88,6 +88,7 @@ function AuthenticatedApp({ session, onLogout }) {
   const [options, setOptions] = useState(null)
   const [solicitudes, setSolicitudes] = useState([])
   const [personas, setPersonas] = useState([])
+  const [personasConAccesos, setPersonasConAccesos] = useState([])
   const [requestPeople, setRequestPeople] = useState([])
   const [existingRequestPeople, setExistingRequestPeople] = useState([])
   const [peopleEntryMode, setPeopleEntryMode] = useState('')
@@ -143,7 +144,7 @@ function AuthenticatedApp({ session, onLogout }) {
         setForm(formFromDetail(item, options))
         setExistingRequestPeople(item.personas ?? [])
         setRequestPeople([])
-        setPeopleEntryMode(item.personas?.length ? 'manual' : '')
+        setPeopleEntryMode(item.personas?.length ? 'manual' : item.idProveedor ? 'provider' : '')
         setStep(1)
       } catch (requestError) {
         if (active) setError(requestError.message)
@@ -164,21 +165,19 @@ function AuthenticatedApp({ session, onLogout }) {
       setPersonLoading(true)
       setError('')
       try {
-        const records = personas.length ? personas : await controlIngresosApi.listarPersonas()
+        const records = await controlIngresosApi.listarPersonasConAccesos()
         if (!active) return
-        setPersonas(records)
+        setPersonasConAccesos(records)
         const routeId = Number(personRoute?.params.idPersona)
         const preferred = routeId
           ? records.find((item) => item.idPersona === routeId)
-          : records.find((item) => item.nombreCompleto?.toLowerCase().includes('david')) ?? records[0]
+          : records[0]
         if (!preferred) {
           setPersonaSeleccionada(null)
           return
         }
-        if (personaSeleccionada?.idPersona !== preferred.idPersona) {
-          const detail = await controlIngresosApi.obtenerPersonaAccesos(preferred.idPersona)
-          if (active) setPersonaSeleccionada(detail)
-        }
+        const detail = await controlIngresosApi.obtenerPersonaAccesos(preferred.idPersona)
+        if (active) setPersonaSeleccionada(detail)
       } catch (requestError) {
         if (active) setError(requestError.message)
       } finally {
@@ -187,7 +186,7 @@ function AuthenticatedApp({ session, onLogout }) {
     }
     load()
     return () => { active = false }
-  }, [isPersonsRoute, isNewPersonRoute, personRoute?.params.idPersona, personas, personaSeleccionada?.idPersona])
+  }, [isPersonsRoute, isNewPersonRoute, personRoute?.params.idPersona, session.idUsuario])
 
   useEffect(() => {
     if ((!isApprovalsRoute && !isDashboardRoute) || !canApprove) return
@@ -311,11 +310,17 @@ function AuthenticatedApp({ session, onLogout }) {
 
   const selected = useMemo(() => ({
     tipo: findOption(options?.tiposIngreso, form.idTipoIngreso),
+    estado: findOption(options?.estadosSolicitud, form.idEstadoSolicitud),
     proveedor: findOption(options?.proveedores, form.idProveedor),
     area: findOption(options?.areas, form.idAreaSolicitante),
     ubicacion: findOption(options?.ubicaciones, form.idUbicacion),
     usuario: findOption(options?.usuarios, form.idUsuarioSolicitante),
   }), [form, options])
+  const totalRequestPeople = requestPeople.length + existingRequestPeople.length
+  const estimatedPeople = Number(form.cantidadEstimada) || 0
+  const canSendRequest = peopleEntryMode === 'provider'
+    ? Boolean(form.idProveedor) && totalRequestPeople === 0
+    : estimatedPeople > 0 && totalRequestPeople === estimatedPeople
 
   function change(event) {
     const { name, value } = event.target
@@ -327,10 +332,7 @@ function AuthenticatedApp({ session, onLogout }) {
 
   function goToStep(targetStep) {
     for (let currentStep = 1; currentStep < targetStep; currentStep += 1) {
-      const validation = validateStep(currentStep, form)
-        || (currentStep === 3 && !peopleEntryMode ? 'Indica quién ingresará las personas de la solicitud.' : '')
-        || (currentStep === 3 && peopleEntryMode === 'provider' && !form.idProveedor ? 'Selecciona un proveedor en el paso de información básica.' : '')
-        || (currentStep === 3 && peopleEntryMode === 'manual' && requestPeople.some((person) => person.areas.length === 0) ? 'Selecciona al menos un área para cada persona agregada.' : '')
+      const validation = validateStep(currentStep, form, peopleEntryMode, requestPeople, existingRequestPeople)
       if (validation) {
         setStep(currentStep)
         setError(validation)
@@ -384,9 +386,11 @@ function AuthenticatedApp({ session, onLogout }) {
 
   function personCreated(created) {
     setPersonas([])
+    setPersonasConAccesos([])
     setPersonaSeleccionada(null)
     setError('')
-    navigate(`/personas/${created.id}`)
+    showSuccessAlert(`La persona #${created.id} fue registrada correctamente.`)
+    navigate('/personas')
   }
 
   function openProfile() {
@@ -483,14 +487,25 @@ function AuthenticatedApp({ session, onLogout }) {
     }
   }
 
-  async function submit() {
+  async function submit(sendAfterSave = false) {
     if (step !== 4) return
     if (editRoute && !activeEditingId) {
       setError('No fue posible cargar la solicitud que deseas editar.')
       return
     }
-    const validation = validateStep(2, form)
-    if (validation) { setStep(2); setError(validation); return }
+    for (let currentStep = 1; currentStep <= 3; currentStep += 1) {
+      const validation = validateStep(currentStep, form, peopleEntryMode, requestPeople, existingRequestPeople)
+      if (validation) {
+        setStep(currentStep)
+        setError(validation)
+        return
+      }
+    }
+    if (sendAfterSave && !canSendRequest) {
+      setStep(3)
+      setError(`Completa las ${estimatedPeople} personas indicadas antes de enviar la solicitud.`)
+      return
+    }
     setSaving(true)
     setError('')
     try {
@@ -540,8 +555,16 @@ function AuthenticatedApp({ session, onLogout }) {
         setError(`La solicitud fue guardada, pero no se pudieron agregar ${failedPeople.length} persona(s): ${failedPeople.map((person) => person.error).join(' ')}`)
         return
       }
-      await controlIngresosApi.enviarSolicitud(requestId)
-      showSuccessAlert(activeEditingId ? 'La solicitud fue actualizada y enviada correctamente.' : `Se creó y envió ${created.numero ?? `la solicitud #${created.id}`}.`)
+      let shouldSend = sendAfterSave
+      if (!activeEditingId && canSendRequest) {
+        shouldSend = await confirmSendDraft(created.numero ?? `#${created.id}`)
+      }
+      if (shouldSend) {
+        await controlIngresosApi.enviarSolicitud(requestId)
+        showSuccessAlert(activeEditingId ? 'La solicitud fue actualizada y enviada correctamente.' : `Se creó y envió ${created.numero ?? `la solicitud #${created.id}`}.`)
+      } else {
+        showSuccessAlert(activeEditingId ? 'La solicitud fue actualizada correctamente.' : `Se creó ${created.numero ?? `la solicitud #${created.id}`} como borrador.`)
+      }
       setSolicitudes(await controlIngresosApi.listarSolicitudes())
       setForm(withDefaults(initialForm(), options, session.idUsuario))
       setRequestPeople([])
@@ -611,11 +634,11 @@ function AuthenticatedApp({ session, onLogout }) {
             <Route path="/control-accesos" element={canUseGate ? <AccessControlPage people={personas} movements={movements} loading={gateLoading} saving={gateSaving} onRegister={registerMovement} /> : <Navigate to="/dashboard" replace />} />
             <Route path="/perfil" element={<ProfilePage profile={profile} loading={profileLoading} onOpenRequest={openEdit} />} />
             <Route path="/solicitudes" element={<RequestsListPage items={solicitudes} loading={loading} onNew={openNew} onEdit={openEdit} onDelete={remove} />} />
-            <Route path="/solicitudes/nueva" element={<RequestFormPage form={form} options={options} people={personas} requestPeople={requestPeople} existingPeople={existingRequestPeople} peopleEntryMode={peopleEntryMode} loading={loading} saving={saving} editingId={null} step={step} selected={selected} onPeopleEntryModeChange={(mode) => { setPeopleEntryMode(mode); if (mode === 'provider') setRequestPeople([]) }} onPeopleChange={setRequestPeople} onChange={change} onStepChange={goToStep} onNext={next} onBack={() => setStep((current) => current - 1)} onCancel={cancelForm} onSubmit={submit} />} />
-            <Route path="/solicitudes/:id/editar" element={<RequestFormPage form={form} options={options} people={personas} requestPeople={requestPeople} existingPeople={existingRequestPeople} peopleEntryMode={peopleEntryMode} loading={loading} saving={saving} editingId={activeEditingId} step={step} selected={selected} onPeopleEntryModeChange={(mode) => { setPeopleEntryMode(mode); if (mode === 'provider') setRequestPeople([]) }} onPeopleChange={setRequestPeople} onChange={change} onStepChange={goToStep} onNext={next} onBack={() => setStep((current) => current - 1)} onCancel={cancelForm} onSubmit={submit} />} />
-            <Route path="/personas" element={<PersonAccessPage items={personas} selected={personaSeleccionada} loading={personLoading} onSelect={selectPerson} onNew={openNewPerson} />} />
+            <Route path="/solicitudes/nueva" element={<RequestFormPage form={form} options={options} people={personas} requestPeople={requestPeople} existingPeople={existingRequestPeople} peopleEntryMode={peopleEntryMode} loading={loading} saving={saving} editingId={null} step={step} selected={selected} canSend={canSendRequest} onPeopleEntryModeChange={(mode) => { setPeopleEntryMode(mode); if (mode === 'provider') setRequestPeople([]) }} onPeopleChange={setRequestPeople} onChange={change} onStepChange={goToStep} onNext={next} onBack={() => setStep((current) => current - 1)} onCancel={cancelForm} onSubmit={submit} />} />
+            <Route path="/solicitudes/:id/editar" element={<RequestFormPage form={form} options={options} people={personas} requestPeople={requestPeople} existingPeople={existingRequestPeople} peopleEntryMode={peopleEntryMode} loading={loading} saving={saving} editingId={activeEditingId} step={step} selected={selected} canSend={canSendRequest} onPeopleEntryModeChange={(mode) => { setPeopleEntryMode(mode); if (mode === 'provider') setRequestPeople([]) }} onPeopleChange={setRequestPeople} onChange={change} onStepChange={goToStep} onNext={next} onBack={() => setStep((current) => current - 1)} onCancel={cancelForm} onSubmit={submit} />} />
+            <Route path="/personas" element={<PersonAccessPage items={personasConAccesos} selected={personaSeleccionada} loading={personLoading} onSelect={selectPerson} onNew={openNewPerson} />} />
             <Route path="/personas/nueva" element={<PersonFormPage session={session} providers={options?.proveedores} onCancel={openPersons} onCreated={personCreated} onError={setError} />} />
-            <Route path="/personas/:idPersona" element={<PersonAccessPage items={personas} selected={personaSeleccionada} loading={personLoading} onSelect={selectPerson} onNew={openNewPerson} />} />
+            <Route path="/personas/:idPersona" element={<PersonAccessPage items={personasConAccesos} selected={personaSeleccionada} loading={personLoading} onSelect={selectPerson} onNew={openNewPerson} />} />
             <Route path="/aprobaciones" element={canApprove ? <ApprovalsPage items={aprobaciones} loading={approvalsLoading} onDecide={decideApproval} onDecideMany={decideApprovals} onViewDetail={openApprovalDetail} /> : <Navigate to="/solicitudes" replace />} />
             <Route path="/aprobaciones/:idSolicitudPersonaArea/detalle" element={canApprove ? <RequestApprovalDetailPage request={approvalDetail} options={options} approvalItems={aprobaciones} loading={approvalDetailLoading || !approvalDetail} onBack={() => navigate('/aprobaciones')} onDecide={decideApproval} /> : <Navigate to="/solicitudes" replace />} />
             <Route path="/login" element={<Navigate to="/dashboard" replace />} />
@@ -656,10 +679,20 @@ function formFromDetail(item, options) {
   }, options)
 }
 
-function validateStep(step, form) {
+function validateStep(step, form, peopleEntryMode, requestPeople = [], existingPeople = []) {
   if (step === 1 && (!form.idTipoIngreso || !form.nombreActividad.trim() || !form.fechaInicio || !form.fechaFin)) return 'Completa el tipo, nombre y fechas de la actividad.'
   if (step === 1 && form.fechaFin < form.fechaInicio) return 'La fecha final no puede ser anterior a la fecha inicial.'
+  const estimatedPeople = Number(form.cantidadEstimada)
+  const totalPeople = requestPeople.length + existingPeople.length
+  if (step === 1 && (!Number.isInteger(estimatedPeople) || estimatedPeople < 1)) return 'La cantidad estimada de personas debe ser un número entero mayor que cero.'
+  if (step === 1 && totalPeople > estimatedPeople) return `La cantidad estimada no puede ser menor que las ${totalPeople} personas ya agregadas.`
+  if (step === 2 && (!form.contactoProveedor.trim() || !form.correoProveedor.trim())) return 'Completa el contacto y el correo.'
+  if (step === 2 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.correoProveedor.trim())) return 'Ingresa un correo electrónico válido.'
   if (step === 2 && (!form.idAreaSolicitante || !form.idUbicacion || !form.idUsuarioSolicitante)) return 'Selecciona el área, la ubicación y el usuario solicitante.'
+  if (step === 3 && !peopleEntryMode) return 'Indica quién ingresará las personas de la solicitud.'
+  if (step === 3 && peopleEntryMode === 'provider' && !form.idProveedor) return 'Selecciona un proveedor en el paso de información básica.'
+  if (step === 3 && totalPeople > estimatedPeople) return `Solo puedes agregar ${estimatedPeople} persona(s) a esta solicitud.`
+  if (step === 3 && peopleEntryMode === 'manual' && requestPeople.some((person) => person.areas.length === 0)) return 'Selecciona al menos un área para cada persona agregada.'
   return ''
 }
 

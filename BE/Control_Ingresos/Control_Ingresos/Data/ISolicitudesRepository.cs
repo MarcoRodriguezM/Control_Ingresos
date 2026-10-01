@@ -13,7 +13,8 @@ public interface ISolicitudesRepository
     Task<long> CrearProveedorAsync(CrearProveedorRequest request, CancellationToken cancellationToken);
     Task<long> CrearPersonaAsync(CrearPersonaRequest request, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<PersonaResumen>> ListarPersonasAsync(CancellationToken cancellationToken);
-    Task<PersonaConAccesos?> ObtenerPersonaAccesosAsync(long idPersona, CancellationToken cancellationToken);
+    Task<IReadOnlyCollection<PersonaResumen>> ListarPersonasConAccesosAsync(string idUsuario, CancellationToken cancellationToken);
+    Task<PersonaConAccesos?> ObtenerPersonaAccesosAsync(long idPersona, string idUsuario, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<AprobacionResumen>> ListarAprobacionesAsync(string idUsuarioAprobador, CancellationToken cancellationToken);
     Task<long> DecidirAprobacionAsync(long idSolicitudPersonaArea, string idUsuarioAprobador, DecidirAprobacionRequest request, CancellationToken cancellationToken);
     Task<IdCreadoResponse> CrearSolicitudAsync(CrearSolicitudRequest request, CancellationToken cancellationToken);

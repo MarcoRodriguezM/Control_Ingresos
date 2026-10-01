@@ -248,14 +248,42 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
         return items;
     }
 
+    public async Task<IReadOnlyCollection<PersonaResumen>> ListarPersonasConAccesosAsync(
+        string idUsuario,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = StoredProcedure(connection, "dbo.usp_Persona_Accesos_Listar");
+        Add(command, "@IdUsuario", SqlDbType.VarChar, idUsuario, 50);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        var items = new List<PersonaResumen>();
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            items.Add(new(
+                reader.GetInt64(0),
+                GetNullableString(reader, 1),
+                GetNullableString(reader, 2),
+                GetNullableString(reader, 3),
+                GetNullableString(reader, 4),
+                GetNullableString(reader, 5),
+                reader.GetInt32(6)));
+        }
+
+        return items;
+    }
+
     public async Task<PersonaConAccesos?> ObtenerPersonaAccesosAsync(
         long idPersona,
+        string idUsuario,
         CancellationToken cancellationToken)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
         await using var command = StoredProcedure(connection, "dbo.usp_Persona_Accesos_Obtener");
 
         Add(command, "@IdPersona", SqlDbType.BigInt, idPersona);
+        Add(command, "@IdUsuario", SqlDbType.VarChar, idUsuario, 50);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 

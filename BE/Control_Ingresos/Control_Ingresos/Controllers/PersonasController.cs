@@ -17,6 +17,16 @@ public sealed class PersonasController(ISolicitudesRepository repository) : Cont
         CancellationToken cancellationToken) =>
         Ok(await repository.ListarPersonasAsync(cancellationToken));
 
+    [HttpGet("accesos")]
+    [ProducesResponseType<IReadOnlyCollection<PersonaResumen>>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyCollection<PersonaResumen>>> ListarConAccesos(
+        CancellationToken cancellationToken)
+    {
+        var usuario = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(usuario)) return Unauthorized();
+        return Ok(await repository.ListarPersonasConAccesosAsync(usuario, cancellationToken));
+    }
+
     [HttpGet("{id:long}/accesos")]
     [ProducesResponseType<PersonaConAccesos>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -24,7 +34,9 @@ public sealed class PersonasController(ISolicitudesRepository repository) : Cont
         long id,
         CancellationToken cancellationToken)
     {
-        var persona = await repository.ObtenerPersonaAccesosAsync(id, cancellationToken);
+        var usuario = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(usuario)) return Unauthorized();
+        var persona = await repository.ObtenerPersonaAccesosAsync(id, usuario, cancellationToken);
 
         return persona is null
             ? NotFound()

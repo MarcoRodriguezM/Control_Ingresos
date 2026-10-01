@@ -64,6 +64,7 @@ export const controlIngresosApi = {
     body: JSON.stringify(persona),
   }),
   listarPersonas: () => request('/api/personas'),
+  listarPersonasConAccesos: () => request('/api/personas/accesos'),
   obtenerPersonaAccesos: (id) => request(`/api/personas/${id}/accesos`),
   listarAprobaciones: () => request('/api/aprobaciones'),
   listarMisActividades: () => request('/api/actividades/mias'),
