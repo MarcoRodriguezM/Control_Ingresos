@@ -63,6 +63,45 @@ public sealed class PersonasController(
             : Ok(new PersonaQrResponse(codigo));
     }
 
+    [HttpGet("{id:long}/fotografia-contenido")]
+    [ProducesResponseType<FotografiaContenidoResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<FotografiaContenidoResponse>> ObtenerFotografiaContenido(
+        long id,
+        CancellationToken cancellationToken)
+    {
+        var usuario = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(usuario)) return Unauthorized();
+
+        var persona = await repository.ObtenerPersonaAccesosAsync(id, usuario, cancellationToken);
+        if (persona is null || string.IsNullOrWhiteSpace(persona.FotografiaUrl)) return NotFound();
+
+        var rutaUrl = Uri.TryCreate(persona.FotografiaUrl, UriKind.Absolute, out var uri)
+            ? uri.AbsolutePath
+            : persona.FotografiaUrl;
+        var nombreArchivo = Path.GetFileName(rutaUrl);
+        if (string.IsNullOrWhiteSpace(nombreArchivo)) return NotFound();
+
+        var carpeta = Path.GetFullPath(Path.Combine(environment.ContentRootPath, "wwwroot", "uploads", "personas"));
+        var rutaArchivo = Path.GetFullPath(Path.Combine(carpeta, nombreArchivo));
+        if (!rutaArchivo.StartsWith(carpeta + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+            || !System.IO.File.Exists(rutaArchivo))
+            return NotFound();
+
+        var tipoContenido = Path.GetExtension(rutaArchivo).ToLowerInvariant() switch
+        {
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".png" => "image/png",
+            ".webp" => "image/webp",
+            _ => null
+        };
+        if (tipoContenido is null) return NotFound();
+
+        var contenido = await System.IO.File.ReadAllBytesAsync(rutaArchivo, cancellationToken);
+        var dataUrl = $"data:{tipoContenido};base64,{Convert.ToBase64String(contenido)}";
+        return Ok(new FotografiaContenidoResponse(dataUrl));
+    }
+
     [HttpGet("qr/{codigoQr}")]
     [ProducesResponseType<PersonaQrDetalle>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

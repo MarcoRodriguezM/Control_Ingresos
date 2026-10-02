@@ -67,6 +67,8 @@ public sealed record IdCreadoResponse(
 
 public sealed record FotografiaSubidaResponse(string Url);
 
+public sealed record FotografiaContenidoResponse(string DataUrl);
+
 public sealed record CatalogoItem(
     int Id,
     string? Codigo,
