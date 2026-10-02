@@ -59,7 +59,14 @@ export function PersonQrPage({ idPersona, onBack, onError }) {
     const documentNumber = persona.numeroDocumento || 'Sin documento'
     const company = persona.empresa || 'Sin empresa'
     const personInitials = initials(name)
-    const photograph = await loadPhotograph(persona.fotografiaUrl)
+    let photograph = null
+    if (persona.fotografiaUrl) {
+      try {
+        photograph = (await controlIngresosApi.obtenerFotografiaPersona(persona.idPersona)).dataUrl
+      } catch {
+        photograph = await loadPhotograph(persona.fotografiaUrl)
+      }
+    }
 
     pdf.setFillColor(255, 255, 255)
     pdf.roundedRect(0.6, 0.6, pageWidth - 1.2, pageHeight - 1.2, 3, 3, 'F')
@@ -77,48 +84,65 @@ export function PersonQrPage({ idPersona, onBack, onError }) {
     pdf.setFontSize(5)
     pdf.text('IDENTIFICACIÓN DIGITAL', pageWidth - 6, 7.2, { align: 'right' })
 
+    const photoX = 5.5
+    const photoY = 16.5
+    const photoWidth = 17.5
+    const photoHeight = 22
     pdf.setFillColor(223, 247, 243)
-    pdf.roundedRect(5.5, 17, 15.5, 15.5, 3, 3, 'F')
+    pdf.roundedRect(photoX, photoY, photoWidth, photoHeight, 2.5, 2.5, 'F')
     if (photograph) {
       const properties = pdf.getImageProperties(photograph)
-      const scale = Math.min(14.5 / properties.width, 14.5 / properties.height)
+      const scale = Math.min((photoWidth - 1) / properties.width, (photoHeight - 1) / properties.height)
       const width = properties.width * scale
       const height = properties.height * scale
-      pdf.addImage(photograph, properties.fileType, 6 + (14.5 - width) / 2, 17.5 + (14.5 - height) / 2, width, height)
+      pdf.addImage(
+        photograph,
+        properties.fileType,
+        photoX + (photoWidth - width) / 2,
+        photoY + (photoHeight - height) / 2,
+        width,
+        height,
+      )
     } else {
       pdf.setTextColor(8, 120, 107)
       pdf.setFont('helvetica', 'bold')
-      pdf.setFontSize(11)
-      pdf.text(personInitials, 13.25, 26.3, { align: 'center' })
+      pdf.setFontSize(10)
+      pdf.text(personInitials, photoX + photoWidth / 2, photoY + photoHeight / 2 + 2, { align: 'center' })
     }
 
+    const detailX = 27
+    const detailWidth = 29
     pdf.setTextColor(23, 40, 58)
-    pdf.setFontSize(8.2)
-    pdf.text(fitText(pdf, name, 37), 24, 20.5)
+    pdf.setFontSize(7.2)
+    const nameLines = limitLines(pdf.splitTextToSize(name, detailWidth), 2)
+    pdf.text(nameLines, detailX, 19)
     pdf.setFont('helvetica', 'normal')
     pdf.setTextColor(102, 121, 138)
-    pdf.setFontSize(5.4)
-    pdf.text('DOCUMENTO', 24, 25.2)
+    pdf.setFontSize(4.8)
+    pdf.text('DOCUMENTO', detailX, 27)
     pdf.setTextColor(23, 40, 58)
     pdf.setFont('helvetica', 'bold')
-    pdf.setFontSize(6.3)
-    pdf.text(fitText(pdf, documentNumber, 34), 24, 28.5)
+    pdf.setFontSize(5.8)
+    pdf.text(fitText(pdf, documentNumber, detailWidth), detailX, 30.2)
     pdf.setFont('helvetica', 'normal')
     pdf.setTextColor(102, 121, 138)
-    pdf.setFontSize(5.4)
-    pdf.text('EMPRESA', 24, 33.3)
+    pdf.setFontSize(4.8)
+    pdf.text('EMPRESA', detailX, 35)
     pdf.setTextColor(23, 40, 58)
     pdf.setFont('helvetica', 'bold')
-    pdf.setFontSize(6)
-    pdf.text(fitText(pdf, company, 34), 24, 36.7)
+    pdf.setFontSize(5.2)
+    pdf.text(limitLines(pdf.splitTextToSize(company, detailWidth), 2), detailX, 38.1)
 
     pdf.setFillColor(255, 255, 255)
     pdf.setDrawColor(220, 229, 236)
-    pdf.roundedRect(pageWidth - 36, 14.5, 31, 31, 2, 2, 'FD')
-    pdf.addImage(qrImage, 'PNG', pageWidth - 34.5, 16, 28, 28)
+    const qrShellSize = 22
+    const qrShellX = pageWidth - qrShellSize - 4.5
+    const qrShellY = 16
+    pdf.roundedRect(qrShellX, qrShellY, qrShellSize, qrShellSize, 2, 2, 'FD')
+    pdf.addImage(qrImage, 'PNG', qrShellX + 1.3, qrShellY + 1.3, qrShellSize - 2.6, qrShellSize - 2.6)
 
     pdf.setDrawColor(220, 229, 236)
-    pdf.line(5.5, 41.5, pageWidth - 40, 41.5)
+    pdf.line(5.5, 42, 56.5, 42)
     pdf.setFont('helvetica', 'normal')
     pdf.setTextColor(102, 121, 138)
     pdf.setFontSize(4.6)
@@ -175,6 +199,14 @@ function fitText(pdf, value, maximumWidth) {
   let shortened = text
   while (shortened.length > 3 && pdf.getTextWidth(`${shortened}…`) > maximumWidth) shortened = shortened.slice(0, -1)
   return `${shortened}…`
+}
+
+function limitLines(lines, maximumLines) {
+  const normalized = Array.isArray(lines) ? lines.slice(0, maximumLines) : [String(lines)]
+  if (Array.isArray(lines) && lines.length > maximumLines) {
+    normalized[maximumLines - 1] = `${normalized[maximumLines - 1].replace(/…?$/, '')}…`
+  }
+  return normalized
 }
 
 async function loadPhotograph(url) {

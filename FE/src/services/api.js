@@ -117,6 +117,7 @@ export const controlIngresosApi = {
   listarPersonasConAccesos: () => request('/api/personas/accesos'),
   obtenerPersonaAccesos: (id) => request(`/api/personas/${id}/accesos`),
   obtenerQrPersona: (id) => request(`/api/personas/${id}/qr`),
+  obtenerFotografiaPersona: (id) => request(`/api/personas/${id}/fotografia-contenido`),
   consultarQrPersona: (codigoQr) => request(`/api/personas/qr/${encodeURIComponent(codigoQr)}`),
   listarAprobaciones: () => request('/api/aprobaciones'),
   listarMisActividades: () => request('/api/actividades/mias'),
