@@ -144,7 +144,8 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
     public async Task<string> CrearUsuarioAsync(CrearUsuarioRequest request, string usuarioCreacion, CancellationToken cancellationToken)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
-        await using var command = StoredProcedure(connection, "dbo.usp_Usuario_Crear");
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        await using var command = StoredProcedure(connection, "dbo.usp_Usuario_Crear", transaction);
         Add(command, "@IdUsuario", SqlDbType.VarChar, request.IdUsuario, 50);
         Add(command, "@NombreCompleto", SqlDbType.NVarChar, request.NombreCompleto, 200);
         Add(command, "@Correo", SqlDbType.VarChar, request.Correo, 254);
@@ -156,17 +157,27 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
         Add(command, "@EsAprobador", SqlDbType.Bit, request.EsAprobador);
         Add(command, "@Activo", SqlDbType.Bit, request.Activo);
         Add(command, "@UsuarioCreacion", SqlDbType.VarChar, usuarioCreacion, 50);
-        var idUsuario = Convert.ToString(await command.ExecuteScalarAsync(cancellationToken))
-            ?? throw new InvalidOperationException("No se recibió el identificador del usuario creado.");
-        if (request.EsSeguridad)
+        try
         {
-            await using var roleCommand = StoredProcedure(connection, "dbo.usp_Usuario_Rol_Asignar");
-            Add(roleCommand, "@IdUsuario", SqlDbType.VarChar, idUsuario, 50);
-            Add(roleCommand, "@CodigoRol", SqlDbType.VarChar, "SEGURIDAD", 30);
-            Add(roleCommand, "@UsuarioAsignacion", SqlDbType.VarChar, usuarioCreacion, 50);
-            await roleCommand.ExecuteNonQueryAsync(cancellationToken);
+            var idUsuario = Convert.ToString(await command.ExecuteScalarAsync(cancellationToken))
+                ?? throw new InvalidOperationException("No se recibió el identificador del usuario creado.");
+            if (request.EsSeguridad)
+            {
+                await using var roleCommand = StoredProcedure(connection, "dbo.usp_Usuario_Rol_Asignar", transaction);
+                Add(roleCommand, "@IdUsuario", SqlDbType.VarChar, idUsuario, 50);
+                Add(roleCommand, "@CodigoRol", SqlDbType.VarChar, "SEGURIDAD", 30);
+                Add(roleCommand, "@UsuarioAsignacion", SqlDbType.VarChar, usuarioCreacion, 50);
+                await roleCommand.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+            return idUsuario;
         }
-        return idUsuario;
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
     }
 
     public async Task<bool> ActualizarUsuarioAsync(
@@ -292,6 +303,20 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
 
         return Convert.ToInt64(
             await command.ExecuteScalarAsync(cancellationToken));
+    }
+
+    public async Task<bool> ActualizarFotografiaPersonaAsync(
+        long idPersona,
+        string fotografiaUrl,
+        string usuario,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = StoredProcedure(connection, "dbo.usp_Persona_Fotografia_Actualizar");
+        Add(command, "@IdPersona", SqlDbType.BigInt, idPersona);
+        Add(command, "@FotografiaUrl", SqlDbType.NVarChar, fotografiaUrl, 500);
+        Add(command, "@Usuario", SqlDbType.VarChar, usuario, 50);
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken)) > 0;
     }
 
     public async Task<IReadOnlyCollection<PersonaResumen>> ListarPersonasAsync(

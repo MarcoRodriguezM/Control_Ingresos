@@ -96,8 +96,8 @@ export function QrScannerPage({ onError }) {
     await consult(value)
   }
 
-  const authorized = persona?.areas?.filter((area) => area.tieneAcceso) ?? []
-  const denied = persona?.areas?.filter((area) => !area.tieneAcceso) ?? []
+  const assignedAreas = persona?.areas?.filter((area) => area.numeroSolicitud) ?? []
+  const authorizedCount = assignedAreas.filter((area) => area.tieneAcceso).length
 
   return <>
     <div className="page-heading qr-page-heading">
@@ -119,27 +119,66 @@ export function QrScannerPage({ onError }) {
 
     {loading && <div className="panel qr-placeholder">Consultando información de la persona…</div>}
     {persona && <section className="qr-result">
-      <div className="panel qr-identity-card">
-        <div className="qr-person-summary">
-          <div className="person-avatar large"><span>{initials(persona.nombreCompleto)}</span>{persona.fotografiaUrl && <img src={persona.fotografiaUrl} alt="Fotografía de la persona" />}</div>
-          <div><p className="eyebrow">Persona identificada</p><h2>{persona.nombreCompleto || 'Sin nombre'}</h2><p>{persona.cargoFuncion || 'Cargo no indicado'} · {persona.empresa || 'Empresa no indicada'}</p></div>
+      <div className={`panel qr-access-identity ${authorizedCount > 0 ? 'has-access' : 'without-access'}`}>
+        <div className="qr-access-person">
+          <div className="person-avatar qr-person-photo"><span>{initials(persona.nombreCompleto)}</span>{persona.fotografiaUrl && <img src={persona.fotografiaUrl} alt="Fotografía de la persona" />}</div>
+          <div className="qr-access-person-copy"><p className="eyebrow">Persona identificada</p><h2>{persona.nombreCompleto || 'Sin nombre'}</h2><p>{persona.numeroDocumento || 'Sin documento'} · {persona.empresa || 'Empresa no indicada'}</p></div>
         </div>
-        <div className="person-data-grid"><Info label="Documento" value={persona.numeroDocumento} /><Info label="Teléfono" value={persona.telefono} /><Info label="Correo" value={persona.correo} /><Info label="Estado" value={persona.estado} /></div>
-        <div className="qr-access-summary"><span className="qr-access-allowed"><strong>{authorized.length}</strong> áreas con acceso</span><span className="qr-access-denied"><strong>{denied.length}</strong> áreas sin acceso</span></div>
+        <div className="qr-current-access"><Icon name={authorizedCount > 0 ? 'check' : 'lock'} /><span><strong>{authorizedCount > 0 ? 'Acceso vigente' : 'Sin acceso vigente'}</strong><small>{authorizedCount > 0 ? `${authorizedCount} ${authorizedCount === 1 ? 'área autorizada' : 'áreas autorizadas'} en este momento` : 'No tiene áreas autorizadas en este momento'}</small></span></div>
       </div>
 
-      <div className="qr-area-columns">
-        <AreaGroup title="Áreas autorizadas" items={authorized} allowed />
-        <AreaGroup title="Áreas sin acceso" items={denied} />
-      </div>
+      <section className="panel qr-assigned-areas">
+        <div className="qr-assigned-heading"><div><p className="eyebrow">Permisos de ingreso</p><h2>Áreas asignadas</h2><p>La autorización se calcula con el estado de aprobación y las fechas de vigencia.</p></div><span>{assignedAreas.length}</span></div>
+        {assignedAreas.length === 0
+          ? <div className="qr-no-areas"><Icon name="lock" /><strong>No tiene áreas asignadas</strong><span>Esta persona no cuenta con permisos de ingreso registrados.</span></div>
+          : <div className="qr-assigned-list">{assignedAreas.map((area) => <AssignedArea key={`${area.idArea}-${area.numeroSolicitud}`} area={area} />)}</div>}
+      </section>
     </section>}
   </>
 }
 
-function AreaGroup({ title, items, allowed = false }) {
-  return <section className="panel qr-area-group"><div className="qr-area-group-title"><Icon name={allowed ? 'check' : 'lock'} /><h2>{title}</h2><span>{items.length}</span></div>{items.length === 0 && <p className="qr-area-empty">No hay áreas en esta categoría.</p>}<div className="qr-area-list">{items.map((area) => <article className={`qr-area-card ${allowed ? 'allowed' : 'denied'}`} key={area.idArea}><div><strong>{area.area || 'Área sin nombre'}</strong><span className={`access-status ${allowed ? 'aprobada' : area.codigoAcceso === 'RECHAZADA' ? 'rechazada' : 'pendiente'}`}>{area.estadoAcceso}</span></div>{area.numeroSolicitud && <p>{area.numeroSolicitud} · {area.actividad || 'Actividad no indicada'}</p>}{area.fechaInicio && <small>Vigencia: {formatDate(area.fechaInicio)} – {formatDate(area.fechaFin)}</small>}{area.comentarioDecision && <blockquote>{area.comentarioDecision}</blockquote>}</article>)}</div></section>
+function AssignedArea({ area }) {
+  const validity = getValidity(area)
+  const allowed = area.tieneAcceso && validity.kind === 'active'
+
+  return <article className={`qr-assigned-card ${allowed ? 'allowed' : 'denied'}`}>
+    <div className="qr-area-symbol"><Icon name={allowed ? 'check' : 'lock'} /></div>
+    <div className="qr-assigned-copy">
+      <div className="qr-assigned-title"><div><h3>{area.area || 'Área sin nombre'}</h3><p>{area.actividad || 'Actividad no indicada'} · {area.numeroSolicitud}</p></div><span className={`qr-access-state ${allowed ? 'allowed' : 'denied'}`}>{allowed ? 'Acceso autorizado' : 'Sin acceso'}</span></div>
+      <div className="qr-validity-row"><span><strong>Vigencia</strong>{area.fechaInicio && area.fechaFin ? `${formatDate(area.fechaInicio)} – ${formatDate(area.fechaFin)}` : 'Sin fechas definidas'}</span>{area.ubicacion && <span><strong>Ubicación</strong>{area.ubicacion}</span>}<span className={`qr-validity-message ${validity.kind}`}><strong>Estado actual</strong>{allowed ? validity.message : accessMessage(area, validity)}</span></div>
+      {area.comentarioDecision && !allowed && <p className="qr-access-reason">{area.comentarioDecision}</p>}
+    </div>
+  </article>
 }
 
-function Info({ label, value }) {
-  return <div className="info-value"><span>{label}</span><strong>{value || '—'}</strong></div>
+function getValidity(area) {
+  if (!area.fechaInicio || !area.fechaFin) return { kind: 'unknown', message: 'Vigencia no definida' }
+  const today = startOfDay(new Date())
+  const start = parseDate(area.fechaInicio)
+  const end = parseDate(area.fechaFin)
+  if (today < start) return { kind: 'future', message: `Inicia en ${daysBetween(today, start)} día(s)` }
+  if (today > end) return { kind: 'expired', message: `Venció hace ${daysBetween(end, today)} día(s)` }
+  const remaining = daysBetween(today, end)
+  return { kind: 'active', message: remaining === 0 ? 'Vence hoy' : `${remaining} día(s) restante(s)` }
+}
+
+function accessMessage(area, validity) {
+  if (validity.kind === 'expired' || validity.kind === 'future') return validity.message
+  if (area.codigoAcceso === 'RECHAZADA') return 'Acceso rechazado'
+  if (area.codigoAcceso === 'PENDIENTE') return 'Pendiente de aprobación'
+  if (area.codigoAcceso === 'SOLICITUD_NO_HABILITADA') return 'Solicitud aún no habilitada'
+  return area.estadoAcceso || 'Acceso no autorizado'
+}
+
+function parseDate(value) {
+  const [year, month, day] = String(value).slice(0, 10).split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
+
+function startOfDay(value) {
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate())
+}
+
+function daysBetween(start, end) {
+  return Math.max(0, Math.ceil((end - start) / 86400000))
 }

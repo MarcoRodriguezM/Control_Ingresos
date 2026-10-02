@@ -1,12 +1,34 @@
 import { useState } from 'react'
 import { Icon } from '../components/Icon'
 import { accessStatusClass, formatDate, formatDateTime, initials } from '../utils/formatters'
+import { preparePhotograph } from '../utils/photographs'
 
-export function PersonAccessPage({ items, selected, loading, onSelect, onNew, onQr }) {
+export function PersonAccessPage({ items, selected, loading, onSelect, onNew, onQr, onPhotographChange }) {
   const [query, setQuery] = useState('')
+  const [updatingPhotograph, setUpdatingPhotograph] = useState(false)
+  const [photographError, setPhotographError] = useState('')
   const normalizedQuery = query.trim().toLowerCase()
   const filtered = items.filter((item) => !normalizedQuery || [item.nombreCompleto, item.numeroDocumento, item.empresa]
     .some((value) => value?.toLowerCase().includes(normalizedQuery)))
+
+  async function changePhotograph(event) {
+    const input = event.target
+    const file = input.files?.[0]
+    if (!file || !selected || !onPhotographChange) return
+
+    setPhotographError('')
+    setUpdatingPhotograph(true)
+    try {
+      const optimized = await preparePhotograph(file)
+      const result = await onPhotographChange(selected.idPersona, optimized)
+      if (!result?.success) setPhotographError(result?.message || 'No fue posible actualizar la fotografía.')
+    } catch (error) {
+      setPhotographError(error.message || 'No fue posible procesar la fotografía.')
+    } finally {
+      input.value = ''
+      setUpdatingPhotograph(false)
+    }
+  }
 
   return <>
     <div className="page-heading requests-heading">
@@ -31,7 +53,7 @@ export function PersonAccessPage({ items, selected, loading, onSelect, onNew, on
         {loading && !selected && <div className="person-placeholder">Cargando información…</div>}
         {!loading && !selected && <div className="person-placeholder">Selecciona una persona para consultar sus accesos.</div>}
         {selected && <>
-          <div className="person-profile person-profile-with-action"><div className="person-avatar large"><span>{initials(selected.nombreCompleto)}</span>{selected.fotografiaUrl && <img src={selected.fotografiaUrl} alt={`Fotografía de ${selected.nombreCompleto || 'la persona'}`} onError={(event) => { event.currentTarget.style.display = 'none' }} />}</div><div><div className="profile-title"><h2>{selected.nombreCompleto}</h2><span className="status-badge success">{selected.estado || 'Sin estado'}</span></div><p>{selected.cargoFuncion || 'Cargo no indicado'} · {selected.empresa || 'Empresa no indicada'}</p></div><button type="button" className="primary-button person-qr-button" onClick={() => onQr(selected.idPersona)}><Icon name="qr" />Ver QR</button></div>
+          <div className="person-profile person-profile-with-action"><div className="person-photo-control"><PersonAvatar person={selected} large /><label className="person-photo-button" title={selected.fotografiaUrl ? 'Cambiar fotografía' : 'Agregar fotografía'}><Icon name="file" /><input type="file" accept="image/jpeg,image/png,image/webp" onChange={changePhotograph} disabled={updatingPhotograph} /></label></div><div><div className="profile-title"><h2>{selected.nombreCompleto}</h2><span className="status-badge success">{selected.estado || 'Sin estado'}</span></div><p>{selected.cargoFuncion || 'Cargo no indicado'} · {selected.empresa || 'Empresa no indicada'}</p><span className={`person-photo-help ${photographError ? 'error' : ''}`}>{photographError || (updatingPhotograph ? 'Procesando fotografía…' : selected.fotografiaUrl ? 'Haz clic en el ícono para cambiar la foto' : 'Haz clic en el ícono para agregar una foto')}</span></div><button type="button" className="primary-button person-qr-button" onClick={() => onQr(selected.idPersona)}><Icon name="qr" />Ver QR</button></div>
           <div className="person-data-grid"><InfoValue label="Documento" value={selected.numeroDocumento} /><InfoValue label="Teléfono" value={selected.telefono} /><InfoValue label="Correo" value={selected.correo} /><InfoValue label="Total de accesos" value={String(selected.accesos?.length ?? 0)} /></div>
           <div className="access-heading"><div><h3>Accesos asignados</h3><p>Áreas vinculadas a las solicitudes de ingreso de esta persona.</p></div><span>{selected.accesos?.length ?? 0} accesos</span></div>
           <div className="access-list">
@@ -46,4 +68,28 @@ export function PersonAccessPage({ items, selected, loading, onSelect, onNew, on
 
 function InfoValue({ label, value }) {
   return <div className="info-value"><span>{label}</span><strong>{value || '—'}</strong></div>
+}
+
+function PersonAvatar({ person, large = false }) {
+  const photographUrl = resolvePhotographUrl(person.fotografiaUrl)
+  const [failedUrl, setFailedUrl] = useState('')
+  const showPhotograph = photographUrl && failedUrl !== photographUrl
+
+  return <div className={`person-avatar ${large ? 'large' : ''}`}>
+    <span>{initials(person.nombreCompleto)}</span>
+    {showPhotograph && <img
+      src={photographUrl}
+      alt={`Fotografía de ${person.nombreCompleto || 'la persona'}`}
+      onError={() => setFailedUrl(photographUrl)}
+    />}
+  </div>
+}
+
+function resolvePhotographUrl(value) {
+  const normalized = value?.trim()
+  if (!normalized) return ''
+  if (/^(?:https?:|data:|blob:)/i.test(normalized)) return normalized
+
+  const apiUrl = (import.meta.env.VITE_API_URL ?? 'https://localhost:7230').replace(/\/$/, '')
+  return `${apiUrl}/${normalized.replace(/^\/+/, '')}`
 }

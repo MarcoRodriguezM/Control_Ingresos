@@ -77,6 +77,14 @@ export const controlIngresosApi = {
       body: formData,
     })
   },
+  actualizarFotografiaPersona: (idPersona, archivo) => {
+    const formData = new FormData()
+    formData.append('archivo', archivo)
+    return request(`/api/personas/${idPersona}/fotografia`, {
+      method: 'POST',
+      body: formData,
+    })
+  },
   listarPersonas: () => request('/api/personas'),
   listarPersonasConAccesos: () => request('/api/personas/accesos'),
   obtenerPersonaAccesos: (id) => request(`/api/personas/${id}/accesos`),

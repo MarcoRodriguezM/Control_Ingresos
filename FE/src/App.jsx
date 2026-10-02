@@ -415,6 +415,20 @@ function AuthenticatedApp({ session, onLogout }) {
     navigate(`/personas/${idPersona}`)
   }
 
+  async function updatePersonPhotograph(idPersona, photograph) {
+    setError('')
+    try {
+      await controlIngresosApi.actualizarFotografiaPersona(idPersona, photograph)
+      const detail = await controlIngresosApi.obtenerPersonaAccesos(idPersona)
+      setPersonaSeleccionada(detail)
+      await showSuccessAlert('La fotografía fue actualizada correctamente.')
+      return { success: true }
+    } catch (requestError) {
+      setError(requestError.message)
+      return { success: false, message: requestError.message }
+    }
+  }
+
   function openApprovalDetail(idSolicitudPersonaArea) {
     setError('')
     navigate(`/aprobaciones/${idSolicitudPersonaArea}/detalle`)
@@ -473,12 +487,12 @@ function AuthenticatedApp({ session, onLogout }) {
     setError('')
     try {
       await controlIngresosApi.crearUsuario(user)
-      const [records, refreshedOptions] = await Promise.all([
-        controlIngresosApi.listarUsuarios(),
-        controlIngresosApi.obtenerDatosFormularioSolicitud(),
-      ])
-      setUsuarios(records)
-      setOptions(refreshedOptions)
+      try {
+        setUsuarios(await controlIngresosApi.listarUsuarios())
+      } catch {
+        // La creación ya fue confirmada por el servidor. El listado se recargará
+        // al volver a entrar para que un fallo de refresco no simule un fallo al crear.
+      }
       await showSuccessAlert('El usuario fue creado correctamente.')
       navigate('/usuarios')
       return { success: true }
@@ -653,10 +667,10 @@ function AuthenticatedApp({ session, onLogout }) {
             <Route path="/solicitudes" element={<RequestsListPage items={solicitudes} loading={loading} onNew={openNew} onEdit={openEdit} onDelete={remove} />} />
             <Route path="/solicitudes/nueva" element={<RequestFormPage form={form} options={options} people={personas} requestPeople={requestPeople} existingPeople={existingRequestPeople} peopleEntryMode={peopleEntryMode} loading={loading} saving={saving} editingId={null} step={step} selected={selected} canSend={canSendRequest} onPeopleEntryModeChange={(mode) => { setPeopleEntryMode(mode); if (mode === 'provider') setRequestPeople([]) }} onPeopleChange={setRequestPeople} onChange={change} onStepChange={goToStep} onNext={next} onBack={() => setStep((current) => current - 1)} onCancel={cancelForm} onSubmit={submit} />} />
             <Route path="/solicitudes/:id/editar" element={<RequestFormPage form={form} options={options} people={personas} requestPeople={requestPeople} existingPeople={existingRequestPeople} peopleEntryMode={peopleEntryMode} loading={loading} saving={saving} editingId={activeEditingId} step={step} selected={selected} canSend={canSendRequest} onPeopleEntryModeChange={(mode) => { setPeopleEntryMode(mode); if (mode === 'provider') setRequestPeople([]) }} onPeopleChange={setRequestPeople} onChange={change} onStepChange={goToStep} onNext={next} onBack={() => setStep((current) => current - 1)} onCancel={cancelForm} onSubmit={submit} />} />
-            <Route path="/personas" element={<PersonAccessPage items={personasConAccesos} selected={personaSeleccionada} loading={personLoading} onSelect={selectPerson} onNew={openNewPerson} onQr={(idPersona) => navigate(`/personas/${idPersona}/qr`)} />} />
+            <Route path="/personas" element={<PersonAccessPage items={personasConAccesos} selected={personaSeleccionada} loading={personLoading} onSelect={selectPerson} onNew={openNewPerson} onQr={(idPersona) => navigate(`/personas/${idPersona}/qr`)} onPhotographChange={updatePersonPhotograph} />} />
             <Route path="/personas/nueva" element={<PersonFormPage session={session} providers={options?.proveedores} onCancel={openPersons} onCreated={personCreated} onError={setError} />} />
             <Route path="/personas/:idPersona/qr" element={<PersonQrPage idPersona={Number(personQrRoute?.params.idPersona)} onBack={() => navigate(`/personas/${personQrRoute?.params.idPersona}`)} onError={setError} />} />
-            <Route path="/personas/:idPersona" element={<PersonAccessPage items={personasConAccesos} selected={personaSeleccionada} loading={personLoading} onSelect={selectPerson} onNew={openNewPerson} onQr={(idPersona) => navigate(`/personas/${idPersona}/qr`)} />} />
+            <Route path="/personas/:idPersona" element={<PersonAccessPage items={personasConAccesos} selected={personaSeleccionada} loading={personLoading} onSelect={selectPerson} onNew={openNewPerson} onQr={(idPersona) => navigate(`/personas/${idPersona}/qr`)} onPhotographChange={updatePersonPhotograph} />} />
             <Route path="/escanear-qr" element={<QrScannerPage onError={setError} />} />
             <Route path="/aprobaciones" element={canApprove ? <ApprovalsPage items={aprobaciones} loading={approvalsLoading} onDecide={decideApproval} onDecideMany={decideApprovals} onViewDetail={openApprovalDetail} /> : <Navigate to="/solicitudes" replace />} />
             <Route path="/aprobaciones/:idSolicitudPersonaArea/detalle" element={canApprove ? <RequestApprovalDetailPage request={approvalDetail} options={options} approvalItems={aprobaciones} loading={approvalDetailLoading || !approvalDetail} onBack={() => navigate('/aprobaciones')} onDecide={decideApproval} /> : <Navigate to="/solicitudes" replace />} />

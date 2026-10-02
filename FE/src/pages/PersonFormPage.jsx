@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Icon } from '../components/Icon'
 import { controlIngresosApi } from '../services/api'
 import { showSuccessAlert } from '../utils/alerts'
+import { formatFileSize, preparePhotograph } from '../utils/photographs'
 
 const initialForm = {
   idTipoDocumento: '',
@@ -21,6 +22,8 @@ export function PersonFormPage({ session, providers = [], onCancel, onCreated, o
   const [catalogs, setCatalogs] = useState({ documentTypes: [], statuses: [] })
   const [photograph, setPhotograph] = useState(null)
   const [photographPreview, setPhotographPreview] = useState('')
+  const [processingPhotograph, setProcessingPhotograph] = useState(false)
+  const [photographWasCompressed, setPhotographWasCompressed] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
@@ -56,30 +59,34 @@ export function PersonFormPage({ session, providers = [], onCancel, onCreated, o
     setForm((current) => ({ ...current, [name]: value }))
   }
 
-  function changePhotograph(event) {
+  async function changePhotograph(event) {
     const file = event.target.files?.[0] ?? null
+    const input = event.target
     onError('')
 
     if (!file) {
       setPhotograph(null)
       setPhotographPreview('')
+      setPhotographWasCompressed(false)
       return
     }
 
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
-      event.target.value = ''
-      onError('La fotografía debe estar en formato JPG, PNG o WebP.')
-      return
-    }
+    setProcessingPhotograph(true)
+    try {
+      const optimized = await preparePhotograph(file)
 
-    if (file.size > 5 * 1024 * 1024) {
-      event.target.value = ''
-      onError('La fotografía no puede superar los 5 MB.')
-      return
+      setPhotograph(optimized)
+      setPhotographWasCompressed(optimized !== file)
+      setPhotographPreview(URL.createObjectURL(optimized))
+    } catch (error) {
+      input.value = ''
+      setPhotograph(null)
+      setPhotographPreview('')
+      setPhotographWasCompressed(false)
+      onError(error.message || 'No fue posible procesar la fotografía seleccionada.')
+    } finally {
+      setProcessingPhotograph(false)
     }
-
-    setPhotograph(file)
-    setPhotographPreview(URL.createObjectURL(file))
   }
 
   async function submit(event) {
@@ -169,7 +176,7 @@ export function PersonFormPage({ session, providers = [], onCancel, onCreated, o
             <div className="photograph-picker-copy">
               <label className="photograph-button" htmlFor="person-photograph">
                 <Icon name="file" />
-                {photograph ? 'Cambiar fotografía' : 'Seleccionar fotografía'}
+                {processingPhotograph ? 'Optimizando…' : photograph ? 'Cambiar fotografía' : 'Seleccionar fotografía'}
               </label>
               <input
                 id="person-photograph"
@@ -177,8 +184,13 @@ export function PersonFormPage({ session, providers = [], onCancel, onCreated, o
                 type="file"
                 accept="image/jpeg,image/png,image/webp"
                 onChange={changePhotograph}
+                disabled={processingPhotograph || saving}
               />
-              <span>{photograph ? photograph.name : 'JPG, PNG o WebP. Tamaño máximo: 5 MB.'}</span>
+              <span>{processingPhotograph
+                ? 'Reduciendo la imagen para que pueda subirse…'
+                : photograph
+                  ? `${photograph.name} · ${formatFileSize(photograph.size)}${photographWasCompressed ? ' · optimizada automáticamente' : ''}`
+                  : 'JPG, PNG o WebP. Las imágenes mayores de 5 MB se optimizan automáticamente.'}</span>
             </div>
           </div>
         </Field>
@@ -189,7 +201,7 @@ export function PersonFormPage({ session, providers = [], onCancel, onCreated, o
 
       <div className="form-footer">
         <button type="button" className="ghost-button" onClick={onCancel}>Cancelar</button>
-        <button type="submit" className="primary-button teal" disabled={saving || loading}><Icon name="send" />{saving ? 'Guardando…' : 'Registrar persona'}</button>
+        <button type="submit" className="primary-button teal" disabled={saving || loading || processingPhotograph}><Icon name="send" />{saving ? 'Guardando…' : processingPhotograph ? 'Procesando foto…' : 'Registrar persona'}</button>
       </div>
     </form>
   </>

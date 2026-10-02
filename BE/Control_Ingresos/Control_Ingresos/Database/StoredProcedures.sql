@@ -534,6 +534,31 @@ BEGIN
 END;
 GO
 
+-- dbo.usp_Persona_Fotografia_Actualizar
+CREATE OR ALTER PROCEDURE dbo.usp_Persona_Fotografia_Actualizar
+    @IdPersona BIGINT,
+    @FotografiaUrl NVARCHAR(500),
+    @Usuario VARCHAR(50)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.Persona WHERE IdPersona = @IdPersona)
+        THROW 50404, 'La persona no existe.', 1;
+
+    IF NULLIF(LTRIM(RTRIM(@FotografiaUrl)), '') IS NULL
+        THROW 50405, 'La URL de la fotografía es obligatoria.', 1;
+
+    UPDATE dbo.Persona
+    SET FotografiaUrl = LTRIM(RTRIM(@FotografiaUrl)),
+        FechaModificacion = SYSDATETIME(),
+        UsuarioModificacion = @Usuario
+    WHERE IdPersona = @IdPersona;
+
+    SELECT @@ROWCOUNT;
+END;
+GO
+
 -- dbo.usp_Persona_Accesos_Obtener
 CREATE OR ALTER PROCEDURE dbo.usp_Persona_Accesos_Obtener
     @IdPersona BIGINT,

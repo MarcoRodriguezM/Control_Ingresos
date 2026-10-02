@@ -102,31 +102,85 @@ public sealed class PersonasController(
         [FromForm] IFormFile? archivo,
         CancellationToken cancellationToken)
     {
-        if (archivo is null || archivo.Length == 0)
+        try
+        {
+            var fotografia = await GuardarFotografiaAsync(archivo, cancellationToken);
+            return Created(fotografia.RutaPublica, new FotografiaSubidaResponse(fotografia.Url));
+        }
+        catch (InvalidDataException exception)
         {
             return Problem(
                 statusCode: StatusCodes.Status400BadRequest,
                 title: "Fotografía no válida",
-                detail: "Selecciona una fotografía para continuar.");
+                detail: exception.Message);
         }
+    }
 
-        if (archivo.Length > MaximoFotografiaBytes)
+    [HttpPost("{id:long}/fotografia")]
+    [RequestSizeLimit(6 * 1024 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit = 6 * 1024 * 1024)]
+    [ProducesResponseType<FotografiaSubidaResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<FotografiaSubidaResponse>> ActualizarFotografia(
+        long id,
+        [FromForm] IFormFile? archivo,
+        CancellationToken cancellationToken)
+    {
+        var usuario = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(usuario)) return Unauthorized();
+
+        FotografiaGuardada fotografia;
+        try
+        {
+            fotografia = await GuardarFotografiaAsync(archivo, cancellationToken);
+        }
+        catch (InvalidDataException exception)
         {
             return Problem(
                 statusCode: StatusCodes.Status400BadRequest,
-                title: "Fotografía demasiado grande",
-                detail: "La fotografía no puede superar los 5 MB.");
+                title: "Fotografía no válida",
+                detail: exception.Message);
         }
+
+        try
+        {
+            var actualizada = await repository.ActualizarFotografiaPersonaAsync(
+                id,
+                fotografia.Url,
+                usuario,
+                cancellationToken);
+
+            if (!actualizada)
+            {
+                System.IO.File.Delete(fotografia.RutaArchivo);
+                return NotFound();
+            }
+
+            return Ok(new FotografiaSubidaResponse(fotografia.Url));
+        }
+        catch
+        {
+            if (System.IO.File.Exists(fotografia.RutaArchivo))
+                System.IO.File.Delete(fotografia.RutaArchivo);
+            throw;
+        }
+    }
+
+    private async Task<FotografiaGuardada> GuardarFotografiaAsync(
+        IFormFile? archivo,
+        CancellationToken cancellationToken)
+    {
+        if (archivo is null || archivo.Length == 0)
+            throw new InvalidDataException("Selecciona una fotografía para continuar.");
+
+        if (archivo.Length > MaximoFotografiaBytes)
+            throw new InvalidDataException("La fotografía no puede superar los 5 MB.");
 
         await using var origen = archivo.OpenReadStream();
         var extension = await DetectarExtensionImagenAsync(origen, cancellationToken);
         if (extension is null)
-        {
-            return Problem(
-                statusCode: StatusCodes.Status400BadRequest,
-                title: "Formato no permitido",
-                detail: "La fotografía debe estar en formato JPG, PNG o WebP.");
-        }
+            throw new InvalidDataException("La fotografía debe estar en formato JPG, PNG o WebP.");
 
         origen.Position = 0;
 
@@ -159,9 +213,10 @@ public sealed class PersonasController(
 
         var rutaPublica = $"/uploads/personas/{nombreArchivo}";
         var url = $"{Request.Scheme}://{Request.Host}{Request.PathBase}{rutaPublica}";
-
-        return Created(rutaPublica, new FotografiaSubidaResponse(url));
+        return new FotografiaGuardada(url, rutaPublica, rutaArchivo);
     }
+
+    private sealed record FotografiaGuardada(string Url, string RutaPublica, string RutaArchivo);
 
     private static async Task<string?> DetectarExtensionImagenAsync(
         Stream stream,

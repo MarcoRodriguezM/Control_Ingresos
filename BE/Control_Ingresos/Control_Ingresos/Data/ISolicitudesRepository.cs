@@ -14,6 +14,7 @@ public interface ISolicitudesRepository
     Task<SolicitudFormularioDatos> ObtenerDatosFormularioSolicitudAsync(CancellationToken cancellationToken);
     Task<long> CrearProveedorAsync(CrearProveedorRequest request, CancellationToken cancellationToken);
     Task<long> CrearPersonaAsync(CrearPersonaRequest request, CancellationToken cancellationToken);
+    Task<bool> ActualizarFotografiaPersonaAsync(long idPersona, string fotografiaUrl, string usuario, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<PersonaResumen>> ListarPersonasAsync(CancellationToken cancellationToken);
     Task<IReadOnlyCollection<PersonaResumen>> ListarPersonasConAccesosAsync(string idUsuario, CancellationToken cancellationToken);
     Task<PersonaConAccesos?> ObtenerPersonaAccesosAsync(long idPersona, string idUsuario, CancellationToken cancellationToken);
