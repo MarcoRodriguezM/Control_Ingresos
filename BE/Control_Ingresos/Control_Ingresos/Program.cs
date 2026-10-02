@@ -12,6 +12,7 @@ builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
 builder.Services.AddScoped<ISolicitudesRepository, SolicitudesRepository>();
+builder.Services.AddScoped<IEmpleadosRepository, EmpleadosRepository>();
 
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<SqlExceptionHandler>();

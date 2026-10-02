@@ -6,6 +6,7 @@ import auraLogo from './assets/logo-aura.png'
 import {
   ApprovalsPage,
   DashboardPage,
+  EmployeeListPage,
   LoginPage,
   MyActivitiesPage,
   PersonAccessPage,
@@ -85,9 +86,11 @@ function AuthenticatedApp({ session, onLogout }) {
   const editRoute = matchPath('/solicitudes/:id/editar', location.pathname)
   const personQrRoute = matchPath('/personas/:idPersona/qr', location.pathname)
   const personRoute = matchPath('/personas/:idPersona', location.pathname)
+  const employeeRoute = matchPath('/empleados/:codigoEmpleado', location.pathname)
   const isNewPersonRoute = location.pathname === '/personas/nueva'
   const approvalDetailRoute = matchPath('/aprobaciones/:idSolicitudPersonaArea/detalle', location.pathname)
   const isPersonsRoute = location.pathname.startsWith('/personas')
+  const isEmployeesRoute = location.pathname.startsWith('/empleados')
   const isQrScannerRoute = location.pathname === '/escanear-qr'
   const isRequestsRoute = location.pathname.startsWith('/solicitudes')
   const isApprovalsRoute = location.pathname.startsWith('/aprobaciones')
@@ -105,6 +108,9 @@ function AuthenticatedApp({ session, onLogout }) {
   const [solicitudes, setSolicitudes] = useState([])
   const [personas, setPersonas] = useState([])
   const [personasConAccesos, setPersonasConAccesos] = useState([])
+  const [empleados, setEmpleados] = useState([])
+  const [employeeStatuses, setEmployeeStatuses] = useState([])
+  const [employeePhotograph, setEmployeePhotograph] = useState(null)
   const [requestPeople, setRequestPeople] = useState([])
   const [existingRequestPeople, setExistingRequestPeople] = useState([])
   const [peopleEntryMode, setPeopleEntryMode] = useState('')
@@ -120,6 +126,8 @@ function AuthenticatedApp({ session, onLogout }) {
   const [approvalDetail, setApprovalDetail] = useState(null)
   const [approvalDetailLoading, setApprovalDetailLoading] = useState(false)
   const [personLoading, setPersonLoading] = useState(false)
+  const [employeesLoading, setEmployeesLoading] = useState(false)
+  const [employeePhotographLoading, setEmployeePhotographLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -209,6 +217,36 @@ function AuthenticatedApp({ session, onLogout }) {
     load()
     return () => { active = false }
   }, [isPersonsRoute, isNewPersonRoute, personQrRoute, personRoute?.params.idPersona, session.idUsuario])
+
+  useEffect(() => {
+    if (!isEmployeesRoute) return
+    let active = true
+    const load = async () => {
+      await Promise.resolve()
+      if (!active) return
+      setEmployeesLoading(true)
+      setError('')
+      try {
+        const [records, statuses] = await Promise.all([
+          controlIngresosApi.listarEmpleados(),
+          controlIngresosApi.listarEstadosEmpleado(),
+        ])
+        if (!active) return
+        const descriptions = new Map(statuses.map((status) => [String(status.statusId), status.descripcion]))
+        setEmployeeStatuses(statuses)
+        setEmpleados(records.map((employee) => ({
+          ...employee,
+          descripcionStatus: descriptions.get(String(employee.codigoStatus).trim()) ?? null,
+        })))
+      } catch (requestError) {
+        if (active) setError(requestError.message)
+      } finally {
+        if (active) setEmployeesLoading(false)
+      }
+    }
+    load()
+    return () => { active = false }
+  }, [isEmployeesRoute, session.idUsuario])
 
   useEffect(() => {
     if ((!isApprovalsRoute && !isDashboardRoute) || !canApprove) return
@@ -327,6 +365,45 @@ function AuthenticatedApp({ session, onLogout }) {
     ubicacion: findOption(options?.ubicaciones, form.idUbicacion),
     usuario: findOption(options?.usuarios, form.idUsuarioSolicitante),
   }), [form, options])
+  const selectedEmployee = useMemo(() => {
+    if (!isEmployeesRoute) return null
+    const employeeCode = employeeRoute?.params.codigoEmpleado
+    return (employeeCode
+      ? empleados.find((employee) => String(employee.codigoEmpleado) === employeeCode)
+      : empleados[0]) ?? null
+  }, [isEmployeesRoute, empleados, employeeRoute?.params.codigoEmpleado])
+
+  useEffect(() => {
+    const codigoEmpleado = selectedEmployee?.codigoEmpleado
+    setEmployeePhotograph(null)
+
+    if (!codigoEmpleado) {
+      setEmployeePhotographLoading(false)
+      return undefined
+    }
+
+    let active = true
+    let photographUrl = ''
+    const load = async () => {
+      setEmployeePhotographLoading(true)
+      try {
+        const photograph = await controlIngresosApi.obtenerFotografiaEmpleado(codigoEmpleado)
+        if (!active || !photograph) return
+        photographUrl = URL.createObjectURL(photograph)
+        setEmployeePhotograph({ codigoEmpleado, url: photographUrl })
+      } catch (requestError) {
+        if (active) setError(requestError.message)
+      } finally {
+        if (active) setEmployeePhotographLoading(false)
+      }
+    }
+    load()
+
+    return () => {
+      active = false
+      if (photographUrl) URL.revokeObjectURL(photographUrl)
+    }
+  }, [selectedEmployee?.codigoEmpleado])
   const totalRequestPeople = requestPeople.length + existingRequestPeople.length
   const estimatedPeople = Number(form.cantidadEstimada) || 0
   const canSendRequest = peopleEntryMode === 'provider'
@@ -389,6 +466,12 @@ function AuthenticatedApp({ session, onLogout }) {
     setError('')
   }
 
+  function openEmployees() {
+    navigate('/empleados')
+    setMenuOpen(false)
+    setError('')
+  }
+
   function openNewPerson() {
     navigate('/personas/nueva')
     setMenuOpen(false)
@@ -413,6 +496,12 @@ function AuthenticatedApp({ session, onLogout }) {
   function selectPerson(idPersona) {
     setError('')
     navigate(`/personas/${idPersona}`)
+  }
+
+  function selectEmployee(employee) {
+    if (!employee?.codigoEmpleado) return
+    setError('')
+    navigate(`/empleados/${encodeURIComponent(employee.codigoEmpleado)}`)
   }
 
   async function updatePersonPhotograph(idPersona, photograph) {
@@ -633,6 +722,7 @@ function AuthenticatedApp({ session, onLogout }) {
           {canApprove && <Nav icon="check" label="Mis aprobaciones" count={aprobaciones.filter((item) => item.codigoEstado === 'PENDIENTE').length || undefined} active={isApprovalsRoute} onClick={() => { navigate('/aprobaciones'); setMenuOpen(false); setError('') }} />}
           <Nav icon="tasks" label="Mis actividades" count={actividades.filter((item) => !item.esEstadoFinal).length || undefined} active={isActivitiesRoute} onClick={() => { navigate('/mis-actividades'); setMenuOpen(false); setError('') }} />
           <Nav icon="users" label="Personas" count={personas.length || undefined} active={isPersonsRoute} onClick={openPersons} />
+          <Nav icon="user" label="Empleados" count={empleados.length || undefined} active={isEmployeesRoute} onClick={openEmployees} />
           <Nav icon="qr" label="Escanear QR" active={isQrScannerRoute} onClick={() => { navigate('/escanear-qr'); setMenuOpen(false); setError('') }} />
           {isAdministrator && <Nav icon="settings" label="Usuarios" count={usuarios.length || undefined} active={isUsersRoute} onClick={() => { navigate('/usuarios'); setMenuOpen(false); setError('') }} />}
         </nav>
@@ -646,7 +736,7 @@ function AuthenticatedApp({ session, onLogout }) {
           <button className="icon-button menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label="Abrir menú"><Icon name="menu" /></button>
           <div className="breadcrumb">
             <Link to="/dashboard" onClick={() => { setError(''); setMenuOpen(false) }}>Inicio</Link>
-            <strong>{approvalDetailRoute ? 'Detalle de solicitud' : isDashboardRoute ? 'Dashboard' : isProfileRoute ? 'Mi perfil' : isNewUserRoute ? 'Crear usuario' : userEditRoute ? 'Editar usuario' : userDetailRoute ? 'Detalle del usuario' : isUsersRoute ? 'Usuarios' : isActivitiesRoute ? 'Mis actividades' : isApprovalsRoute ? 'Mis aprobaciones' : isQrScannerRoute ? 'Escanear QR' : personQrRoute ? 'QR de la persona' : isNewPersonRoute ? 'Nueva persona' : isPersonsRoute ? 'Personas y accesos' : editRoute ? 'Editar solicitud' : location.pathname === '/solicitudes/nueva' ? 'Nueva solicitud' : 'Solicitudes'}</strong>
+            <strong>{approvalDetailRoute ? 'Detalle de solicitud' : isDashboardRoute ? 'Dashboard' : isProfileRoute ? 'Mi perfil' : isNewUserRoute ? 'Crear usuario' : userEditRoute ? 'Editar usuario' : userDetailRoute ? 'Detalle del usuario' : isUsersRoute ? 'Usuarios' : isActivitiesRoute ? 'Mis actividades' : isApprovalsRoute ? 'Mis aprobaciones' : isQrScannerRoute ? 'Escanear QR' : personQrRoute ? 'QR de la persona' : isNewPersonRoute ? 'Nueva persona' : isPersonsRoute ? 'Personas y accesos' : isEmployeesRoute ? 'Empleados' : editRoute ? 'Editar solicitud' : location.pathname === '/solicitudes/nueva' ? 'Nueva solicitud' : 'Solicitudes'}</strong>
           </div>
           <div className="top-actions">
             {/* <button className="ghost-button"><Icon name="help" />Ayuda</button> */}
@@ -671,6 +761,8 @@ function AuthenticatedApp({ session, onLogout }) {
             <Route path="/personas/nueva" element={<PersonFormPage session={session} providers={options?.proveedores} onCancel={openPersons} onCreated={personCreated} onError={setError} />} />
             <Route path="/personas/:idPersona/qr" element={<PersonQrPage idPersona={Number(personQrRoute?.params.idPersona)} onBack={() => navigate(`/personas/${personQrRoute?.params.idPersona}`)} onError={setError} />} />
             <Route path="/personas/:idPersona" element={<PersonAccessPage items={personasConAccesos} selected={personaSeleccionada} loading={personLoading} onSelect={selectPerson} onNew={openNewPerson} onQr={(idPersona) => navigate(`/personas/${idPersona}/qr`)} onPhotographChange={updatePersonPhotograph} />} />
+            <Route path="/empleados" element={<EmployeeListPage items={empleados} statuses={employeeStatuses} selected={selectedEmployee} loading={employeesLoading} photographUrl={employeePhotograph?.codigoEmpleado === selectedEmployee?.codigoEmpleado ? employeePhotograph?.url ?? '' : ''} photographLoading={employeePhotographLoading} onSelect={selectEmployee} />} />
+            <Route path="/empleados/:codigoEmpleado" element={<EmployeeListPage items={empleados} statuses={employeeStatuses} selected={selectedEmployee} loading={employeesLoading} photographUrl={employeePhotograph?.codigoEmpleado === selectedEmployee?.codigoEmpleado ? employeePhotograph?.url ?? '' : ''} photographLoading={employeePhotographLoading} onSelect={selectEmployee} />} />
             <Route path="/escanear-qr" element={<QrScannerPage onError={setError} />} />
             <Route path="/aprobaciones" element={canApprove ? <ApprovalsPage items={aprobaciones} loading={approvalsLoading} onDecide={decideApproval} onDecideMany={decideApprovals} onViewDetail={openApprovalDetail} /> : <Navigate to="/solicitudes" replace />} />
             <Route path="/aprobaciones/:idSolicitudPersonaArea/detalle" element={canApprove ? <RequestApprovalDetailPage request={approvalDetail} options={options} approvalItems={aprobaciones} loading={approvalDetailLoading || !approvalDetail} onBack={() => navigate('/aprobaciones')} onDecide={decideApproval} /> : <Navigate to="/solicitudes" replace />} />

@@ -42,6 +42,31 @@ async function request(path, options = {}) {
   return response.json()
 }
 
+async function requestBlob(path) {
+  const response = await fetch(`${API_URL}${path}`, {
+    credentials: 'include',
+    headers: { Accept: 'image/*' },
+  })
+
+  if (response.status === 404) return null
+
+  if (!response.ok) {
+    const problem = await response.json().catch(() => null)
+    const error = new Error(problem?.detail ?? problem?.title ?? `Error HTTP ${response.status}`)
+    error.status = response.status
+    error.problem = problem
+
+    if (response.status === 401) {
+      localStorage.removeItem('control-ingresos-session')
+      window.location.assign('/login')
+    }
+
+    throw error
+  }
+
+  return response.blob()
+}
+
 export const controlIngresosApi = {
   iniciarSesion: (credentials) => request('/api/autenticacion/login', {
     method: 'POST',
@@ -86,6 +111,9 @@ export const controlIngresosApi = {
     })
   },
   listarPersonas: () => request('/api/personas'),
+  listarEmpleados: () => request('/api/empleados'),
+  listarEstadosEmpleado: () => request('/api/empleados/estados'),
+  obtenerFotografiaEmpleado: (codigoEmpleado) => requestBlob(`/api/empleados/${encodeURIComponent(codigoEmpleado)}/fotografia`),
   listarPersonasConAccesos: () => request('/api/personas/accesos'),
   obtenerPersonaAccesos: (id) => request(`/api/personas/${id}/accesos`),
   obtenerQrPersona: (id) => request(`/api/personas/${id}/qr`),
