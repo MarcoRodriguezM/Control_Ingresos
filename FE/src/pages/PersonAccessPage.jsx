@@ -1,15 +1,37 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../components/Icon'
 import { accessStatusClass, formatDate, formatDateTime, initials } from '../utils/formatters'
 import { preparePhotograph } from '../utils/photographs'
 
-export function PersonAccessPage({ items, selected, loading, onSelect, onNew, onQr, onPhotographChange }) {
+export function PersonAccessPage({ items, selected, loading, mobileDetailOpen = false, onSelect, onBack, onNew, onQr, onPhotographChange }) {
   const [query, setQuery] = useState('')
   const [updatingPhotograph, setUpdatingPhotograph] = useState(false)
   const [photographError, setPhotographError] = useState('')
+  const listScrollPosition = useRef(0)
+  const previousDetailState = useRef(mobileDetailOpen)
   const normalizedQuery = query.trim().toLowerCase()
   const filtered = items.filter((item) => !normalizedQuery || [item.nombreCompleto, item.numeroDocumento, item.empresa]
     .some((value) => value?.toLowerCase().includes(normalizedQuery)))
+
+  useEffect(() => {
+    if (!isMobileDirectory()) {
+      previousDetailState.current = mobileDetailOpen
+      return
+    }
+
+    if (mobileDetailOpen && !previousDetailState.current) {
+      window.scrollTo({ top: 0, behavior: 'auto' })
+    } else if (!mobileDetailOpen && previousDetailState.current) {
+      window.requestAnimationFrame(() => window.scrollTo({ top: listScrollPosition.current, behavior: 'auto' }))
+    }
+
+    previousDetailState.current = mobileDetailOpen
+  }, [mobileDetailOpen])
+
+  function selectPerson(idPersona) {
+    if (isMobileDirectory()) listScrollPosition.current = window.scrollY
+    onSelect(idPersona)
+  }
 
   async function changePhotograph(event) {
     const input = event.target
@@ -30,7 +52,7 @@ export function PersonAccessPage({ items, selected, loading, onSelect, onNew, on
     }
   }
 
-  return <>
+  return <div className={`directory-page person-directory ${mobileDetailOpen ? 'mobile-detail-active' : ''}`}>
     <div className="page-heading requests-heading">
       <div><p className="eyebrow">Control de acceso</p><h1>Persona con sus accesos</h1><p>Consulta la información personal, solicitudes, áreas autorizadas y estado de aprobación.</p></div>
       <button type="button" className="primary-button" onClick={onNew}><Icon name="users" />Nueva persona</button>
@@ -41,7 +63,7 @@ export function PersonAccessPage({ items, selected, loading, onSelect, onNew, on
         <div className="people-results">
           {loading && items.length === 0 && <p className="people-empty">Cargando personas…</p>}
           {!loading && filtered.length === 0 && <p className="people-empty">No se encontraron personas.</p>}
-          {filtered.map((person) => <button type="button" className={`person-row ${selected?.idPersona === person.idPersona ? 'active' : ''}`} key={person.idPersona} onClick={() => onSelect(person.idPersona)}>
+          {filtered.map((person) => <button type="button" className={`person-row ${selected?.idPersona === person.idPersona ? 'active' : ''}`} key={person.idPersona} onClick={() => selectPerson(person.idPersona)}>
             <span className="person-avatar">{initials(person.nombreCompleto)}</span>
             <span className="person-row-copy"><strong>{person.nombreCompleto || 'Sin nombre'}</strong><small>{person.empresa || person.numeroDocumento || 'Sin empresa'}</small></span>
             <span className="access-count">{person.cantidadAccesos}</span>
@@ -50,6 +72,7 @@ export function PersonAccessPage({ items, selected, loading, onSelect, onNew, on
       </aside>
 
       <section className="panel person-detail-panel">
+        {mobileDetailOpen && <button type="button" className="secondary-button mobile-detail-back" onClick={onBack}><Icon name="back" />Volver al listado</button>}
         {loading && !selected && <div className="person-placeholder">Cargando información…</div>}
         {!loading && !selected && <div className="person-placeholder">Selecciona una persona para consultar sus accesos.</div>}
         {selected && <>
@@ -63,7 +86,7 @@ export function PersonAccessPage({ items, selected, loading, onSelect, onNew, on
         </>}
       </section>
     </div>
-  </>
+  </div>
 }
 
 function InfoValue({ label, value }) {
@@ -92,4 +115,8 @@ function resolvePhotographUrl(value) {
 
   const apiUrl = (import.meta.env.VITE_API_URL ?? 'https://localhost:7230').replace(/\/$/, '')
   return `${apiUrl}/${normalized.replace(/^\/+/, '')}`
+}
+
+function isMobileDirectory() {
+  return window.matchMedia('(max-width: 680px)').matches
 }

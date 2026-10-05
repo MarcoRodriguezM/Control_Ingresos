@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../components/Icon'
 import { controlIngresosApi } from '../services/api'
-import { formatDate, initials } from '../utils/formatters'
+import { formatDate, formatDateTime, initials } from '../utils/formatters'
 
 const qrPattern = /[a-f0-9]{64}/i
 
 export function QrScannerPage({ onError }) {
   const [value, setValue] = useState('')
   const [persona, setPersona] = useState(null)
+  const [empleado, setEmpleado] = useState(null)
+  const [employeePhotoUrl, setEmployeePhotoUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [cameraActive, setCameraActive] = useState(false)
   const videoRef = useRef(null)
@@ -24,19 +26,33 @@ export function QrScannerPage({ onError }) {
     setCameraActive(false)
   }
 
-  async function consult(rawValue) {
+  async function consult(rawValue, explicitType = null) {
     const match = String(rawValue ?? '').match(qrPattern)
     if (!match) {
-      onError('El código leído no corresponde a una persona registrada en el sistema.')
+      processingRef.current = false
+      onError('El código leído no corresponde a una identificación registrada en el sistema.')
       return
     }
 
     setLoading(true)
     setPersona(null)
+    setEmpleado(null)
+    setEmployeePhotoUrl('')
     try {
-      const result = await controlIngresosApi.consultarQrPersona(match[0].toLowerCase())
-      setValue(match[0].toLowerCase())
-      setPersona(result)
+      const code = match[0].toLowerCase()
+      const result = await resolveQr(code, explicitType ?? qrTypeFromValue(rawValue))
+      setValue(code)
+      if (result.type === 'empleado') {
+        setEmpleado(result.data)
+        try {
+          const photograph = await controlIngresosApi.obtenerFotografiaEmpleado(result.data.codigoEmpleado)
+          setEmployeePhotoUrl(URL.createObjectURL(photograph))
+        } catch {
+          // La fotografía es opcional y no impide validar al empleado.
+        }
+      } else {
+        setPersona(result.data)
+      }
     } catch (error) {
       onError(error.status === 404 ? 'El código QR no existe o ya no es válido.' : error.message)
     } finally {
@@ -46,12 +62,17 @@ export function QrScannerPage({ onError }) {
   }
 
   useEffect(() => {
-    const initialCode = new URLSearchParams(window.location.search).get('codigo')
-    if (initialCode) consult(initialCode)
+    const parameters = new URLSearchParams(window.location.search)
+    const initialCode = parameters.get('codigo')
+    if (initialCode) consult(initialCode, parameters.get('tipo'))
     return stopCamera
     // La consulta inicial solo corresponde al código presente al abrir la ruta.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => () => {
+    if (employeePhotoUrl) URL.revokeObjectURL(employeePhotoUrl)
+  }, [employeePhotoUrl])
 
   async function startCamera() {
     if (!('BarcodeDetector' in window) || !navigator.mediaDevices?.getUserMedia) {
@@ -101,7 +122,7 @@ export function QrScannerPage({ onError }) {
 
   return <>
     <div className="page-heading qr-page-heading">
-      <div><p className="eyebrow">Control de ingreso</p><h1>Escanear QR</h1><p>Identifica a la persona y verifica en tiempo real a qué áreas puede ingresar.</p></div>
+      <div><p className="eyebrow">Control de ingreso</p><h1>Escanear QR</h1><p>Identifica personas o empleados y consulta su información vigente en tiempo real.</p></div>
     </div>
 
     <section className="panel scanner-panel">
@@ -117,7 +138,7 @@ export function QrScannerPage({ onError }) {
       </div>
     </section>
 
-    {loading && <div className="panel qr-placeholder">Consultando información de la persona…</div>}
+    {loading && <div className="panel qr-placeholder">Consultando información de la identificación…</div>}
     {persona && <section className="qr-result">
       <div className={`panel qr-access-identity ${authorizedCount > 0 ? 'has-access' : 'without-access'}`}>
         <div className="qr-access-person">
@@ -134,7 +155,64 @@ export function QrScannerPage({ onError }) {
           : <div className="qr-assigned-list">{assignedAreas.map((area) => <AssignedArea key={`${area.idArea}-${area.numeroSolicitud}`} area={area} />)}</div>}
       </section>
     </section>}
+    {empleado && <EmployeeQrResult employee={empleado} photographUrl={employeePhotoUrl} />}
   </>
+}
+
+function EmployeeQrResult({ employee, photographUrl }) {
+  return <section className="qr-result">
+    <div className="panel qr-access-identity employee-qr-identity">
+      <div className="qr-access-person">
+        <div className="person-avatar qr-person-photo"><span>{initials(employee.nombreCompleto)}</span>{photographUrl && <img src={photographUrl} alt="Fotografía del empleado" />}</div>
+        <div className="qr-access-person-copy"><p className="eyebrow">Empleado identificado</p><h2>{employee.nombreCompleto || 'Sin nombre'}</h2><p>{employee.codigoEmpleado || 'Sin código'} · {employee.departamento || 'Departamento no indicado'}</p></div>
+      </div>
+      <div className="employee-qr-status"><Icon name="user" /><span><strong>{employee.descripcionStatus || employee.codigoStatus || 'Estado no indicado'}</strong><small>Estado laboral consultado en HTIS</small></span></div>
+    </div>
+
+    <section className="panel employee-qr-information">
+      <div className="qr-assigned-heading"><div><p className="eyebrow">Información laboral</p><h2>Datos actuales del empleado</h2><p>Estos datos no se almacenan con el QR; se consultan en el servidor de empleados.</p></div></div>
+      <div className="employee-detail-grid employee-qr-grid">
+        <EmployeeValue label="Código de empleado" value={employee.codigoEmpleado} />
+        <EmployeeValue label="Estado" value={employee.descripcionStatus || employee.codigoStatus} />
+        <EmployeeValue label="Departamento" value={employee.departamento} />
+        <EmployeeValue label="Cargo / nivel" value={employee.cargoNivel} />
+        <EmployeeValue label="Fecha de ingreso" value={employee.fechaIngreso ? formatDateTime(employee.fechaIngreso) : null} />
+        <EmployeeValue label="Fecha de egreso" value={employee.fechaEgreso ? formatDateTime(employee.fechaEgreso) : null} />
+        <EmployeeValue label="Correo" value={employee.correo} />
+        <EmployeeValue label="Tipo de licencia" value={employee.tipoLicencia} />
+      </div>
+    </section>
+  </section>
+}
+
+function EmployeeValue({ label, value }) {
+  return <div className="info-value"><span>{label}</span><strong>{value || '—'}</strong></div>
+}
+
+async function resolveQr(code, typeHint) {
+  if (typeHint === 'empleado') {
+    return { type: 'empleado', data: await controlIngresosApi.consultarQrEmpleado(code) }
+  }
+  if (typeHint === 'persona') {
+    return { type: 'persona', data: await controlIngresosApi.consultarQrPersona(code) }
+  }
+
+  try {
+    return { type: 'persona', data: await controlIngresosApi.consultarQrPersona(code) }
+  } catch (error) {
+    if (error.status !== 404) throw error
+    return { type: 'empleado', data: await controlIngresosApi.consultarQrEmpleado(code) }
+  }
+}
+
+function qrTypeFromValue(value) {
+  try {
+    const url = new URL(String(value ?? ''), window.location.origin)
+    const type = url.searchParams.get('tipo')?.toLocaleLowerCase('es')
+    return type === 'empleado' || type === 'persona' ? type : null
+  } catch {
+    return null
+  }
 }
 
 function AssignedArea({ area }) {

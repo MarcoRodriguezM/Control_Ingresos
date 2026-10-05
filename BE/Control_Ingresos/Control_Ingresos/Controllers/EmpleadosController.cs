@@ -26,6 +26,35 @@ public sealed class EmpleadosController(IEmpleadosRepository repository) : Contr
         return Ok(await repository.ListarEstadosAsync(cancellationToken));
     }
 
+    [HttpGet("{codigoEmpleado}/qr")]
+    [ProducesResponseType<EmpleadoQrResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<EmpleadoQrResponse>> ObtenerQr(
+        string codigoEmpleado,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(codigoEmpleado)) return NotFound();
+
+        var codigoQr = await repository.ObtenerCodigoQrAsync(codigoEmpleado, cancellationToken);
+        return string.IsNullOrWhiteSpace(codigoQr)
+            ? NotFound()
+            : Ok(new EmpleadoQrResponse(codigoQr));
+    }
+
+    [HttpGet("qr/{codigoQr}")]
+    [ProducesResponseType<Empleado>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<Empleado>> ConsultarQr(
+        string codigoQr,
+        CancellationToken cancellationToken)
+    {
+        if (codigoQr.Length != 64 || codigoQr.Any(character => !Uri.IsHexDigit(character)))
+            return NotFound();
+
+        var empleado = await repository.ConsultarQrAsync(codigoQr, cancellationToken);
+        return empleado is null ? NotFound() : Ok(empleado);
+    }
+
     [HttpGet("{codigoEmpleado}/fotografia")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

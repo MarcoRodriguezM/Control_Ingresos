@@ -26,3 +26,5 @@ public sealed record Empleado(
 public sealed record EmpleadoStatus(
     int StatusId,
     string? Descripcion);
+
+public sealed record EmpleadoQrResponse(string CodigoQr);

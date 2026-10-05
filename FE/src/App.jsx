@@ -7,6 +7,7 @@ import {
   ApprovalsPage,
   DashboardPage,
   EmployeeListPage,
+  EmployeeQrPage,
   LoginPage,
   MyActivitiesPage,
   PersonAccessPage,
@@ -86,7 +87,8 @@ function AuthenticatedApp({ session, onLogout }) {
   const editRoute = matchPath('/solicitudes/:id/editar', location.pathname)
   const personQrRoute = matchPath('/personas/:idPersona/qr', location.pathname)
   const personRoute = matchPath('/personas/:idPersona', location.pathname)
-  const employeeRoute = matchPath('/empleados/:codigoEmpleado', location.pathname)
+  const employeeQrRoute = matchPath('/empleados/:codigoEmpleado/qr', location.pathname)
+  const employeeRoute = employeeQrRoute ? null : matchPath('/empleados/:codigoEmpleado', location.pathname)
   const isNewPersonRoute = location.pathname === '/personas/nueva'
   const approvalDetailRoute = matchPath('/aprobaciones/:idSolicitudPersonaArea/detalle', location.pathname)
   const isPersonsRoute = location.pathname.startsWith('/personas')
@@ -367,11 +369,11 @@ function AuthenticatedApp({ session, onLogout }) {
   }), [form, options])
   const selectedEmployee = useMemo(() => {
     if (!isEmployeesRoute) return null
-    const employeeCode = employeeRoute?.params.codigoEmpleado
+    const employeeCode = employeeQrRoute?.params.codigoEmpleado ?? employeeRoute?.params.codigoEmpleado
     return (employeeCode
       ? empleados.find((employee) => String(employee.codigoEmpleado) === employeeCode)
       : empleados[0]) ?? null
-  }, [isEmployeesRoute, empleados, employeeRoute?.params.codigoEmpleado])
+  }, [isEmployeesRoute, empleados, employeeQrRoute?.params.codigoEmpleado, employeeRoute?.params.codigoEmpleado])
 
   useEffect(() => {
     const codigoEmpleado = selectedEmployee?.codigoEmpleado
@@ -495,13 +497,13 @@ function AuthenticatedApp({ session, onLogout }) {
 
   function selectPerson(idPersona) {
     setError('')
-    navigate(`/personas/${idPersona}`)
+    navigate(`/personas/${idPersona}`, { state: { directory: 'personas' } })
   }
 
   function selectEmployee(employee) {
     if (!employee?.codigoEmpleado) return
     setError('')
-    navigate(`/empleados/${encodeURIComponent(employee.codigoEmpleado)}`)
+    navigate(`/empleados/${encodeURIComponent(employee.codigoEmpleado)}`, { state: { directory: 'empleados' } })
   }
 
   async function updatePersonPhotograph(idPersona, photograph) {
@@ -736,7 +738,7 @@ function AuthenticatedApp({ session, onLogout }) {
           <button className="icon-button menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label="Abrir menú"><Icon name="menu" /></button>
           <div className="breadcrumb">
             <Link to="/dashboard" onClick={() => { setError(''); setMenuOpen(false) }}>Inicio</Link>
-            <strong>{approvalDetailRoute ? 'Detalle de solicitud' : isDashboardRoute ? 'Dashboard' : isProfileRoute ? 'Mi perfil' : isNewUserRoute ? 'Crear usuario' : userEditRoute ? 'Editar usuario' : userDetailRoute ? 'Detalle del usuario' : isUsersRoute ? 'Usuarios' : isActivitiesRoute ? 'Mis actividades' : isApprovalsRoute ? 'Mis aprobaciones' : isQrScannerRoute ? 'Escanear QR' : personQrRoute ? 'QR de la persona' : isNewPersonRoute ? 'Nueva persona' : isPersonsRoute ? 'Personas y accesos' : isEmployeesRoute ? 'Empleados' : editRoute ? 'Editar solicitud' : location.pathname === '/solicitudes/nueva' ? 'Nueva solicitud' : 'Solicitudes'}</strong>
+            <strong>{approvalDetailRoute ? 'Detalle de solicitud' : isDashboardRoute ? 'Dashboard' : isProfileRoute ? 'Mi perfil' : isNewUserRoute ? 'Crear usuario' : userEditRoute ? 'Editar usuario' : userDetailRoute ? 'Detalle del usuario' : isUsersRoute ? 'Usuarios' : isActivitiesRoute ? 'Mis actividades' : isApprovalsRoute ? 'Mis aprobaciones' : isQrScannerRoute ? 'Escanear QR' : personQrRoute ? 'QR de la persona' : employeeQrRoute ? 'QR del empleado' : isNewPersonRoute ? 'Nueva persona' : isPersonsRoute ? 'Personas y accesos' : isEmployeesRoute ? 'Empleados' : editRoute ? 'Editar solicitud' : location.pathname === '/solicitudes/nueva' ? 'Nueva solicitud' : 'Solicitudes'}</strong>
           </div>
           <div className="top-actions">
             {/* <button className="ghost-button"><Icon name="help" />Ayuda</button> */}
@@ -757,12 +759,11 @@ function AuthenticatedApp({ session, onLogout }) {
             <Route path="/solicitudes" element={<RequestsListPage items={solicitudes} loading={loading} onNew={openNew} onEdit={openEdit} onDelete={remove} />} />
             <Route path="/solicitudes/nueva" element={<RequestFormPage form={form} options={options} people={personas} requestPeople={requestPeople} existingPeople={existingRequestPeople} peopleEntryMode={peopleEntryMode} loading={loading} saving={saving} editingId={null} step={step} selected={selected} canSend={canSendRequest} onPeopleEntryModeChange={(mode) => { setPeopleEntryMode(mode); if (mode === 'provider') setRequestPeople([]) }} onPeopleChange={setRequestPeople} onChange={change} onStepChange={goToStep} onNext={next} onBack={() => setStep((current) => current - 1)} onCancel={cancelForm} onSubmit={submit} />} />
             <Route path="/solicitudes/:id/editar" element={<RequestFormPage form={form} options={options} people={personas} requestPeople={requestPeople} existingPeople={existingRequestPeople} peopleEntryMode={peopleEntryMode} loading={loading} saving={saving} editingId={activeEditingId} step={step} selected={selected} canSend={canSendRequest} onPeopleEntryModeChange={(mode) => { setPeopleEntryMode(mode); if (mode === 'provider') setRequestPeople([]) }} onPeopleChange={setRequestPeople} onChange={change} onStepChange={goToStep} onNext={next} onBack={() => setStep((current) => current - 1)} onCancel={cancelForm} onSubmit={submit} />} />
-            <Route path="/personas" element={<PersonAccessPage items={personasConAccesos} selected={personaSeleccionada} loading={personLoading} onSelect={selectPerson} onNew={openNewPerson} onQr={(idPersona) => navigate(`/personas/${idPersona}/qr`)} onPhotographChange={updatePersonPhotograph} />} />
             <Route path="/personas/nueva" element={<PersonFormPage session={session} providers={options?.proveedores} onCancel={openPersons} onCreated={personCreated} onError={setError} />} />
             <Route path="/personas/:idPersona/qr" element={<PersonQrPage idPersona={Number(personQrRoute?.params.idPersona)} onBack={() => navigate(`/personas/${personQrRoute?.params.idPersona}`)} onError={setError} />} />
-            <Route path="/personas/:idPersona" element={<PersonAccessPage items={personasConAccesos} selected={personaSeleccionada} loading={personLoading} onSelect={selectPerson} onNew={openNewPerson} onQr={(idPersona) => navigate(`/personas/${idPersona}/qr`)} onPhotographChange={updatePersonPhotograph} />} />
-            <Route path="/empleados" element={<EmployeeListPage items={empleados} statuses={employeeStatuses} selected={selectedEmployee} loading={employeesLoading} photographUrl={employeePhotograph?.codigoEmpleado === selectedEmployee?.codigoEmpleado ? employeePhotograph?.url ?? '' : ''} photographLoading={employeePhotographLoading} onSelect={selectEmployee} />} />
-            <Route path="/empleados/:codigoEmpleado" element={<EmployeeListPage items={empleados} statuses={employeeStatuses} selected={selectedEmployee} loading={employeesLoading} photographUrl={employeePhotograph?.codigoEmpleado === selectedEmployee?.codigoEmpleado ? employeePhotograph?.url ?? '' : ''} photographLoading={employeePhotographLoading} onSelect={selectEmployee} />} />
+            <Route path="/personas/:idPersona?" element={<PersonAccessPage items={personasConAccesos} selected={personaSeleccionada} loading={personLoading} mobileDetailOpen={Boolean(personRoute)} onSelect={selectPerson} onBack={() => location.state?.directory === 'personas' ? navigate(-1) : navigate('/personas')} onNew={openNewPerson} onQr={(idPersona) => navigate(`/personas/${idPersona}/qr`)} onPhotographChange={updatePersonPhotograph} />} />
+            <Route path="/empleados/:codigoEmpleado/qr" element={<EmployeeQrPage codigoEmpleado={employeeQrRoute?.params.codigoEmpleado ?? ''} employee={selectedEmployee} photographUrl={employeePhotograph?.codigoEmpleado === selectedEmployee?.codigoEmpleado ? employeePhotograph?.url ?? '' : ''} loading={employeesLoading || employeePhotographLoading} onBack={() => navigate(`/empleados/${encodeURIComponent(employeeQrRoute?.params.codigoEmpleado ?? '')}`)} onError={setError} />} />
+            <Route path="/empleados/:codigoEmpleado?" element={<EmployeeListPage items={empleados} statuses={employeeStatuses} selected={selectedEmployee} loading={employeesLoading} photographUrl={employeePhotograph?.codigoEmpleado === selectedEmployee?.codigoEmpleado ? employeePhotograph?.url ?? '' : ''} photographLoading={employeePhotographLoading} mobileDetailOpen={Boolean(employeeRoute)} onSelect={selectEmployee} onBack={() => location.state?.directory === 'empleados' ? navigate(-1) : navigate('/empleados')} onQr={(codigoEmpleado) => navigate(`/empleados/${encodeURIComponent(codigoEmpleado)}/qr`)} />} />
             <Route path="/escanear-qr" element={<QrScannerPage onError={setError} />} />
             <Route path="/aprobaciones" element={canApprove ? <ApprovalsPage items={aprobaciones} loading={approvalsLoading} onDecide={decideApproval} onDecideMany={decideApprovals} onViewDetail={openApprovalDetail} /> : <Navigate to="/solicitudes" replace />} />
             <Route path="/aprobaciones/:idSolicitudPersonaArea/detalle" element={canApprove ? <RequestApprovalDetailPage request={approvalDetail} options={options} approvalItems={aprobaciones} loading={approvalDetailLoading || !approvalDetail} onBack={() => navigate('/aprobaciones')} onDecide={decideApproval} /> : <Navigate to="/solicitudes" replace />} />

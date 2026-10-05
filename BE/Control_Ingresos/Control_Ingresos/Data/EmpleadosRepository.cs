@@ -12,13 +12,14 @@ public sealed class EmpleadosRepository(IConfiguration configuration) : IEmplead
     private const string ProcedimientoConsulta = "dbo.OBTENER_CONSULTA_EMPLEADOS";
     private const string ProcedimientoConsultaFotografia = "dbo.OBTENER_FOTO_EMPLEADO";
     private const string ProcedimientoEstados = "dbo.usp_Empleado_Status_Listar";
+    private const string ProcedimientoQrObtener = "dbo.usp_Empleado_Qr_Obtener";
+    private const string ProcedimientoQrConsultar = "dbo.usp_Empleado_Qr_Consultar";
 
     private readonly string _controlIngresosConnectionString = configuration.GetConnectionString("ControlIngresos")
         ?? throw new InvalidOperationException("No se configuró ConnectionStrings:ControlIngresos.");
 
     private readonly string _empleadosConnectionString =
         configuration.GetConnectionString("ConsultaEmpleadosHtis")
-        ?? configuration.GetConnectionString("ConsultaEMpleadosHtis")
         ?? throw new InvalidOperationException("No se configuró ConnectionStrings:ConsultaEmpleadosHtis.");
 
     public async Task<IReadOnlyCollection<Empleado>> ListarAsync(CancellationToken cancellationToken)
@@ -138,6 +139,61 @@ public sealed class EmpleadosRepository(IConfiguration configuration) : IEmplead
         }
 
         return estados;
+    }
+
+    public async Task<string?> ObtenerCodigoQrAsync(
+        string codigoEmpleado,
+        CancellationToken cancellationToken)
+    {
+        var codigoNormalizado = codigoEmpleado.Trim();
+        var empleado = (await ListarAsync(cancellationToken)).FirstOrDefault(item =>
+            string.Equals(item.CodigoEmpleado?.Trim(), codigoNormalizado, StringComparison.OrdinalIgnoreCase));
+        if (empleado is null) return null;
+
+        await using var connection = new SqlConnection(_controlIngresosConnectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = new SqlCommand(ProcedimientoQrObtener, connection)
+        {
+            CommandType = CommandType.StoredProcedure
+        };
+        command.Parameters.Add("@CodigoEmpleado", SqlDbType.VarChar, 50).Value = codigoNormalizado;
+
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is null or DBNull ? null : Convert.ToString(result, CultureInfo.InvariantCulture);
+    }
+
+    public async Task<Empleado?> ConsultarQrAsync(
+        string codigoQr,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new SqlConnection(_controlIngresosConnectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = new SqlCommand(ProcedimientoQrConsultar, connection)
+        {
+            CommandType = CommandType.StoredProcedure
+        };
+        command.Parameters.Add("@CodigoQr", SqlDbType.VarChar, 64).Value = codigoQr.Trim().ToLowerInvariant();
+
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        var codigoEmpleado = result is null or DBNull
+            ? null
+            : Convert.ToString(result, CultureInfo.InvariantCulture)?.Trim();
+        if (string.IsNullOrWhiteSpace(codigoEmpleado)) return null;
+
+        var empleado = (await ListarAsync(cancellationToken)).FirstOrDefault(item =>
+            string.Equals(item.CodigoEmpleado?.Trim(), codigoEmpleado, StringComparison.OrdinalIgnoreCase));
+        if (empleado is null) return null;
+
+        var estados = await ListarEstadosAsync(cancellationToken);
+        var descripcionEstado = estados.FirstOrDefault(estado =>
+            string.Equals(
+                estado.StatusId.ToString(CultureInfo.InvariantCulture),
+                empleado.CodigoStatus?.Trim(),
+                StringComparison.OrdinalIgnoreCase))?.Descripcion;
+
+        return empleado with { DescripcionStatus = descripcionEstado };
     }
 
     private static byte[] ConvertirFotografia(object value)

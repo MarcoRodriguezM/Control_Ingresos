@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../components/Icon'
 import { formatDateTime, initials } from '../utils/formatters'
 
-export function EmployeeListPage({ items, statuses = [], selected, loading, photographUrl, photographLoading, onSelect }) {
+export function EmployeeListPage({ items, statuses = [], selected, loading, photographUrl, photographLoading, mobileDetailOpen = false, onSelect, onBack, onQr }) {
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState('')
   const [department, setDepartment] = useState('')
@@ -10,6 +10,9 @@ export function EmployeeListPage({ items, statuses = [], selected, loading, phot
   const [entryDateTo, setEntryDateTo] = useState('')
   const [exitDateFrom, setExitDateFrom] = useState('')
   const [exitDateTo, setExitDateTo] = useState('')
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const listScrollPosition = useRef(0)
+  const previousDetailState = useRef(mobileDetailOpen)
   const statusOptions = statuses
     .map((item) => ({ value: String(item.statusId), label: item.descripcion || String(item.statusId) }))
     .sort((left, right) => left.label.localeCompare(right.label, 'es'))
@@ -32,6 +35,27 @@ export function EmployeeListPage({ items, statuses = [], selected, loading, phot
     return matchesQuery && matchesStatus && matchesDepartment && matchesEntryDate && matchesExitDate
   })
   const hasFilters = Boolean(query || status || department || entryDateFrom || entryDateTo || exitDateFrom || exitDateTo)
+  const activeAdvancedFilters = [status, department, entryDateFrom, entryDateTo, exitDateFrom, exitDateTo].filter(Boolean).length
+
+  useEffect(() => {
+    if (!isMobileDirectory()) {
+      previousDetailState.current = mobileDetailOpen
+      return
+    }
+
+    if (mobileDetailOpen && !previousDetailState.current) {
+      window.scrollTo({ top: 0, behavior: 'auto' })
+    } else if (!mobileDetailOpen && previousDetailState.current) {
+      window.requestAnimationFrame(() => window.scrollTo({ top: listScrollPosition.current, behavior: 'auto' }))
+    }
+
+    previousDetailState.current = mobileDetailOpen
+  }, [mobileDetailOpen])
+
+  function selectEmployee(employee) {
+    if (isMobileDirectory()) listScrollPosition.current = window.scrollY
+    onSelect(employee)
+  }
 
   function clearFilters() {
     setQuery('')
@@ -43,14 +67,15 @@ export function EmployeeListPage({ items, statuses = [], selected, loading, phot
     setExitDateTo('')
   }
 
-  return <>
+  return <div className={`directory-page employee-directory ${mobileDetailOpen ? 'mobile-detail-active' : ''}`}>
     <div className="page-heading">
       <div><p className="eyebrow">Directorio de empleados</p><h1>Empleados</h1><p>Selecciona un empleado para consultar su información personal y laboral.</p></div>
     </div>
 
-    <section className="panel employee-toolbar" aria-label="Filtros de empleados">
+    <section className={`panel employee-toolbar ${filtersOpen ? 'filters-open' : ''}`} aria-label="Filtros de empleados">
       <div className="employee-toolbar-main">
         <div className="employee-search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar empleado" /></div>
+        <button type="button" className="employee-mobile-filter-toggle" aria-expanded={filtersOpen} onClick={() => setFiltersOpen((open) => !open)}><Icon name="filter" />{filtersOpen ? 'Ocultar filtros' : 'Mostrar filtros'}{activeAdvancedFilters > 0 && <span>{activeAdvancedFilters}</span>}</button>
         <label className="employee-filter"><span>Estado</span><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">Todos los estados</option>{statusOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select></label>
         <label className="employee-filter"><span>Departamento</span><select value={department} onChange={(event) => setDepartment(event.target.value)}><option value="">Todos los departamentos</option>{departments.map((item) => <option value={item} key={item}>{item}</option>)}</select></label>
         {hasFilters && <button type="button" className="employee-clear-filters" onClick={clearFilters}><Icon name="close" />Limpiar filtros</button>}
@@ -70,7 +95,7 @@ export function EmployeeListPage({ items, statuses = [], selected, loading, phot
             type="button"
             className={`person-row ${selected?.codigoEmpleado === employee.codigoEmpleado ? 'active' : ''}`}
             key={employee.codigoEmpleado ?? index}
-            onClick={() => onSelect(employee)}
+            onClick={() => selectEmployee(employee)}
           >
             <span className="person-avatar">{initials(employee.nombreCompleto)}</span>
             <span className="person-row-copy"><strong>{employee.nombreCompleto || 'Sin nombre'}</strong><small>{employee.departamento || employee.cargoNivel || 'Departamento no indicado'}</small></span>
@@ -80,12 +105,14 @@ export function EmployeeListPage({ items, statuses = [], selected, loading, phot
       </aside>
 
       <section className="panel person-detail-panel employee-detail-panel">
+        {mobileDetailOpen && <button type="button" className="secondary-button mobile-detail-back" onClick={onBack}><Icon name="back" />Volver al listado</button>}
         {loading && !selected && <div className="person-placeholder">Cargando información…</div>}
         {!loading && !selected && <div className="person-placeholder">Selecciona un empleado para consultar su información.</div>}
         {selected && <>
-          <div className="person-profile employee-profile">
+          <div className="person-profile person-profile-with-action employee-profile">
             <EmployeeAvatar employee={selected} photographUrl={photographUrl} loading={photographLoading} />
             <div><div className="profile-title"><h2>{selected.nombreCompleto || 'Empleado sin nombre'}</h2><span className="status-badge">{selected.descripcionStatus || selected.codigoStatus || 'Sin estado'}</span></div><p>{selected.cargoNivel || 'Cargo no indicado'} · {selected.departamento || 'Departamento no indicado'}</p>{photographLoading && <span className="employee-photo-state">Cargando fotografía…</span>}</div>
+            <button type="button" className="primary-button person-qr-button" onClick={() => onQr(selected.codigoEmpleado)} disabled={!selected.codigoEmpleado}><Icon name="qr" />Ver QR</button>
           </div>
 
           <EmployeeSection icon="tasks" title="Información laboral">
@@ -116,7 +143,7 @@ export function EmployeeListPage({ items, statuses = [], selected, loading, phot
         </>}
       </section>
     </div>
-  </>
+  </div>
 }
 
 function EmployeeAvatar({ employee, photographUrl, loading }) {
@@ -166,4 +193,8 @@ function matchesDateRange(value, from, to) {
   const date = dateValue(value)
   if (!date) return false
   return (!from || date >= from) && (!to || date <= to)
+}
+
+function isMobileDirectory() {
+  return window.matchMedia('(max-width: 680px)').matches
 }

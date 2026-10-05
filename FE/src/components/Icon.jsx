@@ -10,6 +10,7 @@ const iconPaths = {
   bell: <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />,
   help: <><circle cx="12" cy="12" r="9" /><path d="M9.7 9a2.5 2.5 0 1 1 3.4 2.3c-.7.3-1.1.9-1.1 1.7v.5M12 17h.01" /></>,
   search: <><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></>,
+  filter: <path d="M4 5h16l-6.5 7.2V19l-3 1v-7.8z" />,
   shield: <><path d="M12 3 5 6v5c0 4.8 2.8 8.1 7 10 4.2-1.9 7-5.2 7-10V6z" /><path d="m9 12 2 2 4-4" /></>,
   arrow: <path d="M5 12h14M14 7l5 5-5 5" />,
   back: <path d="M19 12H5M10 17l-5-5 5-5" />,
