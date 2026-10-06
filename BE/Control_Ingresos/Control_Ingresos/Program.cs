@@ -1,5 +1,6 @@
 using Control_Ingresos.Data;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Mvc;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -80,8 +81,52 @@ app.UseCors("Frontend");
 app.UseStaticFiles();
 
 app.UseAuthentication();
+
+app.Use(async (context, next) =>
+{
+    var guardiaRestringido = context.User.Identity?.IsAuthenticated == true
+        && context.User.IsInRole("Guardia")
+        && !context.User.IsInRole("Administrador");
+
+    if (guardiaRestringido && !EsRutaPermitidaParaGuardia(context.Request))
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        await context.Response.WriteAsJsonAsync(new ProblemDetails
+        {
+            Title = "Acceso restringido",
+            Detail = "El rol Guardia solo puede escanear códigos QR y consultar sus resultados.",
+            Status = StatusCodes.Status403Forbidden
+        });
+        return;
+    }
+
+    await next();
+});
+
 app.UseAuthorization();
 
 app.MapControllers();
 
 app.Run();
+
+static bool EsRutaPermitidaParaGuardia(HttpRequest request)
+{
+    if (HttpMethods.IsPost(request.Method)
+        && request.Path.Equals("/api/autenticacion/logout", StringComparison.OrdinalIgnoreCase))
+        return true;
+
+    if (!HttpMethods.IsGet(request.Method)) return false;
+
+    var path = request.Path.Value ?? string.Empty;
+    if (path.StartsWith("/api/personas/qr/", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWith("/api/empleados/qr/", StringComparison.OrdinalIgnoreCase))
+        return true;
+
+    var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+    return segments.Length == 4
+        && segments[0].Equals("api", StringComparison.OrdinalIgnoreCase)
+        && ((segments[1].Equals("personas", StringComparison.OrdinalIgnoreCase)
+             && segments[3].Equals("fotografia-contenido", StringComparison.OrdinalIgnoreCase))
+            || (segments[1].Equals("empleados", StringComparison.OrdinalIgnoreCase)
+                && segments[3].Equals("fotografia", StringComparison.OrdinalIgnoreCase)));
+}

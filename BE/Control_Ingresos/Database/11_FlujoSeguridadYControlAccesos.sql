@@ -27,7 +27,8 @@ USING (VALUES
     (3, 'APROBADOR', N'Aprobador', N'Revisa accesos de las áreas asignadas.'),
     (4, 'RESPONSABLE', N'Responsable', N'Completa actividades asignadas.'),
     (5, 'SEGURIDAD', N'Seguridad', N'Registra entradas y salidas en portería.'),
-    (6, 'AUDITOR', N'Auditor', N'Consulta el historial sin modificarlo.')
+    (6, 'AUDITOR', N'Auditor', N'Consulta el historial sin modificarlo.'),
+    (7, 'GUARDIA', N'Guardia', N'Solo escanea códigos QR y consulta los resultados.')
 ) AS fuente (IdRol, Codigo, Nombre, Descripcion)
 ON destino.IdRol = fuente.IdRol
 WHEN MATCHED THEN UPDATE SET Codigo=fuente.Codigo, Nombre=fuente.Nombre, Descripcion=fuente.Descripcion
@@ -267,9 +268,13 @@ CREATE OR ALTER PROCEDURE dbo.usp_Usuario_Rol_Asignar
 AS
 BEGIN
  SET NOCOUNT ON;
- DECLARE @IdRol SMALLINT=(SELECT IdRol FROM dbo.Rol WHERE Codigo=UPPER(LTRIM(RTRIM(@CodigoRol))) AND Activo=1);
+ SET @CodigoRol=UPPER(LTRIM(RTRIM(@CodigoRol)));
  IF NOT EXISTS(SELECT 1 FROM dbo.Usuario WHERE IdUsuario=@IdUsuario) THROW 50520,'El usuario no existe.',1;
+ DECLARE @IdRol SMALLINT=(SELECT IdRol FROM dbo.Rol WHERE Codigo=@CodigoRol AND Activo=1);
  IF @IdRol IS NULL THROW 50521,'El rol solicitado no existe.',1;
+ IF @CodigoRol='GUARDIA'
+  DELETE ur FROM dbo.Usuario_Rol ur INNER JOIN dbo.Rol r ON r.IdRol=ur.IdRol
+  WHERE ur.IdUsuario=@IdUsuario AND r.Codigo IN('SOLICITANTE','APROBADOR','RESPONSABLE','SEGURIDAD');
  IF NOT EXISTS(SELECT 1 FROM dbo.Usuario_Rol WHERE IdUsuario=@IdUsuario AND IdRol=@IdRol)
   INSERT dbo.Usuario_Rol(IdUsuario,IdRol,UsuarioAsignacion) VALUES(@IdUsuario,@IdRol,@UsuarioAsignacion);
 END;

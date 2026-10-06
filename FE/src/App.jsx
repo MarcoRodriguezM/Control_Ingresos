@@ -52,7 +52,9 @@ function App() {
     const authenticatedUser = await controlIngresosApi.iniciarSesion(credentials)
     localStorage.setItem(sessionKey, JSON.stringify(authenticatedUser))
     setSession(authenticatedUser)
-    const returnTo = sessionStorage.getItem('control-ingresos-return-to') || '/dashboard'
+    const returnTo = isGuardSession(authenticatedUser)
+      ? '/escanear-qr'
+      : sessionStorage.getItem('control-ingresos-return-to') || '/dashboard'
     sessionStorage.removeItem('control-ingresos-return-to')
     navigate(returnTo, { replace: true })
   }
@@ -76,7 +78,55 @@ function App() {
     </Routes>
   }
 
+  if (isGuardSession(session)) {
+    return <GuardApp session={session} onLogout={logout} />
+  }
+
   return <AuthenticatedApp session={session} onLogout={logout} />
+}
+
+function GuardApp({ session, onLogout }) {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [error, setError] = useState('')
+
+  function openScanner() {
+    setError('')
+    setMenuOpen(false)
+    navigate('/escanear-qr')
+  }
+
+  return <div className="app-shell">
+    <AlertModal message={error} onClose={() => setError('')} />
+    {menuOpen && <button className="sidebar-backdrop" onClick={() => setMenuOpen(false)} aria-label="Cerrar menú" />}
+    <aside className={`sidebar ${menuOpen ? 'open' : ''}`} aria-label="Navegación principal">
+      <div className="sidebar-brand"><img className="sidebar-brand-logo" src={auraLogo} alt="Aura Minerals" /></div>
+      <p className="side-label">Control de ingresos</p>
+      <nav className="main-nav">
+        <Nav icon="qr" label="Escanear QR" active={location.pathname === '/escanear-qr'} onClick={openScanner} />
+      </nav>
+      <div className="sidebar-footer">
+        <button type="button" className="nav-item" onClick={onLogout}><Icon name="logout" /><span>Cerrar sesión</span></button>
+      </div>
+    </aside>
+
+    <main className="main">
+      <header className="topbar">
+        <button className="icon-button menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label="Abrir menú"><Icon name="menu" /></button>
+        <div className="breadcrumb"><span>Control de ingreso</span><strong>Escanear QR</strong></div>
+        <div className="top-actions">
+          <div className="top-profile"><div><strong>{session.nombreCompleto ?? session.idUsuario}</strong><span>Guardia</span></div><div className="avatar">{initials(session.nombreCompleto)}</div></div>
+        </div>
+      </header>
+      <section className="content">
+        <Routes>
+          <Route path="/escanear-qr" element={<QrScannerPage onError={setError} />} />
+          <Route path="*" element={<Navigate to="/escanear-qr" replace />} />
+        </Routes>
+      </section>
+    </main>
+  </div>
 }
 
 function AuthenticatedApp({ session, onLogout }) {
@@ -831,6 +881,8 @@ const hasRole = (session, role) => Boolean(
   || (role === 'Administrador' && session.puesto?.toLowerCase().includes('administrador'))
   || (role === 'Aprobador' && session.esAprobador),
 )
+
+const isGuardSession = (session) => hasRole(session, 'Guardia') && !hasRole(session, 'Administrador')
 
 function readSession() {
   try {

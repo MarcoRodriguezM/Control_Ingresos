@@ -1780,6 +1780,7 @@ CREATE OR ALTER PROCEDURE dbo.usp_Usuario_Actualizar
     @PuedeSolicitar BIT = 0,
     @EsAprobador BIT = 0,
     @EsSeguridad BIT = 0,
+    @EsGuardia BIT = 0,
     @Activo BIT = 1,
     @UsuarioModificacion VARCHAR(50)
 AS
@@ -1911,8 +1912,25 @@ BEGIN
             END;
         END;
 
+        IF @EsGuardia = 1 AND NOT EXISTS (SELECT 1 FROM dbo.Rol WHERE Codigo = 'GUARDIA')
+        BEGIN
+            DECLARE @NuevoIdRolGuardia SMALLINT =
+                (SELECT CONVERT(SMALLINT, ISNULL(MAX(IdRol), 0) + 1) FROM dbo.Rol WITH (UPDLOCK, HOLDLOCK));
+            INSERT dbo.Rol (IdRol, Codigo, Nombre, Descripcion, Activo)
+            VALUES (@NuevoIdRolGuardia, 'GUARDIA', N'Guardia', N'Solo escanea códigos QR y consulta los resultados.', 1);
+        END;
+
         DECLARE @IdRolAprobador SMALLINT = (SELECT TOP (1) IdRol FROM dbo.Rol WHERE Codigo = 'APROBADOR');
         DECLARE @IdRolSeguridad SMALLINT = (SELECT TOP (1) IdRol FROM dbo.Rol WHERE Codigo = 'SEGURIDAD');
+        DECLARE @IdRolGuardia SMALLINT = (SELECT TOP (1) IdRol FROM dbo.Rol WHERE Codigo = 'GUARDIA');
+        DECLARE @IdRolSolicitante SMALLINT = (SELECT TOP (1) IdRol FROM dbo.Rol WHERE Codigo = 'SOLICITANTE');
+
+        IF @PuedeSolicitar = 1 AND @IdRolSolicitante IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM dbo.Usuario_Rol WHERE IdUsuario = @IdUsuario AND IdRol = @IdRolSolicitante)
+            INSERT dbo.Usuario_Rol (IdUsuario, IdRol, FechaAsignacion, UsuarioAsignacion)
+            VALUES (@IdUsuario, @IdRolSolicitante, SYSDATETIME(), @UsuarioModificacion);
+        ELSE IF @PuedeSolicitar = 0 AND @IdRolSolicitante IS NOT NULL
+            DELETE FROM dbo.Usuario_Rol WHERE IdUsuario = @IdUsuario AND IdRol = @IdRolSolicitante;
 
         IF @EsAprobador = 1 AND @IdRolAprobador IS NOT NULL
            AND NOT EXISTS (SELECT 1 FROM dbo.Usuario_Rol WHERE IdUsuario = @IdUsuario AND IdRol = @IdRolAprobador)
@@ -1927,6 +1945,21 @@ BEGIN
             VALUES (@IdUsuario, @IdRolSeguridad, SYSDATETIME(), @UsuarioModificacion);
         ELSE IF @EsSeguridad = 0 AND @IdRolSeguridad IS NOT NULL
             DELETE FROM dbo.Usuario_Rol WHERE IdUsuario = @IdUsuario AND IdRol = @IdRolSeguridad;
+
+        IF @EsGuardia = 1 AND @IdRolGuardia IS NOT NULL
+        BEGIN
+            DELETE ur
+            FROM dbo.Usuario_Rol AS ur
+            INNER JOIN dbo.Rol AS r ON r.IdRol = ur.IdRol
+            WHERE ur.IdUsuario = @IdUsuario
+              AND r.Codigo IN ('SOLICITANTE', 'APROBADOR', 'RESPONSABLE', 'SEGURIDAD');
+
+            IF NOT EXISTS (SELECT 1 FROM dbo.Usuario_Rol WHERE IdUsuario = @IdUsuario AND IdRol = @IdRolGuardia)
+                INSERT dbo.Usuario_Rol (IdUsuario, IdRol, FechaAsignacion, UsuarioAsignacion)
+                VALUES (@IdUsuario, @IdRolGuardia, SYSDATETIME(), @UsuarioModificacion);
+        END
+        ELSE IF @IdRolGuardia IS NOT NULL
+            DELETE FROM dbo.Usuario_Rol WHERE IdUsuario = @IdUsuario AND IdRol = @IdRolGuardia;
 
         COMMIT TRANSACTION;
         SELECT 1;
@@ -2210,9 +2243,19 @@ CREATE OR ALTER PROCEDURE dbo.usp_Usuario_Rol_Asignar
 AS
 BEGIN
  SET NOCOUNT ON;
- DECLARE @IdRol SMALLINT=(SELECT IdRol FROM dbo.Rol WHERE Codigo=UPPER(LTRIM(RTRIM(@CodigoRol))) AND Activo=1);
+ SET @CodigoRol=UPPER(LTRIM(RTRIM(@CodigoRol)));
  IF NOT EXISTS(SELECT 1 FROM dbo.Usuario WHERE IdUsuario=@IdUsuario) THROW 50520,'El usuario no existe.',1;
+ IF @CodigoRol='GUARDIA' AND NOT EXISTS(SELECT 1 FROM dbo.Rol WHERE Codigo='GUARDIA')
+ BEGIN
+  DECLARE @NuevoIdRol SMALLINT=(SELECT CONVERT(SMALLINT,ISNULL(MAX(IdRol),0)+1) FROM dbo.Rol WITH(UPDLOCK,HOLDLOCK));
+  INSERT dbo.Rol(IdRol,Codigo,Nombre,Descripcion,Activo)
+  VALUES(@NuevoIdRol,'GUARDIA',N'Guardia',N'Solo escanea códigos QR y consulta los resultados.',1);
+ END;
+ DECLARE @IdRol SMALLINT=(SELECT IdRol FROM dbo.Rol WHERE Codigo=@CodigoRol AND Activo=1);
  IF @IdRol IS NULL THROW 50521,'El rol solicitado no existe.',1;
+ IF @CodigoRol='GUARDIA'
+  DELETE ur FROM dbo.Usuario_Rol ur INNER JOIN dbo.Rol r ON r.IdRol=ur.IdRol
+  WHERE ur.IdUsuario=@IdUsuario AND r.Codigo IN('SOLICITANTE','APROBADOR','RESPONSABLE','SEGURIDAD');
  IF NOT EXISTS(SELECT 1 FROM dbo.Usuario_Rol WHERE IdUsuario=@IdUsuario AND IdRol=@IdRol)
   INSERT dbo.Usuario_Rol(IdUsuario,IdRol,UsuarioAsignacion) VALUES(@IdUsuario,@IdRol,@UsuarioAsignacion);
 END;

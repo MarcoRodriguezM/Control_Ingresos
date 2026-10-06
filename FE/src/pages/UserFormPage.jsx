@@ -12,6 +12,7 @@ const initialForm = {
   puedeSolicitar: true,
   esAprobador: false,
   esSeguridad: false,
+  esGuardia: false,
   activo: true,
 }
 
@@ -23,7 +24,16 @@ export function UserFormPage({ areas = [], onCreate, onCancel }) {
 
   function change(event) {
     const { name, value, checked, type } = event.target
-    setForm((current) => ({ ...current, [name]: type === 'checkbox' ? checked : value }))
+    setForm((current) => {
+      const next = { ...current, [name]: type === 'checkbox' ? checked : value }
+      if (name === 'esGuardia' && checked) {
+        return { ...next, idArea: '', puedeSolicitar: false, esAprobador: false, esSeguridad: false }
+      }
+      if (checked && ['puedeSolicitar', 'esAprobador', 'esSeguridad'].includes(name)) {
+        next.esGuardia = false
+      }
+      return next
+    })
   }
 
   async function submit(event) {
@@ -42,6 +52,7 @@ export function UserFormPage({ areas = [], onCreate, onCancel }) {
         puedeSolicitar: form.puedeSolicitar,
         esAprobador: form.esAprobador,
         esSeguridad: form.esSeguridad,
+        esGuardia: form.esGuardia,
         activo: form.activo,
       })
     } finally {
@@ -74,6 +85,7 @@ export function UserFormPage({ areas = [], onCreate, onCancel }) {
         <Check name="puedeSolicitar" checked={form.puedeSolicitar} onChange={change} label="Puede crear solicitudes" description="Permite registrar solicitudes de ingreso para su área." />
         <Check name="esAprobador" checked={form.esAprobador} onChange={change} label="Aprobador del área" description="Permite revisar y decidir accesos correspondientes al área seleccionada." />
         <Check name="esSeguridad" checked={form.esSeguridad} onChange={change} label="Personal de seguridad" description="Permite validar autorizaciones y registrar entradas y salidas." />
+        <Check name="esGuardia" checked={form.esGuardia} onChange={change} label="Guardia de acceso" description="Solo permite escanear códigos QR y consultar la información presentada." />
         <Check name="activo" checked={form.activo} onChange={change} label="Usuario activo" description="Permite iniciar sesión inmediatamente después de crear la cuenta." />
       </div>
 

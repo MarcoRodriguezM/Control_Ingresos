@@ -386,6 +386,7 @@ public sealed record CrearUsuarioRequest(
     bool PuedeSolicitar,
     bool EsAprobador,
     bool EsSeguridad,
+    bool EsGuardia,
     bool Activo);
 
 public sealed record ActualizarUsuarioRequest(
@@ -397,4 +398,5 @@ public sealed record ActualizarUsuarioRequest(
     bool PuedeSolicitar,
     bool EsAprobador,
     bool EsSeguridad,
+    bool EsGuardia,
     bool Activo);

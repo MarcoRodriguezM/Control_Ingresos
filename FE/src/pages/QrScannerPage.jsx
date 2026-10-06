@@ -9,6 +9,7 @@ export function QrScannerPage({ onError }) {
   const [value, setValue] = useState('')
   const [persona, setPersona] = useState(null)
   const [empleado, setEmpleado] = useState(null)
+  const [personPhotoUrl, setPersonPhotoUrl] = useState('')
   const [employeePhotoUrl, setEmployeePhotoUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [cameraActive, setCameraActive] = useState(false)
@@ -37,6 +38,7 @@ export function QrScannerPage({ onError }) {
     setLoading(true)
     setPersona(null)
     setEmpleado(null)
+    setPersonPhotoUrl('')
     setEmployeePhotoUrl('')
     try {
       const code = match[0].toLowerCase()
@@ -52,6 +54,12 @@ export function QrScannerPage({ onError }) {
         }
       } else {
         setPersona(result.data)
+        try {
+          const photograph = await controlIngresosApi.obtenerFotografiaPersona(result.data.idPersona)
+          setPersonPhotoUrl(photograph?.dataUrl ?? '')
+        } catch {
+          // La fotografía es opcional y no impide validar a la persona.
+        }
       }
     } catch (error) {
       onError(error.status === 404 ? 'El código QR no existe o ya no es válido.' : error.message)
@@ -142,7 +150,7 @@ export function QrScannerPage({ onError }) {
     {persona && <section className="qr-result">
       <div className={`panel qr-access-identity ${authorizedCount > 0 ? 'has-access' : 'without-access'}`}>
         <div className="qr-access-person">
-          <div className="person-avatar qr-person-photo"><span>{initials(persona.nombreCompleto)}</span>{persona.fotografiaUrl && <img src={persona.fotografiaUrl} alt="Fotografía de la persona" />}</div>
+          <div className="person-avatar qr-person-photo"><span>{initials(persona.nombreCompleto)}</span>{personPhotoUrl && <img src={personPhotoUrl} alt="Fotografía de la persona" />}</div>
           <div className="qr-access-person-copy"><p className="eyebrow">Persona identificada</p><h2>{persona.nombreCompleto || 'Sin nombre'}</h2><p>{persona.numeroDocumento || 'Sin documento'} · {persona.empresa || 'Empresa no indicada'}</p></div>
         </div>
         <div className="qr-current-access"><Icon name={authorizedCount > 0 ? 'check' : 'lock'} /><span><strong>{authorizedCount > 0 ? 'Acceso vigente' : 'Sin acceso vigente'}</strong><small>{authorizedCount > 0 ? `${authorizedCount} ${authorizedCount === 1 ? 'área autorizada' : 'áreas autorizadas'} en este momento` : 'No tiene áreas autorizadas en este momento'}</small></span></div>
