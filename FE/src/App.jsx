@@ -1051,9 +1051,9 @@ function AuthenticatedApp({ session, onLogout }) {
         observaciones: textOrNull(form.observaciones),
         usuario: session.idUsuario,
       }
-      const personPayloads = requestUsesEmployees ? [] : requestPeople.map((person) => ({
+      const personPayloads = requestPeople.map((person) => ({
         idPersona: person.idPersona ?? null,
-        codigoEmpleadoHtis: null,
+        codigoEmpleadoHtis: person.codigoEmpleadoHtis ?? null,
         idEstadoPersonaSolicitud: null,
         datosCompletos: true,
         observacionesRevision: null,
@@ -1066,16 +1066,10 @@ function AuthenticatedApp({ session, onLogout }) {
         : await controlIngresosApi.crearSolicitudCompleta({ solicitud: payload, personas: personPayloads })
       const requestId = activeEditingId ?? created.id
       const failedPeople = []
-      const peopleToAdd = requestUsesEmployees
-        ? requestPeople.map((person) => ({
-            codigoEmpleado: person.codigoEmpleado ?? person.codigoEmpleadoHtis,
-            areas: person.areas,
-          }))
-        : activeEditingId ? personPayloads : []
+      const peopleToAdd = activeEditingId ? personPayloads : []
       for (const person of peopleToAdd) {
         try {
-          if (requestUsesEmployees) await controlIngresosApi.agregarEmpleadoSolicitud(requestId, person)
-          else await controlIngresosApi.agregarPersonaSolicitud(requestId, person)
+          await controlIngresosApi.agregarPersonaSolicitud(requestId, person)
         } catch (personError) {
           failedPeople.push({ ...person, error: personError.message })
         }

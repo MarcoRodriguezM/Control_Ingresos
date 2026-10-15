@@ -33,6 +33,8 @@ public static partial class DatabaseProcedureInstaller
             logger,
             cancellationToken);
 
+        await EnsureCodigoEmpleadoHtisColumnAsync(connection, logger, cancellationToken);
+
         logger.LogInformation(
             "Sincronizando {ProcedureCount} procedimientos almacenados con la version del backend.",
             procedureBatches.Count);
@@ -107,6 +109,28 @@ public static partial class DatabaseProcedureInstaller
         logger.LogInformation(
             "Sincronizacion automatica completada: {TotalCount} procedimientos verificados y actualizados.",
             procedureBatches.Count);
+    }
+
+    private static async Task EnsureCodigoEmpleadoHtisColumnAsync(
+        SqlConnection connection,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            IF COL_LENGTH('dbo.Solicitud_Persona', 'CodigoEmpleadoHtis') IS NULL
+            BEGIN
+                ALTER TABLE dbo.Solicitud_Persona
+                    ADD CodigoEmpleadoHtis VARCHAR(50) NULL;
+            END;
+            """;
+
+        await using var command = new SqlCommand(sql, connection)
+        {
+            CommandType = CommandType.Text,
+            CommandTimeout = 120
+        };
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        logger.LogInformation("La columna dbo.Solicitud_Persona.CodigoEmpleadoHtis fue verificada.");
     }
 
     private static async Task<string> ReadEmbeddedScriptAsync(CancellationToken cancellationToken)

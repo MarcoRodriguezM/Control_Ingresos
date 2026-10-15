@@ -814,8 +814,8 @@ BEGIN
         s.NumeroSolicitud,
         p.IdPersona,
         p.NombreCompleto AS Persona,
-        p.NumeroDocumento,
-        CASE WHEN ti.Codigo = 'EMPLEADO' THEN N'HTIS'
+        COALESCE(p.NumeroDocumento, sp.CodigoEmpleadoHtis) AS NumeroDocumento,
+        CASE WHEN sp.CodigoEmpleadoHtis IS NOT NULL THEN N'HTIS'
              ELSE COALESCE(pr.NombreComercial, pr.NombreLegal, p.EmpresaTexto) END AS Empresa,
         a.IdArea,
         a.Nombre AS Area,
@@ -829,14 +829,12 @@ BEGIN
         COALESCE(ultima.Estado, pendiente.Nombre, N'Pendiente') AS Estado,
         ultima.FechaDecision,
         ultima.ComentarioDecision,
-        CASE WHEN ti.Codigo = 'EMPLEADO' THEN p.NumeroDocumento ELSE NULL END AS CodigoEmpleadoHtis
+        sp.CodigoEmpleadoHtis
     FROM dbo.Solicitud_Persona_Area AS spa
     INNER JOIN dbo.Solicitud_Persona AS sp
         ON sp.IdSolicitudPersona = spa.IdSolicitudPersona
     INNER JOIN dbo.Solicitud_Ingreso AS s
         ON s.IdSolicitud = sp.IdSolicitud
-    LEFT JOIN dbo.Cat_Tipo_Ingreso AS ti
-        ON ti.IdTipoIngreso = s.IdTipoIngreso
     LEFT JOIN dbo.Persona AS p
         ON p.IdPersona = sp.IdPersona
     INNER JOIN dbo.Cat_Area AS a
@@ -2053,32 +2051,26 @@ BEGIN
     IF @IdUbicacion IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Cat_Ubicacion WHERE IdUbicacion = @IdUbicacion)
         THROW 50151, 'La ubicacion no existe.', 1;
 
-    DECLARE @CodigoTipoActual VARCHAR(30) =
-    (
-        SELECT UPPER(LTRIM(RTRIM(tipo.Codigo)))
-        FROM dbo.Solicitud_Ingreso AS solicitud
-        LEFT JOIN dbo.Cat_Tipo_Ingreso AS tipo ON tipo.IdTipoIngreso = solicitud.IdTipoIngreso
-        WHERE solicitud.IdSolicitud = @IdSolicitud
-    );
     DECLARE @CodigoTipo VARCHAR(30) =
     (
         SELECT UPPER(LTRIM(RTRIM(Codigo)))
         FROM dbo.Cat_Tipo_Ingreso
         WHERE IdTipoIngreso = @IdTipoIngreso
     );
-    IF ISNULL(@CodigoTipoActual, '') <> ISNULL(@CodigoTipo, '')
-       AND EXISTS (SELECT 1 FROM dbo.Solicitud_Persona WHERE IdSolicitud = @IdSolicitud)
-        THROW 50155, 'No se puede cambiar el tipo porque la solicitud ya contiene integrantes.', 1;
     IF @CodigoTipo IN ('EMPLEADO', 'NUEVO_EMPLEADO') SET @IdProveedor = NULL;
     IF @CodigoTipo = 'EMPLEADO'
     BEGIN
         SET @ContactoProveedor = NULL;
         SET @CorreoProveedor = NULL;
+        IF EXISTS (SELECT 1 FROM dbo.Solicitud_Persona WHERE IdSolicitud = @IdSolicitud AND IdPersona IS NOT NULL)
+            THROW 50155, 'La solicitud contiene personas locales y no puede cambiarse al tipo EMPLEADO.', 1;
     END
     ELSE
     BEGIN
         IF NULLIF(LTRIM(RTRIM(@ContactoProveedor)), '') IS NULL THROW 50152, 'El contacto es obligatorio.', 1;
         IF NULLIF(LTRIM(RTRIM(@CorreoProveedor)), '') IS NULL OR @CorreoProveedor NOT LIKE '%_@_%._%' THROW 50153, 'El correo es obligatorio y debe tener un formato vÃ¡lido.', 1;
+        IF EXISTS (SELECT 1 FROM dbo.Solicitud_Persona WHERE IdSolicitud = @IdSolicitud AND CodigoEmpleadoHtis IS NOT NULL)
+            THROW 50156, 'La solicitud contiene empleados HTIS y no puede cambiarse a un tipo de personas locales.', 1;
     END;
 
     UPDATE dbo.Solicitud_Ingreso
@@ -2264,7 +2256,7 @@ BEGIN
     SELECT
         sp.IdSolicitudPersona,
         sp.IdPersona,
-        p.NumeroDocumento,
+        COALESCE(p.NumeroDocumento, sp.CodigoEmpleadoHtis) AS NumeroDocumento,
         p.NombreCompleto,
         sp.IdEstadoPersonaSolicitud,
         sp.DatosCompletos,
@@ -2284,11 +2276,9 @@ BEGIN
         ISNULL(resumen.AreasPendientes, 0) AS AreasPendientes,
         ISNULL(resumen.AreasRechazadas, 0) AS AreasRechazadas,
         rechazos.DetalleRechazos,
-        CASE WHEN ti.Codigo = 'EMPLEADO' THEN p.NumeroDocumento ELSE NULL END AS CodigoEmpleadoHtis
+        sp.CodigoEmpleadoHtis
     FROM dbo.Solicitud_Persona AS sp
     LEFT JOIN dbo.Persona AS p ON p.IdPersona = sp.IdPersona
-    LEFT JOIN dbo.Solicitud_Ingreso AS s ON s.IdSolicitud = sp.IdSolicitud
-    LEFT JOIN dbo.Cat_Tipo_Ingreso AS ti ON ti.IdTipoIngreso = s.IdTipoIngreso
     OUTER APPLY
     (
         SELECT
@@ -2357,7 +2347,7 @@ BEGIN
         WHERE spa.IdSolicitudPersona = sp.IdSolicitudPersona
     ) AS areas
     WHERE sp.IdSolicitud = @IdSolicitud
-    ORDER BY p.NombreCompleto, sp.IdSolicitudPersona;
+    ORDER BY COALESCE(p.NombreCompleto, sp.CodigoEmpleadoHtis), sp.IdSolicitudPersona;
 END;
 GO
 
@@ -2538,10 +2528,7 @@ BEGIN
     IF @CodigoTipo = 'EMPLEADO'
     BEGIN
         IF @IdPersona IS NOT NULL OR @CodigoEmpleadoHtis IS NULL THROW 50157, 'Selecciona un empleado válido de HTIS.', 1;
-        SELECT TOP (1) @IdPersona = IdPersona
-        FROM dbo.Persona
-        WHERE NumeroDocumento = @CodigoEmpleadoHtis AND IdProveedor IS NULL
-        ORDER BY IdPersona;
+        IF EXISTS (SELECT 1 FROM dbo.Solicitud_Persona WHERE IdSolicitud = @IdSolicitud AND CodigoEmpleadoHtis = @CodigoEmpleadoHtis) THROW 50158, 'El empleado ya pertenece a la solicitud.', 1;
     END
     ELSE
     BEGIN
@@ -2587,28 +2574,6 @@ BEGIN
     BEGIN TRY
         BEGIN TRANSACTION;
 
-        IF @CodigoTipo = 'EMPLEADO' AND @IdPersona IS NULL
-        BEGIN
-            DECLARE @IdEstadoActivo SMALLINT =
-                (SELECT TOP (1) IdEstadoGeneral FROM dbo.Cat_Estado_General WHERE Codigo = 'ACTIVO');
-            EXEC dbo.usp_ObtenerSiguienteId 'Persona', @IdPersona OUTPUT;
-            INSERT dbo.Persona
-            (
-                IdPersona, IdTipoDocumento, NumeroDocumento, NombreCompleto,
-                IdProveedor, EmpresaTexto, InformacionAdicional, IdEstadoGeneral,
-                FechaCreacion, UsuarioCreacion
-            )
-            VALUES
-            (
-                @IdPersona, NULL, @CodigoEmpleadoHtis, @CodigoEmpleadoHtis,
-                NULL, N'Empleado interno', N'Registro vinculado al directorio de empleados', @IdEstadoActivo,
-                SYSDATETIME(), @Usuario
-            );
-        END;
-
-        IF EXISTS (SELECT 1 FROM dbo.Solicitud_Persona WHERE IdSolicitud = @IdSolicitud AND IdPersona = @IdPersona)
-            THROW 50158, 'El integrante ya pertenece a la solicitud.', 1;
-
         DECLARE @CantidadEstimada INT;
         SELECT @CantidadEstimada = CantidadEstimada
         FROM dbo.Solicitud_Ingreso WITH (UPDLOCK, HOLDLOCK)
@@ -2620,13 +2585,13 @@ BEGIN
         EXEC dbo.usp_ObtenerSiguienteId 'Solicitud_Persona', @IdSolicitudPersona OUTPUT;
         INSERT dbo.Solicitud_Persona
         (
-            IdSolicitudPersona, IdSolicitud, IdPersona,
+            IdSolicitudPersona, IdSolicitud, IdPersona, CodigoEmpleadoHtis,
             IdEstadoPersonaSolicitud, DatosCompletos, ObservacionesRevision,
             FechaCreacion, UsuarioCreacion
         )
         VALUES
         (
-            @IdSolicitudPersona, @IdSolicitud, @IdPersona,
+            @IdSolicitudPersona, @IdSolicitud, @IdPersona, @CodigoEmpleadoHtis,
             @IdEstadoPersonaSolicitud, @DatosCompletos, @ObservacionesRevision,
             SYSDATETIME(), @Usuario
         );
