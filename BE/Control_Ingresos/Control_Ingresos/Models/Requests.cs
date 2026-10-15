@@ -36,8 +36,8 @@ public sealed record CrearSolicitudRequest(
     string? DescripcionActividad,
     long? IdProveedor,
     string? NumeroContrato,
-    [Required, MaxLength(200)] string? ContactoProveedor,
-    [Required, EmailAddress, MaxLength(254)] string? CorreoProveedor,
+    [MaxLength(200)] string? ContactoProveedor,
+    [EmailAddress, MaxLength(254)] string? CorreoProveedor,
     [Required, Range(1, int.MaxValue)] int? CantidadEstimada,
     int? IdAreaSolicitante,
     [Required, MaxLength(50)] string IdUsuarioSolicitante,
@@ -46,7 +46,8 @@ public sealed record CrearSolicitudRequest(
     [Required, MaxLength(50)] string Usuario);
 
 public sealed record AgregarPersonaSolicitudRequest(
-    long IdPersona,
+    long? IdPersona,
+    [MaxLength(50)] string? CodigoEmpleadoHtis,
     short? IdEstadoPersonaSolicitud,
     bool? DatosCompletos,
     string? ObservacionesRevision,
@@ -185,7 +186,8 @@ public sealed record PersonaSolicitudDetalle(
     int AreasAprobadas,
     int AreasPendientes,
     int AreasRechazadas,
-    string? DetalleRechazos);
+    string? DetalleRechazos,
+    string? CodigoEmpleadoHtis);
 
 public sealed record PersonaResumen(
     long IdPersona,
@@ -271,7 +273,8 @@ public sealed record AprobacionResumen(
     string? CodigoEstado,
     string? Estado,
     DateTime? FechaDecision,
-    string? ComentarioDecision);
+    string? ComentarioDecision,
+    string? CodigoEmpleadoHtis);
 
 public sealed record DecidirAprobacionRequest(
     [Required, MaxLength(30)] string CodigoEstado,

@@ -1,8 +1,11 @@
 using Control_Ingresos.Data;
+using Control_Ingresos.Models;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
+var allowHttp = builder.Configuration.GetValue<bool>("Hosting:AllowHttp");
 
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
@@ -13,8 +16,12 @@ builder.Services.AddOpenApi();
 
 builder.Services.AddScoped<ISolicitudesRepository, SolicitudesRepository>();
 builder.Services.AddScoped<IEmpleadosRepository, EmpleadosRepository>();
+builder.Services.AddScoped<IEmpleadoSingularRepository, EmpleadoSingularRepository>();
+builder.Services.AddSingleton<ApplicationSession>();
 
 builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<HtisExceptionHandler>();
+builder.Services.AddExceptionHandler<SingularExceptionHandler>();
 builder.Services.AddExceptionHandler<SqlExceptionHandler>();
 
 builder.Services
@@ -23,11 +30,33 @@ builder.Services
     {
         options.Cookie.Name = "ControlIngresos.Session";
         options.Cookie.HttpOnly = true;
-        options.Cookie.SameSite = SameSiteMode.None;
-        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+        options.Cookie.SameSite = allowHttp
+            ? SameSiteMode.Lax
+            : SameSiteMode.None;
+        options.Cookie.SecurePolicy = allowHttp
+            ? CookieSecurePolicy.SameAsRequest
+            : CookieSecurePolicy.Always;
 
-        options.ExpireTimeSpan = TimeSpan.FromHours(8);
-        options.SlidingExpiration = true;
+        options.ExpireTimeSpan = TimeSpan.FromHours(1);
+        options.SlidingExpiration = false;
+
+        options.Events.OnValidatePrincipal = async context =>
+        {
+            var applicationSession = context.HttpContext.RequestServices
+                .GetRequiredService<ApplicationSession>();
+            var cookieInstanceId = context.Principal?
+                .FindFirst(ApplicationSession.ClaimType)?
+                .Value;
+
+            if (string.Equals(
+                cookieInstanceId,
+                applicationSession.InstanceId,
+                StringComparison.Ordinal)) return;
+
+            context.RejectPrincipal();
+            await context.HttpContext.SignOutAsync(
+                CookieAuthenticationDefaults.AuthenticationScheme);
+        };
 
         options.Events.OnRedirectToLogin = context =>
         {
@@ -71,7 +100,10 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference();
 }
 
-app.UseHttpsRedirection();
+if (!allowHttp)
+{
+    app.UseHttpsRedirection();
+}
 
 app.UseExceptionHandler();
 

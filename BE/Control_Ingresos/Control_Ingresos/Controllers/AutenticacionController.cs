@@ -10,7 +10,9 @@ namespace Control_Ingresos.Controllers;
 
 [ApiController]
 [Route("api/autenticacion")]
-public sealed class AutenticacionController(ISolicitudesRepository repository) : ControllerBase
+public sealed class AutenticacionController(
+    ISolicitudesRepository repository,
+    ApplicationSession applicationSession) : ControllerBase
 {
     [Authorize]
     [HttpGet("perfil")]
@@ -42,14 +44,15 @@ public sealed class AutenticacionController(ISolicitudesRepository repository) :
         {
             new(ClaimTypes.NameIdentifier, usuario.IdUsuario),
             new(ClaimTypes.Name, usuario.NombreCompleto ?? usuario.IdUsuario),
-            new(ClaimTypes.Email, usuario.Correo ?? string.Empty)
+            new(ClaimTypes.Email, usuario.Correo ?? string.Empty),
+            new(ApplicationSession.ClaimType, applicationSession.InstanceId)
         };
         claims.AddRange(usuario.Roles.Select(role => new Claim(ClaimTypes.Role, role)));
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
         await HttpContext.SignInAsync(
             CookieAuthenticationDefaults.AuthenticationScheme,
             new ClaimsPrincipal(identity),
-            new AuthenticationProperties { IsPersistent = true, ExpiresUtc = DateTimeOffset.UtcNow.AddHours(8) });
+            new AuthenticationProperties { IsPersistent = true, ExpiresUtc = DateTimeOffset.UtcNow.AddHours(1) });
 
         return Ok(usuario);
     }

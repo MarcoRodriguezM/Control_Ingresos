@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../components/Icon'
 import { accessStatusClass, formatDate, formatDateTime, initials } from '../utils/formatters'
 import { preparePhotograph } from '../utils/photographs'
+import { API_URL } from '../services/api'
 
 export function PersonAccessPage({ items, selected, loading, mobileDetailOpen = false, onSelect, onBack, onNew, onQr, onPhotographChange }) {
   const [query, setQuery] = useState('')
@@ -113,8 +114,7 @@ function resolvePhotographUrl(value) {
   if (!normalized) return ''
   if (/^(?:https?:|data:|blob:)/i.test(normalized)) return normalized
 
-  const apiUrl = (import.meta.env.VITE_API_URL ?? 'https://localhost:7230').replace(/\/$/, '')
-  return `${apiUrl}/${normalized.replace(/^\/+/, '')}`
+  return `${API_URL}/${normalized.replace(/^\/+/, '')}`
 }
 
 function isMobileDirectory() {

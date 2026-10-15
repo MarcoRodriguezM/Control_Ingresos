@@ -9,6 +9,8 @@ namespace Control_Ingresos.Data;
 
 public sealed class EmpleadosRepository(IConfiguration configuration) : IEmpleadosRepository
 {
+    private const int HtisConnectionTimeoutSeconds = 5;
+    private const int HtisCommandTimeoutSeconds = 15;
     private const string ProcedimientoConsulta = "dbo.OBTENER_CONSULTA_EMPLEADOS";
     private const string ProcedimientoConsultaFotografia = "dbo.OBTENER_FOTO_EMPLEADO";
     private const string ProcedimientoEstados = "dbo.usp_Empleado_Status_Listar";
@@ -25,47 +27,107 @@ public sealed class EmpleadosRepository(IConfiguration configuration) : IEmplead
     public async Task<IReadOnlyCollection<Empleado>> ListarAsync(CancellationToken cancellationToken)
     {
         var consultaSql = await ObtenerConsultaSqlAsync(ProcedimientoConsulta, cancellationToken);
-
-        await using var connection = new SqlConnection(_empleadosConnectionString);
-        await connection.OpenAsync(cancellationToken);
-
-        await using var command = new SqlCommand(consultaSql, connection)
+        try
         {
-            CommandType = CommandType.Text,
-            CommandTimeout = 120
-        };
+            await using var connection = CrearConexionHtis();
+            await connection.OpenAsync(cancellationToken);
 
-        var empleados = new List<Empleado>();
-        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
-        {
-            while (await reader.ReadAsync(cancellationToken))
+            await using var command = new SqlCommand(consultaSql, connection)
             {
-                empleados.Add(new Empleado(
-                    GetNullableString(reader, "COD_EMPLEADO"),
-                    GetNullableString(reader, "NOMBRE"),
-                    GetNullableString(reader, "NOMBRE1"),
-                    GetNullableString(reader, "NOMBRE2"),
-                    GetNullableString(reader, "APELLIDO1"),
-                    GetNullableString(reader, "APELLIDO2"),
-                    GetNullableString(reader, "TIPO_SANGRE"),
-                    GetNullableString(reader, "NIT"),
-                    GetNullableString(reader, "COD_NACIONALIDAD"),
-                    GetNullableDateTime(reader, "FECHA_NACIMIENTO"),
-                    GetNullableString(reader, "LUGAR_NACIMIENTO"),
-                    GetNullableString(reader, "COD_STATUS"),
-                    null,
-                    GetNullableString(reader, "EDO_CIVIL"),
-                    GetNullableString(reader, "SEXO"),
-                    GetNullableDateTime(reader, "FECHA_INGRESO"),
-                    GetNullableDateTime(reader, "FECHA_EGRESO"),
-                    GetNullableString(reader, "CORREO"),
-                    GetNullableString(reader, "TIPO_LICENCIA"),
-                    GetNullableString(reader, "DEPARTAMENTO"),
-                    GetNullableString(reader, "CARGO_NIVEL")));
-            }
-        }
+                CommandType = CommandType.Text,
+                CommandTimeout = HtisCommandTimeoutSeconds
+            };
 
-        return empleados;
+            var empleados = new List<Empleado>();
+            await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+            {
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    empleados.Add(new Empleado(
+                        GetNullableString(reader, "COD_EMPLEADO"),
+                        GetNullableString(reader, "NOMBRE"),
+                        GetNullableString(reader, "NOMBRE1"),
+                        GetNullableString(reader, "NOMBRE2"),
+                        GetNullableString(reader, "APELLIDO1"),
+                        GetNullableString(reader, "APELLIDO2"),
+                        GetNullableString(reader, "TIPO_SANGRE"),
+                        GetNullableString(reader, "NIT"),
+                        GetNullableString(reader, "COD_NACIONALIDAD"),
+                        GetNullableDateTime(reader, "FECHA_NACIMIENTO"),
+                        GetNullableString(reader, "LUGAR_NACIMIENTO"),
+                        GetNullableString(reader, "COD_STATUS"),
+                        null,
+                        GetNullableString(reader, "EDO_CIVIL"),
+                        GetNullableString(reader, "SEXO"),
+                        GetNullableDateTime(reader, "FECHA_INGRESO"),
+                        GetNullableDateTime(reader, "FECHA_EGRESO"),
+                        GetNullableString(reader, "CORREO"),
+                        GetNullableString(reader, "TIPO_LICENCIA"),
+                        GetNullableString(reader, "DEPARTAMENTO"),
+                        GetNullableString(reader, "CARGO_NIVEL")));
+                }
+            }
+
+            return empleados;
+        }
+        catch (SqlException exception)
+        {
+            throw new HtisUnavailableException(
+                "No fue posible consultar los empleados en HTIS. Intenta nuevamente en unos minutos.",
+                exception);
+        }
+        catch (TimeoutException exception)
+        {
+            throw new HtisUnavailableException(
+                "La consulta de empleados en HTIS tardó demasiado. Intenta nuevamente.",
+                exception);
+        }
+    }
+
+    public async Task<IReadOnlyCollection<Empleado>> ListarActivosAsync(
+        CancellationToken cancellationToken)
+    {
+        var empleados = await ListarAsync(cancellationToken);
+        var estados = await ListarEstadosAsync(cancellationToken);
+        var estadosActivos = estados
+            .Where(estado => string.Equals(estado.Descripcion?.Trim(), "ACTIVO", StringComparison.OrdinalIgnoreCase))
+            .Select(estado => estado.StatusId.ToString(CultureInfo.InvariantCulture))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (estadosActivos.Count == 0)
+            throw new HtisUnavailableException(
+                "No se encontró el estado Activo en el catálogo de estados de empleados de Control Ingresos.");
+
+        return empleados
+            .Where(empleado => !string.IsNullOrWhiteSpace(empleado.CodigoEmpleado)
+                && empleado.CodigoStatus is not null
+                && estadosActivos.Contains(empleado.CodigoStatus.Trim()))
+            .GroupBy(empleado => empleado.CodigoEmpleado!.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(grupo => grupo.First())
+            .ToArray();
+    }
+
+    public async Task<IReadOnlyDictionary<string, Empleado>> ObtenerPorCodigosAsync(
+        IEnumerable<string> codigosEmpleado,
+        bool soloActivos,
+        CancellationToken cancellationToken)
+    {
+        var codigos = codigosEmpleado
+            .Where(codigo => !string.IsNullOrWhiteSpace(codigo))
+            .Select(codigo => codigo.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (codigos.Count == 0)
+            return new Dictionary<string, Empleado>(StringComparer.OrdinalIgnoreCase);
+
+        var empleados = soloActivos
+            ? await ListarActivosAsync(cancellationToken)
+            : await ListarAsync(cancellationToken);
+
+        return empleados
+            .Where(empleado => empleado.CodigoEmpleado is not null
+                && codigos.Contains(empleado.CodigoEmpleado.Trim()))
+            .GroupBy(empleado => empleado.CodigoEmpleado!.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(grupo => grupo.Key, grupo => grupo.First(), StringComparer.OrdinalIgnoreCase);
     }
 
     public async Task<byte[]?> ObtenerFotografiaAsync(
@@ -73,27 +135,41 @@ public sealed class EmpleadosRepository(IConfiguration configuration) : IEmplead
         CancellationToken cancellationToken)
     {
         var consultaSql = await ObtenerConsultaSqlAsync(ProcedimientoConsultaFotografia, cancellationToken);
-
-        await using var connection = new SqlConnection(_empleadosConnectionString);
-        await connection.OpenAsync(cancellationToken);
-
-        await using var command = new SqlCommand(consultaSql, connection)
+        try
         {
-            CommandType = CommandType.Text,
-            CommandTimeout = 120
-        };
-        command.Parameters.Add("@COD_EMPLEADO", SqlDbType.VarChar, 50).Value = codigoEmpleado.Trim();
+            await using var connection = CrearConexionHtis();
+            await connection.OpenAsync(cancellationToken);
 
-        await using var reader = await command.ExecuteReaderAsync(
-            CommandBehavior.SequentialAccess | CommandBehavior.SingleRow,
-            cancellationToken);
+            await using var command = new SqlCommand(consultaSql, connection)
+            {
+                CommandType = CommandType.Text,
+                CommandTimeout = HtisCommandTimeoutSeconds
+            };
+            command.Parameters.Add("@COD_EMPLEADO", SqlDbType.VarChar, 50).Value = codigoEmpleado.Trim();
 
-        if (!await reader.ReadAsync(cancellationToken)) return null;
+            await using var reader = await command.ExecuteReaderAsync(
+                CommandBehavior.SequentialAccess | CommandBehavior.SingleRow,
+                cancellationToken);
 
-        var ordinal = reader.GetOrdinal("FOTOGRAFIA");
-        if (reader.IsDBNull(ordinal)) return null;
+            if (!await reader.ReadAsync(cancellationToken)) return null;
 
-        return ConvertirFotografia(reader.GetValue(ordinal));
+            var ordinal = reader.GetOrdinal("FOTOGRAFIA");
+            if (reader.IsDBNull(ordinal)) return null;
+
+            return ConvertirFotografia(reader.GetValue(ordinal));
+        }
+        catch (SqlException exception)
+        {
+            throw new HtisUnavailableException(
+                "No fue posible consultar la fotografía del empleado en HTIS.",
+                exception);
+        }
+        catch (TimeoutException exception)
+        {
+            throw new HtisUnavailableException(
+                "La consulta de la fotografía en HTIS tardó demasiado.",
+                exception);
+        }
     }
 
     private async Task<string> ObtenerConsultaSqlAsync(
@@ -167,6 +243,36 @@ public sealed class EmpleadosRepository(IConfiguration configuration) : IEmplead
         string codigoQr,
         CancellationToken cancellationToken)
     {
+        var codigoEmpleado = await ResolverCodigoEmpleadoQrAsync(codigoQr, cancellationToken);
+        if (string.IsNullOrWhiteSpace(codigoEmpleado)) return null;
+
+        return await ConsultarPorCodigoAsync(codigoEmpleado, cancellationToken);
+    }
+
+    public async Task<Empleado?> ConsultarPorCodigoAsync(
+        string codigoEmpleado,
+        CancellationToken cancellationToken)
+    {
+        var codigoNormalizado = codigoEmpleado.Trim();
+
+        var empleado = (await ListarAsync(cancellationToken)).FirstOrDefault(item =>
+            string.Equals(item.CodigoEmpleado?.Trim(), codigoNormalizado, StringComparison.OrdinalIgnoreCase));
+        if (empleado is null) return null;
+
+        var estados = await ListarEstadosAsync(cancellationToken);
+        var descripcionEstado = estados.FirstOrDefault(estado =>
+            string.Equals(
+                estado.StatusId.ToString(CultureInfo.InvariantCulture),
+                empleado.CodigoStatus?.Trim(),
+                StringComparison.OrdinalIgnoreCase))?.Descripcion;
+
+        return empleado with { DescripcionStatus = descripcionEstado };
+    }
+
+    public async Task<string?> ResolverCodigoEmpleadoQrAsync(
+        string codigoQr,
+        CancellationToken cancellationToken)
+    {
         await using var connection = new SqlConnection(_controlIngresosConnectionString);
         await connection.OpenAsync(cancellationToken);
 
@@ -180,20 +286,7 @@ public sealed class EmpleadosRepository(IConfiguration configuration) : IEmplead
         var codigoEmpleado = result is null or DBNull
             ? null
             : Convert.ToString(result, CultureInfo.InvariantCulture)?.Trim();
-        if (string.IsNullOrWhiteSpace(codigoEmpleado)) return null;
-
-        var empleado = (await ListarAsync(cancellationToken)).FirstOrDefault(item =>
-            string.Equals(item.CodigoEmpleado?.Trim(), codigoEmpleado, StringComparison.OrdinalIgnoreCase));
-        if (empleado is null) return null;
-
-        var estados = await ListarEstadosAsync(cancellationToken);
-        var descripcionEstado = estados.FirstOrDefault(estado =>
-            string.Equals(
-                estado.StatusId.ToString(CultureInfo.InvariantCulture),
-                empleado.CodigoStatus?.Trim(),
-                StringComparison.OrdinalIgnoreCase))?.Descripcion;
-
-        return empleado with { DescripcionStatus = descripcionEstado };
+        return string.IsNullOrWhiteSpace(codigoEmpleado) ? null : codigoEmpleado;
     }
 
     private static byte[] ConvertirFotografia(object value)
@@ -207,6 +300,15 @@ public sealed class EmpleadosRepository(IConfiguration configuration) : IEmplead
             _ => throw new InvalidOperationException(
                 $"El formato de fotografía '{value.GetType().Name}' no es compatible.")
         };
+    }
+
+    private SqlConnection CrearConexionHtis()
+    {
+        var builder = new SqlConnectionStringBuilder(_empleadosConnectionString)
+        {
+            ConnectTimeout = HtisConnectionTimeoutSeconds
+        };
+        return new SqlConnection(builder.ConnectionString);
     }
 
     private static string? GetNullableString(DbDataReader reader, string columnName)

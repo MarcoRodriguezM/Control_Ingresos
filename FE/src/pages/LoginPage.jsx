@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Icon } from '../components/Icon'
+import auraLogo from '../assets/aura-logo-default.png'
 
 export function LoginPage({ onLogin }) {
   const [form, setForm] = useState({ usuario: '', contrasena: '' })
@@ -28,22 +28,30 @@ export function LoginPage({ onLogin }) {
   }
 
   return <main className="login-page">
-    <section className="login-brand-panel">
-      <div className="login-brand"><span className="brand-mark"><Icon name="logo" /></span><span>Entrada</span></div>
-      <div className="login-message"><span className="login-shield"><Icon name="shield" /></span><p className="eyebrow">Control de ingresos</p><h1>Accesos claros, seguros y bajo control.</h1><p>Administra solicitudes, personas y aprobaciones desde un mismo lugar.</p></div>
-      <p className="login-copyright">Sistema interno de gestión de ingresos</p>
-    </section>
-    <section className="login-form-panel">
+    <section className="login-shell" aria-labelledby="login-title">
       <form className="login-card" onSubmit={submit}>
-        <div className="login-mobile-brand"><span className="brand-mark"><Icon name="logo" /></span><strong>Entrada</strong></div>
-        <p className="eyebrow">Bienvenido</p>
-        <h2>Iniciar sesión</h2>
-        <p className="login-subtitle">Ingresa tus credenciales para continuar.</p>
-        {error && <div className="alert error" role="alert">{error}</div>}
-        <label className="login-field"><span>Usuario o correo</span><div><Icon name="user" /><input name="usuario" value={form.usuario} onChange={change} autoComplete="username" placeholder="Ej. admin" autoFocus /></div></label>
-        <label className="login-field"><span>Contraseña</span><div><Icon name="lock" /><input type="password" name="contrasena" value={form.contrasena} onChange={change} autoComplete="current-password" placeholder="Escribe tu contraseña" /></div></label>
-        <button type="submit" className="primary-button login-button" disabled={loading}>{loading ? 'Ingresando…' : <>Ingresar <Icon name="arrow" /></>}</button>
+        <div className="login-card-brand">
+          <img src={auraLogo} alt="Aura Minerals" />
+        </div>
+        <div className="login-card-body">
+          <header className="login-heading">
+            <p>Control de ingresos</p>
+            <h1 id="login-title">Iniciar sesión</h1>
+            <span>Utiliza tus credenciales para continuar.</span>
+          </header>
+          {error && <div className="alert error" role="alert">{error}</div>}
+          <label className="login-field">
+            <span>Usuario o correo</span>
+            <input name="usuario" value={form.usuario} onChange={change} autoComplete="username" placeholder="Ingresa tu usuario" autoFocus />
+          </label>
+          <label className="login-field">
+            <span>Contraseña</span>
+            <input type="password" name="contrasena" value={form.contrasena} onChange={change} autoComplete="current-password" placeholder="Ingresa tu contraseña" />
+          </label>
+          <button type="submit" className="primary-button login-button" disabled={loading}>{loading ? 'Ingresando…' : 'Ingresar'}</button>
+        </div>
       </form>
+      <p className="login-access-note">Uso interno de Aura Minerals</p>
     </section>
   </main>
 }

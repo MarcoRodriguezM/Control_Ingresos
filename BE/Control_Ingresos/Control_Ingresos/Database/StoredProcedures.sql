@@ -7,6 +7,42 @@ SET ANSI_NULLS ON;
 SET QUOTED_IDENTIFIER ON;
 GO
 
+-- dbo.OBTENER_CONSULTA_AUTORIZACIONES_EMPLEADO
+CREATE OR ALTER PROCEDURE dbo.OBTENER_CONSULTA_AUTORIZACIONES_EMPLEADO
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT CAST(N'
+SELECT
+    A.Cracha AS CARNET,
+    A.Nome AS NOMBRE,
+    A.Contrato AS CONTRATO,
+    A.Empresa AS EMPRESA,
+    A.Cargo AS CARGO,
+    A.CNH_Cetegoria AS CATEGORIA_LICENCIA,
+    A.CNH_Venc AS VALIDEZ_LICENCIA,
+    A.CNH_Codigo AS NUMERO_LICENCIA,
+    A.C_STATUS AS ESTADO,
+    A.C_DTASO AS VALIDEZ_ASO,
+    A.Setor AS AREA,
+    A.Gerencia AS GERENCIA,
+    A.C_TIPOSANGUINEO AS TIPO_SANGRE
+FROM dbo.view_Autorizacoes AS A
+WHERE A.Cracha = @CodigoEmpleado;
+
+SELECT
+    T.C_DESCRICAO AS ENTRENAMIENTO,
+    T.C_DTVALIDADE AS VALIDEZ,
+    T.C_DTTREINAMENTO AS FECHA_ENTRENAMIENTO,
+    T.C_VRH AS CARGA_HORARIA,
+    T.C_TIPO AS TIPO
+FROM dbo.view_Autorizacoes_Treinamntos AS T
+WHERE T.C_CRACHA = @CodigoEmpleado
+ORDER BY T.C_DESCRICAO;' AS NVARCHAR(MAX)) AS CONSULTA_SQL;
+END;
+GO
+
 -- dbo.OBTENER_CONSULTA_EMPLEADOS
 CREATE OR ALTER PROCEDURE dbo.OBTENER_CONSULTA_EMPLEADOS
 AS
@@ -383,8 +419,9 @@ BEGIN
         s.NumeroSolicitud,
         p.IdPersona,
         p.NombreCompleto AS Persona,
-        p.NumeroDocumento,
-        COALESCE(pr.NombreComercial, pr.NombreLegal, p.EmpresaTexto) AS Empresa,
+        COALESCE(p.NumeroDocumento, sp.CodigoEmpleadoHtis) AS NumeroDocumento,
+        CASE WHEN sp.CodigoEmpleadoHtis IS NOT NULL THEN N'HTIS'
+             ELSE COALESCE(pr.NombreComercial, pr.NombreLegal, p.EmpresaTexto) END AS Empresa,
         a.IdArea,
         a.Nombre AS Area,
         s.NombreActividad AS Actividad,
@@ -396,13 +433,14 @@ BEGIN
         COALESCE(ultima.CodigoEstado, pendiente.Codigo) AS CodigoEstado,
         COALESCE(ultima.Estado, pendiente.Nombre, N'Pendiente') AS Estado,
         ultima.FechaDecision,
-        ultima.ComentarioDecision
+        ultima.ComentarioDecision,
+        sp.CodigoEmpleadoHtis
     FROM dbo.Solicitud_Persona_Area AS spa
     INNER JOIN dbo.Solicitud_Persona AS sp
         ON sp.IdSolicitudPersona = spa.IdSolicitudPersona
     INNER JOIN dbo.Solicitud_Ingreso AS s
         ON s.IdSolicitud = sp.IdSolicitud
-    INNER JOIN dbo.Persona AS p
+    LEFT JOIN dbo.Persona AS p
         ON p.IdPersona = sp.IdPersona
     INNER JOIN dbo.Cat_Area AS a
         ON a.IdArea = spa.IdArea
@@ -1454,6 +1492,28 @@ BEGIN
     IF @IdUbicacion IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Cat_Ubicacion WHERE IdUbicacion = @IdUbicacion)
         THROW 50151, 'La ubicaciÃ³n no existe.', 1;
 
+    DECLARE @CodigoTipo VARCHAR(30) =
+    (
+        SELECT UPPER(LTRIM(RTRIM(Codigo)))
+        FROM dbo.Cat_Tipo_Ingreso
+        WHERE IdTipoIngreso = @IdTipoIngreso
+    );
+    IF @CodigoTipo IN ('EMPLEADO', 'NUEVO_EMPLEADO') SET @IdProveedor = NULL;
+    IF @CodigoTipo = 'EMPLEADO'
+    BEGIN
+        SET @ContactoProveedor = NULL;
+        SET @CorreoProveedor = NULL;
+        IF EXISTS (SELECT 1 FROM dbo.Solicitud_Persona WHERE IdSolicitud = @IdSolicitud AND IdPersona IS NOT NULL)
+            THROW 50155, 'La solicitud contiene personas locales y no puede cambiarse al tipo EMPLEADO.', 1;
+    END
+    ELSE
+    BEGIN
+        IF NULLIF(LTRIM(RTRIM(@ContactoProveedor)), '') IS NULL THROW 50152, 'El contacto es obligatorio.', 1;
+        IF NULLIF(LTRIM(RTRIM(@CorreoProveedor)), '') IS NULL OR @CorreoProveedor NOT LIKE '%_@_%._%' THROW 50153, 'El correo es obligatorio y debe tener un formato vÃ¡lido.', 1;
+        IF EXISTS (SELECT 1 FROM dbo.Solicitud_Persona WHERE IdSolicitud = @IdSolicitud AND CodigoEmpleadoHtis IS NOT NULL)
+            THROW 50156, 'La solicitud contiene empleados HTIS y no puede cambiarse a un tipo de personas locales.', 1;
+    END;
+
     UPDATE dbo.Solicitud_Ingreso
        SET IdTipoIngreso = @IdTipoIngreso,
            IdEstadoSolicitud = @IdEstadoSolicitud,
@@ -1519,6 +1579,27 @@ BEGIN
         THROW 50127, 'El Ã¡rea solicitante no existe.', 1;
     IF @IdUbicacion IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Cat_Ubicacion WHERE IdUbicacion = @IdUbicacion)
         THROW 50128, 'La ubicaciÃ³n no existe.', 1;
+
+    DECLARE @CodigoTipo VARCHAR(30) =
+    (
+        SELECT UPPER(LTRIM(RTRIM(Codigo)))
+        FROM dbo.Cat_Tipo_Ingreso
+        WHERE IdTipoIngreso = @IdTipoIngreso
+    );
+    IF @CodigoTipo IN ('EMPLEADO', 'NUEVO_EMPLEADO') SET @IdProveedor = NULL;
+    IF @CodigoTipo = 'EMPLEADO'
+    BEGIN
+        SET @ContactoProveedor = NULL;
+        SET @CorreoProveedor = NULL;
+    END
+    ELSE
+    BEGIN
+        IF NULLIF(LTRIM(RTRIM(@ContactoProveedor)), '') IS NULL THROW 50129, 'El contacto es obligatorio.', 1;
+        IF NULLIF(LTRIM(RTRIM(@CorreoProveedor)), '') IS NULL OR @CorreoProveedor NOT LIKE '%_@_%._%' THROW 50119, 'El correo es obligatorio y debe tener un formato vÃ¡lido.', 1;
+    END;
+
+    SET @IdEstadoSolicitud = (SELECT TOP (1) IdEstadoSolicitud FROM dbo.Cat_Estado_Solicitud WHERE Codigo = 'BORRADOR');
+    IF @IdEstadoSolicitud IS NULL THROW 50118, 'No existe el estado BORRADOR.', 1;
 
     DECLARE @IdSolicitud BIGINT, @NumeroSolicitud VARCHAR(30);
     EXEC dbo.usp_ObtenerSiguienteId 'Solicitud_Ingreso', @IdSolicitud OUTPUT;
@@ -1609,7 +1690,7 @@ BEGIN
     SELECT
         sp.IdSolicitudPersona,
         sp.IdPersona,
-        p.NumeroDocumento,
+        COALESCE(p.NumeroDocumento, sp.CodigoEmpleadoHtis) AS NumeroDocumento,
         p.NombreCompleto,
         sp.IdEstadoPersonaSolicitud,
         sp.DatosCompletos,
@@ -1628,7 +1709,8 @@ BEGIN
         ISNULL(resumen.AreasAprobadas, 0) AS AreasAprobadas,
         ISNULL(resumen.AreasPendientes, 0) AS AreasPendientes,
         ISNULL(resumen.AreasRechazadas, 0) AS AreasRechazadas,
-        rechazos.DetalleRechazos
+        rechazos.DetalleRechazos,
+        sp.CodigoEmpleadoHtis
     FROM dbo.Solicitud_Persona AS sp
     LEFT JOIN dbo.Persona AS p ON p.IdPersona = sp.IdPersona
     OUTER APPLY
@@ -1694,7 +1776,7 @@ BEGIN
           AND ultima.Codigo = 'RECHAZADA'
     ) AS rechazos
     WHERE sp.IdSolicitud = @IdSolicitud
-    ORDER BY p.NombreCompleto, sp.IdSolicitudPersona;
+    ORDER BY COALESCE(p.NombreCompleto, sp.CodigoEmpleadoHtis), sp.IdSolicitudPersona;
 END;
 GO
 
@@ -1759,6 +1841,165 @@ BEGIN
             FETCH NEXT FROM req_cursor INTO @IdReq, @IdTipoAplicacion, @Seleccionado, @Configurado, @Obs;
         END
         CLOSE req_cursor; DEALLOCATE req_cursor;
+        COMMIT TRANSACTION;
+        SELECT @IdSolicitudPersona;
+    END TRY
+    BEGIN CATCH
+        IF XACT_STATE() <> 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+
+-- dbo.usp_Solicitud_Integrante_Agregar
+CREATE OR ALTER PROCEDURE dbo.usp_Solicitud_Integrante_Agregar
+    @IdSolicitud BIGINT,
+    @IdPersona BIGINT = NULL,
+    @CodigoEmpleadoHtis VARCHAR(50) = NULL,
+    @IdEstadoPersonaSolicitud SMALLINT = NULL,
+    @DatosCompletos BIT = NULL,
+    @ObservacionesRevision NVARCHAR(1000) = NULL,
+    @AreasJson NVARCHAR(MAX) = NULL,
+    @RequerimientosJson NVARCHAR(MAX) = NULL,
+    @Usuario VARCHAR(50)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    SET @CodigoEmpleadoHtis = NULLIF(LTRIM(RTRIM(@CodigoEmpleadoHtis)), '');
+    IF NOT EXISTS (SELECT 1 FROM dbo.Solicitud_Ingreso WHERE IdSolicitud = @IdSolicitud) THROW 50130, 'La solicitud no existe.', 1;
+
+    DECLARE @CodigoTipo VARCHAR(30) =
+    (
+        SELECT UPPER(LTRIM(RTRIM(tipo.Codigo)))
+        FROM dbo.Solicitud_Ingreso AS solicitud
+        INNER JOIN dbo.Cat_Tipo_Ingreso AS tipo ON tipo.IdTipoIngreso = solicitud.IdTipoIngreso
+        WHERE solicitud.IdSolicitud = @IdSolicitud
+    );
+
+    IF @CodigoTipo = 'EMPLEADO'
+    BEGIN
+        IF @IdPersona IS NOT NULL OR @CodigoEmpleadoHtis IS NULL THROW 50157, 'Selecciona un empleado válido de HTIS.', 1;
+        IF EXISTS (SELECT 1 FROM dbo.Solicitud_Persona WHERE IdSolicitud = @IdSolicitud AND CodigoEmpleadoHtis = @CodigoEmpleadoHtis) THROW 50158, 'El empleado ya pertenece a la solicitud.', 1;
+    END
+    ELSE
+    BEGIN
+        IF @IdPersona IS NULL OR @CodigoEmpleadoHtis IS NOT NULL THROW 50131, 'Selecciona una persona válida de Control Ingresos.', 1;
+        IF NOT EXISTS (SELECT 1 FROM dbo.Persona WHERE IdPersona = @IdPersona) THROW 50131, 'La persona no existe.', 1;
+        IF EXISTS (SELECT 1 FROM dbo.Solicitud_Persona WHERE IdSolicitud = @IdSolicitud AND IdPersona = @IdPersona) THROW 50132, 'La persona ya pertenece a la solicitud.', 1;
+    END;
+
+    IF @IdEstadoPersonaSolicitud IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Cat_Estado_Persona_Solicitud WHERE IdEstadoPersonaSolicitud = @IdEstadoPersonaSolicitud) THROW 50133, 'El estado del integrante no existe.', 1;
+    IF @AreasJson IS NOT NULL AND ISJSON(@AreasJson) <> 1 THROW 50134, 'AreasJson no contiene JSON válido.', 1;
+    IF @RequerimientosJson IS NOT NULL AND ISJSON(@RequerimientosJson) <> 1 THROW 50135, 'RequerimientosJson no contiene JSON válido.', 1;
+
+    DECLARE @Areas TABLE (IdArea INT PRIMARY KEY);
+    INSERT @Areas (IdArea)
+    SELECT DISTINCT TRY_CONVERT(INT, [value])
+    FROM OPENJSON(COALESCE(@AreasJson, '[]'))
+    WHERE TRY_CONVERT(INT, [value]) IS NOT NULL;
+    IF NOT EXISTS (SELECT 1 FROM @Areas) THROW 50140, 'Selecciona al menos un área para el integrante.', 1;
+    IF EXISTS (SELECT 1 FROM @Areas AS area WHERE NOT EXISTS (SELECT 1 FROM dbo.Cat_Area AS catalogo WHERE catalogo.IdArea = area.IdArea)) THROW 50136, 'Una de las áreas no existe.', 1;
+
+    DECLARE @Requerimientos TABLE
+    (
+        IdRequerimiento INT PRIMARY KEY,
+        IdTipoAplicacion SMALLINT NULL,
+        Seleccionado BIT NULL,
+        ConfiguradoAutomatico BIT NULL,
+        Observaciones NVARCHAR(500) NULL
+    );
+    INSERT @Requerimientos
+    SELECT IdRequerimiento, IdTipoAplicacion, Seleccionado, ConfiguradoAutomatico, Observaciones
+    FROM OPENJSON(COALESCE(@RequerimientosJson, '[]'))
+    WITH
+    (
+        IdRequerimiento INT '$.IdRequerimiento',
+        IdTipoAplicacion SMALLINT '$.IdTipoAplicacion',
+        Seleccionado BIT '$.Seleccionado',
+        ConfiguradoAutomatico BIT '$.ConfiguradoAutomatico',
+        Observaciones NVARCHAR(500) '$.Observaciones'
+    );
+    IF EXISTS (SELECT 1 FROM @Requerimientos AS requerimiento WHERE NOT EXISTS (SELECT 1 FROM dbo.Cat_Requerimiento AS catalogo WHERE catalogo.IdRequerimiento = requerimiento.IdRequerimiento)) THROW 50137, 'Uno de los requerimientos no existe.', 1;
+    IF EXISTS (SELECT 1 FROM @Requerimientos AS requerimiento WHERE requerimiento.IdTipoAplicacion IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Cat_Tipo_Aplicacion_Requerimiento AS catalogo WHERE catalogo.IdTipoAplicacion = requerimiento.IdTipoAplicacion)) THROW 50138, 'Uno de los tipos de aplicación no existe.', 1;
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        DECLARE @CantidadEstimada INT;
+        SELECT @CantidadEstimada = CantidadEstimada
+        FROM dbo.Solicitud_Ingreso WITH (UPDLOCK, HOLDLOCK)
+        WHERE IdSolicitud = @IdSolicitud;
+        IF @CantidadEstimada IS NULL OR (SELECT COUNT(*) FROM dbo.Solicitud_Persona WHERE IdSolicitud = @IdSolicitud) >= @CantidadEstimada
+            THROW 50141, 'Ya se alcanzó la cantidad máxima de integrantes de la solicitud.', 1;
+
+        DECLARE @IdSolicitudPersona BIGINT;
+        EXEC dbo.usp_ObtenerSiguienteId 'Solicitud_Persona', @IdSolicitudPersona OUTPUT;
+        INSERT dbo.Solicitud_Persona
+        (
+            IdSolicitudPersona, IdSolicitud, IdPersona, CodigoEmpleadoHtis,
+            IdEstadoPersonaSolicitud, DatosCompletos, ObservacionesRevision,
+            FechaCreacion, UsuarioCreacion
+        )
+        VALUES
+        (
+            @IdSolicitudPersona, @IdSolicitud, @IdPersona, @CodigoEmpleadoHtis,
+            @IdEstadoPersonaSolicitud, @DatosCompletos, @ObservacionesRevision,
+            SYSDATETIME(), @Usuario
+        );
+
+        DECLARE @IdEstadoPendiente SMALLINT = (SELECT IdEstadoAprobacion FROM dbo.Cat_Estado_Aprobacion_Area WHERE Codigo = 'PENDIENTE');
+        DECLARE @IdEstadoNoRequiere SMALLINT = (SELECT IdEstadoAprobacion FROM dbo.Cat_Estado_Aprobacion_Area WHERE Codigo = 'NO_REQUIERE');
+        IF @IdEstadoPendiente IS NULL OR @IdEstadoNoRequiere IS NULL THROW 50139, 'No están configurados los estados de aprobación requeridos.', 1;
+
+        DECLARE @IdArea INT, @IdDetalle BIGINT, @RequiereAprobacion BIT;
+        DECLARE areas_cursor CURSOR LOCAL FAST_FORWARD FOR SELECT IdArea FROM @Areas;
+        OPEN areas_cursor;
+        FETCH NEXT FROM areas_cursor INTO @IdArea;
+        WHILE @@FETCH_STATUS = 0
+        BEGIN
+            SELECT @RequiereAprobacion = COALESCE(RequiereAprobacion, 0) FROM dbo.Cat_Area WHERE IdArea = @IdArea;
+            EXEC dbo.usp_ObtenerSiguienteId 'Solicitud_Persona_Area', @IdDetalle OUTPUT;
+            INSERT dbo.Solicitud_Persona_Area
+            (
+                IdSolicitudPersonaArea, IdSolicitudPersona, IdArea, RequiereAprobacion,
+                IdEstadoAprobacion, FechaCreacion, UsuarioCreacion
+            )
+            VALUES
+            (
+                @IdDetalle, @IdSolicitudPersona, @IdArea, @RequiereAprobacion,
+                CASE WHEN @RequiereAprobacion = 1 THEN @IdEstadoPendiente ELSE @IdEstadoNoRequiere END,
+                SYSDATETIME(), @Usuario
+            );
+            FETCH NEXT FROM areas_cursor INTO @IdArea;
+        END;
+        CLOSE areas_cursor;
+        DEALLOCATE areas_cursor;
+
+        DECLARE @IdReq INT, @IdTipoAplicacion SMALLINT, @Seleccionado BIT, @Configurado BIT, @Obs NVARCHAR(500);
+        DECLARE req_cursor CURSOR LOCAL FAST_FORWARD FOR
+            SELECT IdRequerimiento, IdTipoAplicacion, Seleccionado, ConfiguradoAutomatico, Observaciones FROM @Requerimientos;
+        OPEN req_cursor;
+        FETCH NEXT FROM req_cursor INTO @IdReq, @IdTipoAplicacion, @Seleccionado, @Configurado, @Obs;
+        WHILE @@FETCH_STATUS = 0
+        BEGIN
+            EXEC dbo.usp_ObtenerSiguienteId 'Solicitud_Persona_Requerimiento', @IdDetalle OUTPUT;
+            INSERT dbo.Solicitud_Persona_Requerimiento
+            (
+                IdSolicitudPersonaReq, IdSolicitudPersona, IdRequerimiento, IdTipoAplicacion,
+                Seleccionado, ConfiguradoAutomatico, Observaciones, FechaCreacion, UsuarioCreacion
+            )
+            VALUES
+            (
+                @IdDetalle, @IdSolicitudPersona, @IdReq, @IdTipoAplicacion,
+                @Seleccionado, @Configurado, @Obs, SYSDATETIME(), @Usuario
+            );
+            FETCH NEXT FROM req_cursor INTO @IdReq, @IdTipoAplicacion, @Seleccionado, @Configurado, @Obs;
+        END;
+        CLOSE req_cursor;
+        DEALLOCATE req_cursor;
+
         COMMIT TRANSACTION;
         SELECT @IdSolicitudPersona;
     END TRY
@@ -2215,6 +2456,65 @@ BEGIN
  IF @IdRol IS NULL THROW 50521,'El rol solicitado no existe.',1;
  IF NOT EXISTS(SELECT 1 FROM dbo.Usuario_Rol WHERE IdUsuario=@IdUsuario AND IdRol=@IdRol)
   INSERT dbo.Usuario_Rol(IdUsuario,IdRol,UsuarioAsignacion) VALUES(@IdUsuario,@IdRol,@UsuarioAsignacion);
+END;
+GO
+
+-- dbo.usp_Empleado_Qr_Obtener
+CREATE OR ALTER PROCEDURE dbo.usp_Empleado_Qr_Obtener
+    @CodigoEmpleado VARCHAR(50)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    SET @CodigoEmpleado = LTRIM(RTRIM(@CodigoEmpleado));
+    IF NULLIF(@CodigoEmpleado, '') IS NULL RETURN;
+
+    DECLARE @CodigoQr VARCHAR(64);
+
+    BEGIN TRANSACTION;
+
+    SELECT @CodigoQr = CodigoQr
+    FROM dbo.Empleado_Qr WITH (UPDLOCK, HOLDLOCK)
+    WHERE CodigoEmpleado = @CodigoEmpleado;
+
+    IF @CodigoQr IS NULL
+    BEGIN
+        SET @CodigoQr = LOWER(CONVERT(VARCHAR(64), HASHBYTES
+        (
+            'SHA2_256',
+            CONCAT(CONVERT(VARCHAR(36), NEWID()), ':', @CodigoEmpleado, ':', CONVERT(VARCHAR(33), SYSDATETIME(), 126))
+        ), 2));
+
+        IF EXISTS (SELECT 1 FROM dbo.Empleado_Qr WHERE CodigoEmpleado = @CodigoEmpleado)
+        BEGIN
+            UPDATE dbo.Empleado_Qr
+               SET CodigoQr = @CodigoQr
+             WHERE CodigoEmpleado = @CodigoEmpleado;
+        END
+        ELSE
+        BEGIN
+            INSERT dbo.Empleado_Qr (CodigoEmpleado, CodigoQr)
+            VALUES (@CodigoEmpleado, @CodigoQr);
+        END;
+    END;
+
+    COMMIT TRANSACTION;
+
+    SELECT @CodigoQr AS CodigoQr;
+END;
+GO
+
+-- dbo.usp_Empleado_Qr_Consultar
+CREATE OR ALTER PROCEDURE dbo.usp_Empleado_Qr_Consultar
+    @CodigoQr VARCHAR(64)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT CodigoEmpleado
+    FROM dbo.Empleado_Qr
+    WHERE CodigoQr = LOWER(LTRIM(RTRIM(@CodigoQr)));
 END;
 GO
 

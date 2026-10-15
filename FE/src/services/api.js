@@ -1,6 +1,9 @@
-const API_URL = (import.meta.env.VITE_API_URL ?? 'https://localhost:7230').replace(/\/$/, '')
+const configuredApiUrl = import.meta.env.VITE_API_URL?.trim()
+const defaultApiUrl = import.meta.env.DEV ? 'https://localhost:7230' : '/backend'
+export const API_URL = (configuredApiUrl || defaultApiUrl)
+  .replace(/\/$/, '')
 
-async function request(path, options = {}) {
+async function request(path, options = {}, redirectOnUnauthorized = true) {
   const bodyIsFormData = options.body instanceof FormData
   const response = await fetch(`${API_URL}${path}`, {
     ...options,
@@ -29,7 +32,7 @@ async function request(path, options = {}) {
     error.status = response.status
     error.problem = problem
 
-    if (response.status === 401 && path !== '/api/autenticacion/login') {
+    if (redirectOnUnauthorized && response.status === 401 && path !== '/api/autenticacion/login') {
       localStorage.removeItem('control-ingresos-session')
       window.location.assign('/login')
     }
@@ -42,7 +45,7 @@ async function request(path, options = {}) {
   return response.json()
 }
 
-async function requestBlob(path) {
+async function requestBlob(path, redirectOnUnauthorized = true) {
   const response = await fetch(`${API_URL}${path}`, {
     credentials: 'include',
     headers: { Accept: 'image/*' },
@@ -56,7 +59,7 @@ async function requestBlob(path) {
     error.status = response.status
     error.problem = problem
 
-    if (response.status === 401) {
+    if (redirectOnUnauthorized && response.status === 401) {
       localStorage.removeItem('control-ingresos-session')
       window.location.assign('/login')
     }
@@ -111,11 +114,14 @@ export const controlIngresosApi = {
     })
   },
   listarPersonas: () => request('/api/personas'),
-  listarEmpleados: () => request('/api/empleados'),
+  listarEmpleados: (soloActivos = false) => request(`/api/empleados${soloActivos ? '?soloActivos=true' : ''}`),
   listarEstadosEmpleado: () => request('/api/empleados/estados'),
   obtenerFotografiaEmpleado: (codigoEmpleado) => requestBlob(`/api/empleados/${encodeURIComponent(codigoEmpleado)}/fotografia`),
   obtenerQrEmpleado: (codigoEmpleado) => request(`/api/empleados/${encodeURIComponent(codigoEmpleado)}/qr`),
   consultarQrEmpleado: (codigoQr) => request(`/api/empleados/qr/${encodeURIComponent(codigoQr)}`),
+  obtenerAutorizacionesEmpleado: (codigoEmpleado) => request(`/api/empleados/${encodeURIComponent(codigoEmpleado)}/autorizaciones`),
+  consultarCredencialPublicaEmpleado: (codigoQr) => request(`/api/publico/empleados/qr/${encodeURIComponent(codigoQr)}`, {}, false),
+  obtenerFotografiaPublicaEmpleado: (codigoQr) => requestBlob(`/api/publico/empleados/qr/${encodeURIComponent(codigoQr)}/fotografia`, false),
   listarPersonasConAccesos: () => request('/api/personas/accesos'),
   obtenerPersonaAccesos: (id) => request(`/api/personas/${id}/accesos`),
   obtenerQrPersona: (id) => request(`/api/personas/${id}/qr`),

@@ -1,0 +1,47 @@
+/*
+  Consulta de empleados almacenada en Control_Ingresos_DB.
+  El backend obtiene este texto y lo ejecuta con la conexión configurada para HTIS.
+  La fotografía se consultará por separado.
+*/
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.OBTENER_CONSULTA_EMPLEADOS
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT CAST
+    (
+        N'
+        SELECT
+        E.COD_EMPLEADO,
+        E.NOMBRE_COMPLETO,
+        NOMBRE1,
+        NOMBRE2,
+        APELLIDO1,
+        APELLIDO2,
+        E.TIPO_SANGRE,
+        C.NIT,
+        E.COD_NACIONALIDAD,
+        FECHA_NACIMIENTO,
+        LUGAR_NACIMIENTO,
+        C.COD_STATUS,
+        E.EDO_CIVIL,
+        E.SEXO,
+        C.FECHA_INGRESO,
+        C.FECHA_EGRESO,
+        E_MAIL AS CORREO,
+        E.TIPO_LICENCIA,
+        (SELECT DESCRIPCION_N2 FROM [ORG_NIVELES] N WHERE N.CODIGO_NIVEL = C.CODIGO_NIVEL) DEPARTAMENTO,
+        (SELECT DESCRIPCION_N3 FROM [ORG_NIVELES] N WHERE N.CODIGO_NIVEL = C.CODIGO_NIVEL) CARGO_NIVEL
+
+        FROM EMPL_EMPLEADO E
+
+        LEFT JOIN [ORG_NIVELES_PLAZA] P ON E.COD_EMPLEADO = P.COD_EMPLEADO
+        LEFT JOIN EMPL_EMPLEADO_EMPR C ON C.COD_EMPLEADO = E.COD_EMPLEADO;'
+        AS NVARCHAR(MAX)
+    ) AS CONSULTA_SQL;
+END;
+GO

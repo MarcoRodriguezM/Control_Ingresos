@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../components/Icon'
 import { formatDateTime, initials } from '../utils/formatters'
 
-export function EmployeeListPage({ items, statuses = [], selected, loading, photographUrl, photographLoading, mobileDetailOpen = false, onSelect, onBack, onQr }) {
+export function EmployeeListPage({ items, statuses = [], selected, loading, photographUrl, photographLoading, singular, singularLoading, singularError, mobileDetailOpen = false, onSelect, onBack, onQr }) {
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState('')
   const [department, setDepartment] = useState('')
@@ -140,6 +140,30 @@ export function EmployeeListPage({ items, statuses = [], selected, loading, phot
             <InfoValue label="Estado civil" value={selected.estadoCivil} />
             <InfoValue label="Sexo" value={selected.sexo} />
           </EmployeeSection>
+
+          <EmployeeSection icon="shield" title="Autorizaciones y vigencias">
+            {singularLoading && <p className="employee-supplement-message">Consultando información de autorizaciones…</p>}
+            {!singularLoading && singularError && <p className="employee-supplement-message error">{singularError}</p>}
+            {!singularLoading && !singularError && <>
+              <InfoValue label="Empresa" value={singular?.autorizacion?.empresa} />
+              <InfoValue label="Área" value={singular?.autorizacion?.area} />
+              <InfoValue label="Gerencia" value={singular?.autorizacion?.gerencia} />
+              <InfoValue label="Contrato" value={singular?.autorizacion?.contrato} />
+              <InfoValue label="Número de CNH" value={singular?.autorizacion?.numeroLicencia} />
+              <InfoValue label="Categoría de CNH" value={singular?.autorizacion?.categoriaLicencia} />
+              <InfoValue label="Validez de CNH" value={formatEmployeeDate(singular?.autorizacion?.validezLicencia)} />
+              <InfoValue label="Validez de ASO" value={formatEmployeeDate(singular?.autorizacion?.validezAso)} />
+            </>}
+          </EmployeeSection>
+
+          <section className="employee-detail-section employee-training-section">
+            <div className="employee-section-heading"><Icon name="tasks" /><h3>Entrenamientos</h3><span>{singular?.entrenamientos?.length ?? 0}</span></div>
+            {singularLoading && <p className="employee-supplement-message">Consultando entrenamientos…</p>}
+            {!singularLoading && singularError && <p className="employee-supplement-message error">{singularError}</p>}
+            {!singularLoading && !singularError && (singular?.entrenamientos?.length
+              ? <div className="employee-training-list">{singular.entrenamientos.map((training, index) => <article key={`${training.entrenamiento}-${index}`}><strong>{training.entrenamiento || 'Entrenamiento sin nombre'}</strong><span>Validez: {training.validez || 'No indicada'}</span><small>Realizado: {training.fechaEntrenamiento || 'No indicado'}{training.cargaHoraria ? ` · ${training.cargaHoraria}` : ''}</small></article>)}</div>
+              : <p className="employee-supplement-message">No hay entrenamientos disponibles.</p>)}
+          </section>
         </>}
       </section>
     </div>

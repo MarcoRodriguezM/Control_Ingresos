@@ -14,6 +14,7 @@ import {
   PersonFormPage,
   PersonQrPage,
   ProfilePage,
+  PublicEmployeeCredentialPage,
   QrScannerPage,
   RequestApprovalDetailPage,
   RequestFormPage,
@@ -72,6 +73,7 @@ function App() {
   if (!session) {
     return <Routes>
       <Route path="/login" element={<LoginPage onLogin={login} />} />
+      <Route path="/credencial/empleado" element={<PublicEmployeeCredentialPage onLogin={() => navigate('/login')} />} />
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   }
@@ -88,12 +90,14 @@ function AuthenticatedApp({ session, onLogout }) {
   const personQrRoute = matchPath('/personas/:idPersona/qr', location.pathname)
   const personRoute = matchPath('/personas/:idPersona', location.pathname)
   const employeeQrRoute = matchPath('/empleados/:codigoEmpleado/qr', location.pathname)
+  const employeeQrCode = employeeQrRoute?.params.codigoEmpleado
   const employeeRoute = employeeQrRoute ? null : matchPath('/empleados/:codigoEmpleado', location.pathname)
   const isNewPersonRoute = location.pathname === '/personas/nueva'
   const approvalDetailRoute = matchPath('/aprobaciones/:idSolicitudPersonaArea/detalle', location.pathname)
   const isPersonsRoute = location.pathname.startsWith('/personas')
   const isEmployeesRoute = location.pathname.startsWith('/empleados')
   const isQrScannerRoute = location.pathname === '/escanear-qr'
+  const isPublicEmployeeCredentialRoute = location.pathname === '/credencial/empleado'
   const isRequestsRoute = location.pathname.startsWith('/solicitudes')
   const isApprovalsRoute = location.pathname.startsWith('/aprobaciones')
   const isActivitiesRoute = location.pathname === '/mis-actividades'
@@ -113,6 +117,7 @@ function AuthenticatedApp({ session, onLogout }) {
   const [empleados, setEmpleados] = useState([])
   const [employeeStatuses, setEmployeeStatuses] = useState([])
   const [employeePhotograph, setEmployeePhotograph] = useState(null)
+  const [employeeSingular, setEmployeeSingular] = useState(null)
   const [requestPeople, setRequestPeople] = useState([])
   const [existingRequestPeople, setExistingRequestPeople] = useState([])
   const [peopleEntryMode, setPeopleEntryMode] = useState('')
@@ -129,12 +134,16 @@ function AuthenticatedApp({ session, onLogout }) {
   const [approvalDetailLoading, setApprovalDetailLoading] = useState(false)
   const [personLoading, setPersonLoading] = useState(false)
   const [employeesLoading, setEmployeesLoading] = useState(false)
+  const [employeesError, setEmployeesError] = useState('')
   const [employeePhotographLoading, setEmployeePhotographLoading] = useState(false)
+  const [employeeSingularLoading, setEmployeeSingularLoading] = useState(false)
+  const [employeeSingularError, setEmployeeSingularError] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [error, setError] = useState('')
   const activeEditingId = editRoute ? editingId : null
+  const requestTypeCode = typeCodeFromId(options?.tiposIngreso, form.idTipoIngreso)
 
   useEffect(() => {
     let active = true
@@ -167,7 +176,8 @@ function AuthenticatedApp({ session, onLogout }) {
         setForm(formFromDetail(item, options))
         setExistingRequestPeople(item.personas ?? [])
         setRequestPeople([])
-        setPeopleEntryMode(item.personas?.length ? 'manual' : item.idProveedor ? 'provider' : '')
+        const itemTypeCode = typeCodeFromId(options.tiposIngreso, item.idTipoIngreso)
+        setPeopleEntryMode(itemTypeCode === 'EMPLEADO' ? 'employee' : itemTypeCode === 'NUEVO_EMPLEADO' ? 'manual' : item.personas?.length ? 'manual' : item.idProveedor ? 'provider' : '')
         setStep(1)
       } catch (requestError) {
         if (active) setError(requestError.message)
@@ -221,34 +231,45 @@ function AuthenticatedApp({ session, onLogout }) {
   }, [isPersonsRoute, isNewPersonRoute, personQrRoute, personRoute?.params.idPersona, session.idUsuario])
 
   useEffect(() => {
-    if (!isEmployeesRoute) return
+    const requestNeedsEmployees = isRequestsRoute && requestTypeCode === 'EMPLEADO'
+    if (!isEmployeesRoute && !requestNeedsEmployees) return
     let active = true
     const load = async () => {
       await Promise.resolve()
       if (!active) return
       setEmployeesLoading(true)
-      setError('')
+      setEmployeesError('')
+      if (isEmployeesRoute) setError('')
       try {
-        const [records, statuses] = await Promise.all([
-          controlIngresosApi.listarEmpleados(),
-          controlIngresosApi.listarEstadosEmpleado(),
-        ])
+        const records = await controlIngresosApi.listarEmpleados(requestNeedsEmployees)
+        let statuses = []
+        if (isEmployeesRoute) {
+          try {
+            statuses = await controlIngresosApi.listarEstadosEmpleado()
+          } catch {
+            // El catálogo solo traduce el código de estado. Su ausencia no debe
+            // impedir consultar el directorio ni el detalle de los empleados.
+          }
+        }
         if (!active) return
         const descriptions = new Map(statuses.map((status) => [String(status.statusId), status.descripcion]))
-        setEmployeeStatuses(statuses)
+        if (isEmployeesRoute) setEmployeeStatuses(statuses)
         setEmpleados(records.map((employee) => ({
           ...employee,
           descripcionStatus: descriptions.get(String(employee.codigoStatus).trim()) ?? null,
         })))
       } catch (requestError) {
-        if (active) setError(requestError.message)
+        if (active) {
+          setEmployeesError(requestError.message)
+          if (isEmployeesRoute) setError(requestError.message)
+        }
       } finally {
         if (active) setEmployeesLoading(false)
       }
     }
     load()
     return () => { active = false }
-  }, [isEmployeesRoute, session.idUsuario])
+  }, [isEmployeesRoute, isRequestsRoute, requestTypeCode, session.idUsuario])
 
   useEffect(() => {
     if ((!isApprovalsRoute && !isDashboardRoute) || !canApprove) return
@@ -406,6 +427,33 @@ function AuthenticatedApp({ session, onLogout }) {
       if (photographUrl) URL.revokeObjectURL(photographUrl)
     }
   }, [selectedEmployee?.codigoEmpleado])
+
+  useEffect(() => {
+    const codigoEmpleado = selectedEmployee?.codigoEmpleado
+    let active = true
+    const load = async () => {
+      await Promise.resolve()
+      if (!active) return
+      setEmployeeSingular(null)
+      setEmployeeSingularError('')
+      if (!codigoEmpleado || employeeQrCode) {
+        setEmployeeSingularLoading(false)
+        return
+      }
+
+      setEmployeeSingularLoading(true)
+      try {
+        const result = await controlIngresosApi.obtenerAutorizacionesEmpleado(codigoEmpleado)
+        if (active) setEmployeeSingular(result)
+      } catch (requestError) {
+        if (active) setEmployeeSingularError(requestError.message)
+      } finally {
+        if (active) setEmployeeSingularLoading(false)
+      }
+    }
+    load()
+    return () => { active = false }
+  }, [selectedEmployee?.codigoEmpleado, employeeQrCode])
   const totalRequestPeople = requestPeople.length + existingRequestPeople.length
   const estimatedPeople = Number(form.cantidadEstimada) || 0
   const canSendRequest = peopleEntryMode === 'provider'
@@ -414,6 +462,30 @@ function AuthenticatedApp({ session, onLogout }) {
 
   function change(event) {
     const { name, value } = event.target
+    if (name === 'idTipoIngreso') {
+      const nextTypeCode = typeCodeFromId(options?.tiposIngreso, value)
+      const nextUsesHtis = nextTypeCode === 'EMPLEADO'
+      const existingUsesHtis = existingRequestPeople.some((item) => Boolean(item.codigoEmpleadoHtis))
+      const existingUsesPeople = existingRequestPeople.some((item) => item.idPersona != null)
+      if ((nextUsesHtis && existingUsesPeople) || (!nextUsesHtis && existingUsesHtis)) {
+        setError('No puedes cambiar el tipo de ingreso mientras la solicitud tenga integrantes asociados de otro origen.')
+        return
+      }
+
+      setForm((current) => ({
+        ...current,
+        idTipoIngreso: value,
+        idProveedor: isEmployeeTypeCode(nextTypeCode) ? '' : current.idProveedor,
+        contactoProveedor: nextTypeCode === 'EMPLEADO' ? '' : current.contactoProveedor,
+        correoProveedor: nextTypeCode === 'EMPLEADO' ? '' : current.correoProveedor,
+      }))
+      setRequestPeople([])
+      setPeopleEntryMode(nextTypeCode === 'EMPLEADO' ? 'employee' : nextTypeCode === 'NUEVO_EMPLEADO' ? 'manual' : '')
+      setEmployeesError('')
+      setError('')
+      return
+    }
+
     setForm((current) => ({ ...current, [name]: value }))
     setError('')
   }
@@ -422,7 +494,7 @@ function AuthenticatedApp({ session, onLogout }) {
 
   function goToStep(targetStep) {
     for (let currentStep = 1; currentStep < targetStep; currentStep += 1) {
-      const validation = validateStep(currentStep, form, peopleEntryMode, requestPeople, existingRequestPeople)
+      const validation = validateStep(currentStep, form, requestTypeCode, peopleEntryMode, requestPeople, existingRequestPeople)
       if (validation) {
         setStep(currentStep)
         setError(validation)
@@ -436,10 +508,12 @@ function AuthenticatedApp({ session, onLogout }) {
 
   function openNew() {
     setEditingId(null)
-    setForm(withDefaults(initialForm(), options, session.idUsuario))
+    const newForm = withDefaults(initialForm(), options, session.idUsuario)
+    const newTypeCode = typeCodeFromId(options?.tiposIngreso, newForm.idTipoIngreso)
+    setForm(newForm)
     setRequestPeople([])
     setExistingRequestPeople([])
-    setPeopleEntryMode('')
+    setPeopleEntryMode(newTypeCode === 'EMPLEADO' ? 'employee' : newTypeCode === 'NUEVO_EMPLEADO' ? 'manual' : '')
     setStep(1)
     setError('')
     navigate('/solicitudes/nueva')
@@ -614,7 +688,7 @@ function AuthenticatedApp({ session, onLogout }) {
       return
     }
     for (let currentStep = 1; currentStep <= 3; currentStep += 1) {
-      const validation = validateStep(currentStep, form, peopleEntryMode, requestPeople, existingRequestPeople)
+      const validation = validateStep(currentStep, form, requestTypeCode, peopleEntryMode, requestPeople, existingRequestPeople)
       if (validation) {
         setStep(currentStep)
         setError(validation)
@@ -636,10 +710,10 @@ function AuthenticatedApp({ session, onLogout }) {
         fechaFin: form.fechaFin,
         nombreActividad: form.nombreActividad.trim(),
         descripcionActividad: textOrNull(form.descripcionActividad),
-        idProveedor: numberOrNull(form.idProveedor),
+        idProveedor: isEmployeeTypeCode(requestTypeCode) ? null : numberOrNull(form.idProveedor),
         numeroContrato: textOrNull(form.numeroContrato),
-        contactoProveedor: textOrNull(form.contactoProveedor),
-        correoProveedor: textOrNull(form.correoProveedor),
+        contactoProveedor: requestTypeCode === 'EMPLEADO' ? null : textOrNull(form.contactoProveedor),
+        correoProveedor: requestTypeCode === 'EMPLEADO' ? null : textOrNull(form.correoProveedor),
         cantidadEstimada: numberOrNull(form.cantidadEstimada),
         idAreaSolicitante: numberOrNull(form.idAreaSolicitante),
         idUsuarioSolicitante: form.idUsuarioSolicitante,
@@ -648,7 +722,8 @@ function AuthenticatedApp({ session, onLogout }) {
         usuario: session.idUsuario,
       }
       const personPayloads = requestPeople.map((person) => ({
-        idPersona: person.idPersona,
+        idPersona: person.idPersona ?? null,
+        codigoEmpleadoHtis: person.codigoEmpleadoHtis ?? null,
         idEstadoPersonaSolicitud: null,
         datosCompletos: true,
         observacionesRevision: null,
@@ -690,6 +765,7 @@ function AuthenticatedApp({ session, onLogout }) {
       setRequestPeople([])
       setExistingRequestPeople([])
       setPeopleEntryMode('')
+      setEmployeesError('')
       setEditingId(null)
       setStep(1)
       navigate('/solicitudes')
@@ -705,6 +781,7 @@ function AuthenticatedApp({ session, onLogout }) {
     setRequestPeople([])
     setExistingRequestPeople([])
     setPeopleEntryMode('')
+    setEmployeesError('')
     setStep(1)
     setEditingId(null)
     setError('')
@@ -738,7 +815,7 @@ function AuthenticatedApp({ session, onLogout }) {
           <button className="icon-button menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label="Abrir menú"><Icon name="menu" /></button>
           <div className="breadcrumb">
             <Link to="/dashboard" onClick={() => { setError(''); setMenuOpen(false) }}>Inicio</Link>
-            <strong>{approvalDetailRoute ? 'Detalle de solicitud' : isDashboardRoute ? 'Dashboard' : isProfileRoute ? 'Mi perfil' : isNewUserRoute ? 'Crear usuario' : userEditRoute ? 'Editar usuario' : userDetailRoute ? 'Detalle del usuario' : isUsersRoute ? 'Usuarios' : isActivitiesRoute ? 'Mis actividades' : isApprovalsRoute ? 'Mis aprobaciones' : isQrScannerRoute ? 'Escanear QR' : personQrRoute ? 'QR de la persona' : employeeQrRoute ? 'QR del empleado' : isNewPersonRoute ? 'Nueva persona' : isPersonsRoute ? 'Personas y accesos' : isEmployeesRoute ? 'Empleados' : editRoute ? 'Editar solicitud' : location.pathname === '/solicitudes/nueva' ? 'Nueva solicitud' : 'Solicitudes'}</strong>
+            <strong>{approvalDetailRoute ? 'Detalle de solicitud' : isDashboardRoute ? 'Dashboard' : isProfileRoute ? 'Mi perfil' : isNewUserRoute ? 'Crear usuario' : userEditRoute ? 'Editar usuario' : userDetailRoute ? 'Detalle del usuario' : isUsersRoute ? 'Usuarios' : isActivitiesRoute ? 'Mis actividades' : isApprovalsRoute ? 'Mis aprobaciones' : isQrScannerRoute ? 'Escanear QR' : isPublicEmployeeCredentialRoute ? 'Credencial del empleado' : personQrRoute ? 'QR de la persona' : employeeQrRoute ? 'QR del empleado' : isNewPersonRoute ? 'Nueva persona' : isPersonsRoute ? 'Personas y accesos' : isEmployeesRoute ? 'Empleados' : editRoute ? 'Editar solicitud' : location.pathname === '/solicitudes/nueva' ? 'Nueva solicitud' : 'Solicitudes'}</strong>
           </div>
           <div className="top-actions">
             {/* <button className="ghost-button"><Icon name="help" />Ayuda</button> */}
@@ -757,14 +834,15 @@ function AuthenticatedApp({ session, onLogout }) {
             <Route path="/usuarios/:idUsuario/editar" element={isAdministrator ? <UserEditPage idUsuario={userEditRoute?.params.idUsuario ?? ''} areas={options?.areas ?? []} onUpdate={(user) => updateUser(userEditRoute?.params.idUsuario ?? '', user)} onCancel={() => { setError(''); navigate(`/usuarios/${encodeURIComponent(userEditRoute?.params.idUsuario ?? '')}`) }} onError={setError} /> : <Navigate to="/dashboard" replace />} />
             <Route path="/perfil" element={<ProfilePage profile={profile} loading={profileLoading} onOpenRequest={openEdit} />} />
             <Route path="/solicitudes" element={<RequestsListPage items={solicitudes} loading={loading} onNew={openNew} onEdit={openEdit} onDelete={remove} />} />
-            <Route path="/solicitudes/nueva" element={<RequestFormPage form={form} options={options} people={personas} requestPeople={requestPeople} existingPeople={existingRequestPeople} peopleEntryMode={peopleEntryMode} loading={loading} saving={saving} editingId={null} step={step} selected={selected} canSend={canSendRequest} onPeopleEntryModeChange={(mode) => { setPeopleEntryMode(mode); if (mode === 'provider') setRequestPeople([]) }} onPeopleChange={setRequestPeople} onChange={change} onStepChange={goToStep} onNext={next} onBack={() => setStep((current) => current - 1)} onCancel={cancelForm} onSubmit={submit} />} />
-            <Route path="/solicitudes/:id/editar" element={<RequestFormPage form={form} options={options} people={personas} requestPeople={requestPeople} existingPeople={existingRequestPeople} peopleEntryMode={peopleEntryMode} loading={loading} saving={saving} editingId={activeEditingId} step={step} selected={selected} canSend={canSendRequest} onPeopleEntryModeChange={(mode) => { setPeopleEntryMode(mode); if (mode === 'provider') setRequestPeople([]) }} onPeopleChange={setRequestPeople} onChange={change} onStepChange={goToStep} onNext={next} onBack={() => setStep((current) => current - 1)} onCancel={cancelForm} onSubmit={submit} />} />
+            <Route path="/solicitudes/nueva" element={<RequestFormPage form={form} options={options} people={personas} employees={empleados} employeesLoading={employeesLoading} employeesError={employeesError} requestPeople={requestPeople} existingPeople={existingRequestPeople} peopleEntryMode={peopleEntryMode} loading={loading} saving={saving} editingId={null} step={step} selected={selected} canSend={canSendRequest} onPeopleEntryModeChange={(mode) => { setPeopleEntryMode(mode); if (mode === 'provider') setRequestPeople([]) }} onPeopleChange={setRequestPeople} onChange={change} onStepChange={goToStep} onNext={next} onBack={() => setStep((current) => current - 1)} onCancel={cancelForm} onSubmit={submit} />} />
+            <Route path="/solicitudes/:id/editar" element={<RequestFormPage form={form} options={options} people={personas} employees={empleados} employeesLoading={employeesLoading} employeesError={employeesError} requestPeople={requestPeople} existingPeople={existingRequestPeople} peopleEntryMode={peopleEntryMode} loading={loading} saving={saving} editingId={activeEditingId} step={step} selected={selected} canSend={canSendRequest} onPeopleEntryModeChange={(mode) => { setPeopleEntryMode(mode); if (mode === 'provider') setRequestPeople([]) }} onPeopleChange={setRequestPeople} onChange={change} onStepChange={goToStep} onNext={next} onBack={() => setStep((current) => current - 1)} onCancel={cancelForm} onSubmit={submit} />} />
             <Route path="/personas/nueva" element={<PersonFormPage session={session} providers={options?.proveedores} onCancel={openPersons} onCreated={personCreated} onError={setError} />} />
             <Route path="/personas/:idPersona/qr" element={<PersonQrPage idPersona={Number(personQrRoute?.params.idPersona)} onBack={() => navigate(`/personas/${personQrRoute?.params.idPersona}`)} onError={setError} />} />
             <Route path="/personas/:idPersona?" element={<PersonAccessPage items={personasConAccesos} selected={personaSeleccionada} loading={personLoading} mobileDetailOpen={Boolean(personRoute)} onSelect={selectPerson} onBack={() => location.state?.directory === 'personas' ? navigate(-1) : navigate('/personas')} onNew={openNewPerson} onQr={(idPersona) => navigate(`/personas/${idPersona}/qr`)} onPhotographChange={updatePersonPhotograph} />} />
             <Route path="/empleados/:codigoEmpleado/qr" element={<EmployeeQrPage codigoEmpleado={employeeQrRoute?.params.codigoEmpleado ?? ''} employee={selectedEmployee} photographUrl={employeePhotograph?.codigoEmpleado === selectedEmployee?.codigoEmpleado ? employeePhotograph?.url ?? '' : ''} loading={employeesLoading || employeePhotographLoading} onBack={() => navigate(`/empleados/${encodeURIComponent(employeeQrRoute?.params.codigoEmpleado ?? '')}`)} onError={setError} />} />
-            <Route path="/empleados/:codigoEmpleado?" element={<EmployeeListPage items={empleados} statuses={employeeStatuses} selected={selectedEmployee} loading={employeesLoading} photographUrl={employeePhotograph?.codigoEmpleado === selectedEmployee?.codigoEmpleado ? employeePhotograph?.url ?? '' : ''} photographLoading={employeePhotographLoading} mobileDetailOpen={Boolean(employeeRoute)} onSelect={selectEmployee} onBack={() => location.state?.directory === 'empleados' ? navigate(-1) : navigate('/empleados')} onQr={(codigoEmpleado) => navigate(`/empleados/${encodeURIComponent(codigoEmpleado)}/qr`)} />} />
+            <Route path="/empleados/:codigoEmpleado?" element={<EmployeeListPage items={empleados} statuses={employeeStatuses} selected={selectedEmployee} loading={employeesLoading} photographUrl={employeePhotograph?.codigoEmpleado === selectedEmployee?.codigoEmpleado ? employeePhotograph?.url ?? '' : ''} photographLoading={employeePhotographLoading} singular={employeeSingular} singularLoading={employeeSingularLoading} singularError={employeeSingularError} mobileDetailOpen={Boolean(employeeRoute)} onSelect={selectEmployee} onBack={() => location.state?.directory === 'empleados' ? navigate(-1) : navigate('/empleados')} onQr={(codigoEmpleado) => navigate(`/empleados/${encodeURIComponent(codigoEmpleado)}/qr`)} />} />
             <Route path="/escanear-qr" element={<QrScannerPage onError={setError} />} />
+            <Route path="/credencial/empleado" element={<PublicEmployeeCredentialPage authenticated />} />
             <Route path="/aprobaciones" element={canApprove ? <ApprovalsPage items={aprobaciones} loading={approvalsLoading} onDecide={decideApproval} onDecideMany={decideApprovals} onViewDetail={openApprovalDetail} /> : <Navigate to="/solicitudes" replace />} />
             <Route path="/aprobaciones/:idSolicitudPersonaArea/detalle" element={canApprove ? <RequestApprovalDetailPage request={approvalDetail} options={options} approvalItems={aprobaciones} loading={approvalDetailLoading || !approvalDetail} onBack={() => navigate('/aprobaciones')} onDecide={decideApproval} /> : <Navigate to="/solicitudes" replace />} />
             <Route path="/login" element={<Navigate to="/dashboard" replace />} />
@@ -782,11 +860,13 @@ function Nav({ icon, label, count, active, onClick }) {
 
 function withDefaults(form, options, preferredUser) {
   if (!options) return form
+  const idTipoIngreso = form.idTipoIngreso || String(options.tiposIngreso[0]?.id ?? '')
+  const typeCode = typeCodeFromId(options.tiposIngreso, idTipoIngreso)
   return {
     ...form,
-    idTipoIngreso: form.idTipoIngreso || String(options.tiposIngreso[0]?.id ?? ''),
+    idTipoIngreso,
     idEstadoSolicitud: form.idEstadoSolicitud || String(options.estadosSolicitud[0]?.id ?? ''),
-    idProveedor: form.idProveedor || String(options.proveedores[0]?.id ?? ''),
+    idProveedor: isEmployeeTypeCode(typeCode) ? '' : form.idProveedor || String(options.proveedores[0]?.id ?? ''),
     idAreaSolicitante: form.idAreaSolicitante || String(options.areas[0]?.id ?? ''),
     idUbicacion: form.idUbicacion || String(options.ubicaciones[0]?.id ?? ''),
     idUsuarioSolicitante: form.idUsuarioSolicitante || String(options.usuarios.find((item) => item.id === preferredUser)?.id ?? options.usuarios[0]?.id ?? ''),
@@ -805,24 +885,28 @@ function formFromDetail(item, options) {
   }, options)
 }
 
-function validateStep(step, form, peopleEntryMode, requestPeople = [], existingPeople = []) {
+function validateStep(step, form, typeCode, peopleEntryMode, requestPeople = [], existingPeople = []) {
   if (step === 1 && (!form.idTipoIngreso || !form.nombreActividad.trim() || !form.fechaInicio || !form.fechaFin)) return 'Completa el tipo, nombre y fechas de la actividad.'
   if (step === 1 && form.fechaFin < form.fechaInicio) return 'La fecha final no puede ser anterior a la fecha inicial.'
   const estimatedPeople = Number(form.cantidadEstimada)
   const totalPeople = requestPeople.length + existingPeople.length
   if (step === 1 && (!Number.isInteger(estimatedPeople) || estimatedPeople < 1)) return 'La cantidad estimada de personas debe ser un número entero mayor que cero.'
   if (step === 1 && totalPeople > estimatedPeople) return `La cantidad estimada no puede ser menor que las ${totalPeople} personas ya agregadas.`
-  if (step === 2 && (!form.contactoProveedor.trim() || !form.correoProveedor.trim())) return 'Completa el contacto y el correo.'
-  if (step === 2 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.correoProveedor.trim())) return 'Ingresa un correo electrónico válido.'
+  if (step === 2 && typeCode !== 'EMPLEADO' && (!form.contactoProveedor.trim() || !form.correoProveedor.trim())) return typeCode === 'NUEVO_EMPLEADO' ? 'Completa el nombre y el correo del nuevo empleado.' : 'Completa el contacto y el correo del proveedor.'
+  if (step === 2 && typeCode !== 'EMPLEADO' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.correoProveedor.trim())) return 'Ingresa un correo electrónico válido.'
   if (step === 2 && (!form.idAreaSolicitante || !form.idUbicacion || !form.idUsuarioSolicitante)) return 'Selecciona el área, la ubicación y el usuario solicitante.'
-  if (step === 3 && !peopleEntryMode) return 'Indica quién ingresará las personas de la solicitud.'
+  if (step === 3 && !isEmployeeTypeCode(typeCode) && !peopleEntryMode) return 'Indica quién ingresará las personas de la solicitud.'
   if (step === 3 && peopleEntryMode === 'provider' && !form.idProveedor) return 'Selecciona un proveedor en el paso de información básica.'
   if (step === 3 && totalPeople > estimatedPeople) return `Solo puedes agregar ${estimatedPeople} persona(s) a esta solicitud.`
-  if (step === 3 && peopleEntryMode === 'manual' && requestPeople.some((person) => person.areas.length === 0)) return 'Selecciona al menos un área para cada persona agregada.'
+  if (step === 3 && peopleEntryMode !== 'provider' && requestPeople.some((person) => person.areas.length === 0)) return 'Selecciona al menos un área para cada integrante agregado.'
+  if (step === 3 && typeCode === 'EMPLEADO' && requestPeople.some((person) => !person.codigoEmpleadoHtis || person.idPersona != null)) return 'Selecciona los empleados desde HTIS.'
+  if (step === 3 && typeCode !== 'EMPLEADO' && requestPeople.some((person) => person.idPersona == null || person.codigoEmpleadoHtis)) return 'Selecciona personas registradas en Control Ingresos.'
   return ''
 }
 
 const findOption = (items, id) => items?.find((item) => String(item.id) === String(id))
+const typeCodeFromId = (items, id) => findOption(items, id)?.codigo?.trim().toUpperCase() ?? ''
+const isEmployeeTypeCode = (typeCode) => typeCode === 'EMPLEADO' || typeCode === 'NUEVO_EMPLEADO'
 const stringValue = (value) => value == null ? '' : String(value)
 const numberOrNull = (value) => value === '' ? null : Number(value)
 const textOrNull = (value) => value.trim() === '' ? null : value.trim()

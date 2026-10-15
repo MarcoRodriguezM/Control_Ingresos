@@ -13,9 +13,12 @@ export function RequestApprovalDetailPage({ request, options, approvalItems, loa
     return <div className="panel empty-state">Cargando detalle de la solicitud…</div>
   }
 
+  const selectedType = optionItem(options?.tiposIngreso, request.idTipoIngreso)
+  const typeCode = selectedType?.codigo?.trim().toUpperCase() ?? ''
+  const employeeFlow = typeCode === 'EMPLEADO' || typeCode === 'NUEVO_EMPLEADO'
   const selected = {
-    tipo: optionName(options?.tiposIngreso, request.idTipoIngreso),
-    proveedor: optionName(options?.proveedores, request.idProveedor) || 'Sin proveedor',
+    tipo: selectedType?.nombre,
+    proveedor: employeeFlow ? 'No aplica' : optionName(options?.proveedores, request.idProveedor) || 'Sin proveedor',
     area: optionName(options?.areas, request.idAreaSolicitante),
     ubicacion: optionName(options?.ubicaciones, request.idUbicacion),
     usuario: optionName(options?.usuarios, request.idUsuarioSolicitante),
@@ -55,7 +58,7 @@ export function RequestApprovalDetailPage({ request, options, approvalItems, loa
   return <>
     <div className="page-heading approval-detail-page-heading"><div><h1>Detalle de solicitud de ingreso</h1><p>{request.numeroSolicitud || 'Solicitud sin número'}</p></div><button type="button" className="secondary-button" onClick={onBack}><Icon name="back" />Volver</button></div>
     <div className="panel form-panel request-detail-panel">
-      <RequestInformation request={request} selected={selected} />
+      <RequestInformation request={request} selected={selected} typeCode={typeCode} />
       <article className="panel requests-panel">
         <div className="section-heading approval-detail-heading"><h2>Personas de la solicitud</h2><p>Revisa y decide los accesos asignados a tus áreas.</p></div>
         <div className="table-wrap"><table className="approvals-table"><thead><tr><th>Persona</th><th>Área</th><th>Vigencia</th><th>Estado</th>{hasPending && <th>Acciones</th>}</tr></thead>
@@ -84,8 +87,10 @@ export function RequestApprovalDetailPage({ request, options, approvalItems, loa
   </>
 }
 
-function RequestInformation({ request, selected }) {
-  return <><SectionHeading title="Información de la solicitud" text="Datos registrados para la solicitud de ingreso." /><div className="form-grid"><Field label="Tipo de ingreso" required><ReadOnly value={selected.tipo} /></Field><Field label="Empresa / proveedor"><ReadOnly value={selected.proveedor} /></Field><Field label="Fecha de inicio" required><ReadOnly value={formatDate(request.fechaInicio)} /></Field><Field label="Fecha de finalización" required><ReadOnly value={formatDate(request.fechaFin)} /></Field><Field label="Nombre de la actividad" required full><ReadOnly value={request.nombreActividad} /></Field><Field label="Descripción general" full><ReadOnlyText value={request.descripcionActividad} /></Field><Field label="Contrato, cuando aplique"><ReadOnly value={request.numeroContrato} /></Field><Field label="Cantidad estimada de personas"><ReadOnly value={request.cantidadEstimada} /></Field><Field label="Contacto del proveedor"><ReadOnly value={request.contactoProveedor} /></Field><Field label="Correo del proveedor"><ReadOnly value={request.correoProveedor} /></Field><Field label="Área solicitante" required><ReadOnly value={selected.area} /></Field><Field label="Ubicación / instalación" required><ReadOnly value={selected.ubicacion} /></Field><Field label="Usuario solicitante" required full><ReadOnly value={selected.usuario} /></Field><Field label="Observaciones" full><ReadOnlyText value={request.observaciones} /></Field></div></>
+function RequestInformation({ request, selected, typeCode }) {
+  const isEmployee = typeCode === 'EMPLEADO'
+  const isNewEmployee = typeCode === 'NUEVO_EMPLEADO'
+  return <><SectionHeading title="Información de la solicitud" text="Datos registrados para la solicitud de ingreso." /><div className="form-grid"><Field label="Tipo de ingreso" required><ReadOnly value={selected.tipo} /></Field><Field label="Empresa / proveedor"><ReadOnly value={selected.proveedor} /></Field><Field label="Fecha de inicio" required><ReadOnly value={formatDate(request.fechaInicio)} /></Field><Field label="Fecha de finalización" required><ReadOnly value={formatDate(request.fechaFin)} /></Field><Field label="Nombre de la actividad" required full><ReadOnly value={request.nombreActividad} /></Field><Field label="Descripción general" full><ReadOnlyText value={request.descripcionActividad} /></Field><Field label="Contrato, cuando aplique"><ReadOnly value={request.numeroContrato} /></Field><Field label="Cantidad estimada de personas"><ReadOnly value={request.cantidadEstimada} /></Field>{!isEmployee && <><Field label={isNewEmployee ? 'Nombre del nuevo empleado' : 'Contacto del proveedor'}><ReadOnly value={request.contactoProveedor} /></Field><Field label={isNewEmployee ? 'Correo del nuevo empleado' : 'Correo del proveedor'}><ReadOnly value={request.correoProveedor} /></Field></>}<Field label="Área solicitante" required><ReadOnly value={selected.area} /></Field><Field label="Ubicación / instalación" required><ReadOnly value={selected.ubicacion} /></Field><Field label="Usuario solicitante" required full><ReadOnly value={selected.usuario} /></Field><Field label="Observaciones" full><ReadOnlyText value={request.observaciones} /></Field></div></>
 }
 
 function SectionHeading({ title, text }) { return <div className="section-heading"><h2>{title}</h2><p>{text}</p></div> }
@@ -93,3 +98,4 @@ function Field({ label, required, full, children }) { return <div className={`fi
 function ReadOnly({ value }) { return <input value={value ?? '—'} disabled /> }
 function ReadOnlyText({ value }) { return <textarea value={value ?? '—'} disabled /> }
 function optionName(items, id) { return items?.find((item) => String(item.id) === String(id))?.nombre }
+function optionItem(items, id) { return items?.find((item) => String(item.id) === String(id)) }

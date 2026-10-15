@@ -520,7 +520,8 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
                 GetNullableString(reader, 15),
                 GetNullableString(reader, 16),
                 GetNullable<DateTime>(reader, 17),
-                GetNullableString(reader, 18)));
+                GetNullableString(reader, 18),
+                GetNullableString(reader, 19)));
         }
 
         return items;
@@ -601,7 +602,7 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
 
             foreach (var person in request.Personas ?? [])
             {
-                await using var personCommand = StoredProcedure(connection, "dbo.usp_Solicitud_Persona_Agregar", transaction);
+                await using var personCommand = StoredProcedure(connection, "dbo.usp_Solicitud_Integrante_Agregar", transaction);
                 AddPersonaSolicitudParameters(personCommand, created.Id, person);
                 await personCommand.ExecuteScalarAsync(cancellationToken);
             }
@@ -652,7 +653,7 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
         CancellationToken cancellationToken)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
-        await using var command = StoredProcedure(connection, "dbo.usp_Solicitud_Persona_Agregar");
+        await using var command = StoredProcedure(connection, "dbo.usp_Solicitud_Integrante_Agregar");
 
         AddPersonaSolicitudParameters(command, idSolicitud, request);
 
@@ -876,7 +877,8 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
                     reader.GetInt32(8),
                     reader.GetInt32(9),
                     reader.GetInt32(10),
-                    GetNullableString(reader, 11)));
+                    GetNullableString(reader, 11),
+                    GetNullableString(reader, 12)));
             }
         }
 
@@ -907,6 +909,7 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
     {
         Add(command, "@IdSolicitud", SqlDbType.BigInt, idSolicitud);
         Add(command, "@IdPersona", SqlDbType.BigInt, request.IdPersona);
+        Add(command, "@CodigoEmpleadoHtis", SqlDbType.VarChar, request.CodigoEmpleadoHtis, 50);
         Add(command, "@IdEstadoPersonaSolicitud", SqlDbType.SmallInt, request.IdEstadoPersonaSolicitud);
         Add(command, "@DatosCompletos", SqlDbType.Bit, request.DatosCompletos);
         Add(command, "@ObservacionesRevision", SqlDbType.NVarChar, request.ObservacionesRevision, 1000);

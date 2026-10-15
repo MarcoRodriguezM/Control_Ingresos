@@ -8,14 +8,19 @@ namespace Control_Ingresos.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/empleados")]
-public sealed class EmpleadosController(IEmpleadosRepository repository) : ControllerBase
+public sealed class EmpleadosController(
+    IEmpleadosRepository repository,
+    IEmpleadoSingularRepository singularRepository) : ControllerBase
 {
     [HttpGet]
     [ProducesResponseType<IReadOnlyCollection<Empleado>>(StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyCollection<Empleado>>> Listar(
+        [FromQuery] bool soloActivos,
         CancellationToken cancellationToken)
     {
-        return Ok(await repository.ListarAsync(cancellationToken));
+        return Ok(soloActivos
+            ? await repository.ListarActivosAsync(cancellationToken)
+            : await repository.ListarAsync(cancellationToken));
     }
 
     [HttpGet("estados")]
@@ -68,6 +73,17 @@ public sealed class EmpleadosController(IEmpleadosRepository repository) : Contr
         if (fotografia is null || fotografia.Length == 0) return NotFound();
 
         return File(fotografia, DetectarTipoContenido(fotografia));
+    }
+
+    [HttpGet("{codigoEmpleado}/autorizaciones")]
+    [ProducesResponseType<EmpleadoInformacionSingular>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<EmpleadoInformacionSingular>> ObtenerAutorizaciones(
+        string codigoEmpleado,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(codigoEmpleado)) return BadRequest();
+
+        return Ok(await singularRepository.ObtenerAsync(codigoEmpleado, cancellationToken));
     }
 
     private static string DetectarTipoContenido(ReadOnlySpan<byte> contenido)
