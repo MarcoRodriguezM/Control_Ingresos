@@ -33,24 +33,9 @@ public static partial class DatabaseProcedureInstaller
             logger,
             cancellationToken);
 
-        var existing = await ReadExistingProceduresAsync(connection, cancellationToken);
-        var missing = procedureBatches.Keys
-            .Where(name => !existing.Contains(name))
-            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
-        if (missing.Length == 0)
-        {
-            logger.LogInformation(
-                "Verificación de base de datos completada: los {ProcedureCount} procedimientos requeridos ya existen.",
-                procedureBatches.Count);
-            return;
-        }
-
-        logger.LogWarning(
-            "Se detectaron {MissingCount} procedimientos faltantes: {MissingProcedures}.",
-            missing.Length,
-            string.Join(", ", missing.Select(name => $"dbo.{name}")));
+        logger.LogInformation(
+            "Sincronizando {ProcedureCount} procedimientos almacenados con la versión del backend.",
+            procedureBatches.Count);
 
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
         try
@@ -63,10 +48,12 @@ public static partial class DatabaseProcedureInstaller
                 await sessionCommand.ExecuteNonQueryAsync(cancellationToken);
             }
 
-            foreach (var procedureName in missing)
+            foreach (var (procedureName, procedureBatch) in procedureBatches.OrderBy(
+                         item => item.Key,
+                         StringComparer.OrdinalIgnoreCase))
             {
                 await using var command = new SqlCommand(
-                    procedureBatches[procedureName],
+                    procedureBatch,
                     connection,
                     transaction)
                 {
@@ -74,8 +61,18 @@ public static partial class DatabaseProcedureInstaller
                     CommandTimeout = 120
                 };
 
-                await command.ExecuteNonQueryAsync(cancellationToken);
-                logger.LogInformation("Procedimiento dbo.{ProcedureName} instalado.", procedureName);
+                try
+                {
+                    await command.ExecuteNonQueryAsync(cancellationToken);
+                }
+                catch (SqlException exception)
+                {
+                    throw new InvalidOperationException(
+                        $"No fue posible sincronizar el procedimiento dbo.{procedureName}.",
+                        exception);
+                }
+
+                logger.LogDebug("Procedimiento dbo.{ProcedureName} sincronizado.", procedureName);
             }
 
             await transaction.CommitAsync(cancellationToken);
@@ -96,8 +93,7 @@ public static partial class DatabaseProcedureInstaller
                 $"No fue posible instalar: {string.Join(", ", notInstalled.Select(name => $"dbo.{name}"))}.");
 
         logger.LogInformation(
-            "Instalación automática completada: {InstalledCount} procedimientos agregados y {TotalCount} verificados.",
-            missing.Length,
+            "Sincronización automática completada: {TotalCount} procedimientos verificados y actualizados.",
             procedureBatches.Count);
     }
 

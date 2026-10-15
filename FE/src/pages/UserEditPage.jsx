@@ -11,6 +11,7 @@ const emptyForm = {
   puedeSolicitar: false,
   esAprobador: false,
   esSeguridad: false,
+  esGuardia: false,
   activo: true,
 }
 
@@ -41,6 +42,7 @@ export function UserEditPage({ idUsuario, areas = [], onUpdate, onCancel, onErro
           puedeSolicitar: Boolean(user.areas?.some((area) => area.puedeSolicitar && area.activo)),
           esAprobador: Boolean(user.areas?.some((area) => area.esAprobador && area.activo)),
           esSeguridad: roles.includes('SEGURIDAD'),
+          esGuardia: roles.includes('GUARDIA'),
           activo: Boolean(user.activo),
         })
       })
@@ -52,7 +54,16 @@ export function UserEditPage({ idUsuario, areas = [], onUpdate, onCancel, onErro
 
   function change(event) {
     const { name, value, checked, type } = event.target
-    setForm((current) => ({ ...current, [name]: type === 'checkbox' ? checked : value }))
+    setForm((current) => {
+      const next = { ...current, [name]: type === 'checkbox' ? checked : value }
+      if (name === 'esGuardia' && checked) {
+        return { ...next, idArea: '', puedeSolicitar: false, esAprobador: false, esSeguridad: false }
+      }
+      if (checked && ['puedeSolicitar', 'esAprobador', 'esSeguridad'].includes(name)) {
+        next.esGuardia = false
+      }
+      return next
+    })
   }
 
   async function submit(event) {
@@ -68,6 +79,7 @@ export function UserEditPage({ idUsuario, areas = [], onUpdate, onCancel, onErro
         puedeSolicitar: form.puedeSolicitar,
         esAprobador: form.esAprobador,
         esSeguridad: form.esSeguridad,
+        esGuardia: form.esGuardia,
         activo: form.activo,
       })
     } finally {
@@ -101,6 +113,7 @@ export function UserEditPage({ idUsuario, areas = [], onUpdate, onCancel, onErro
         <Check name="puedeSolicitar" checked={form.puedeSolicitar} onChange={change} label="Puede crear solicitudes" description="Permite registrar solicitudes de ingreso para el área seleccionada." />
         <Check name="esAprobador" checked={form.esAprobador} onChange={change} label="Aprobador del área" description="Permite revisar y decidir accesos del área seleccionada." />
         <Check name="esSeguridad" checked={form.esSeguridad} onChange={change} label="Personal de seguridad" description="Asigna o retira el rol de seguridad." />
+        <Check name="esGuardia" checked={form.esGuardia} onChange={change} label="Guardia de acceso" description="Restringe la cuenta al escáner QR y la consulta de resultados." />
         <Check name="activo" checked={form.activo} onChange={change} label="Usuario activo" description="Permite que la cuenta continúe iniciando sesión." />
       </div>
 

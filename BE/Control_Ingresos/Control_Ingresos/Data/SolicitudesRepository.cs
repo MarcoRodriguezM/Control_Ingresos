@@ -170,6 +170,15 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
                 await roleCommand.ExecuteNonQueryAsync(cancellationToken);
             }
 
+            if (request.EsGuardia)
+            {
+                await using var roleCommand = StoredProcedure(connection, "dbo.usp_Usuario_Rol_Asignar", transaction);
+                Add(roleCommand, "@IdUsuario", SqlDbType.VarChar, idUsuario, 50);
+                Add(roleCommand, "@CodigoRol", SqlDbType.VarChar, "GUARDIA", 30);
+                Add(roleCommand, "@UsuarioAsignacion", SqlDbType.VarChar, usuarioCreacion, 50);
+                await roleCommand.ExecuteNonQueryAsync(cancellationToken);
+            }
+
             await transaction.CommitAsync(cancellationToken);
             return idUsuario;
         }
@@ -197,6 +206,7 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
         Add(command, "@PuedeSolicitar", SqlDbType.Bit, request.PuedeSolicitar);
         Add(command, "@EsAprobador", SqlDbType.Bit, request.EsAprobador);
         Add(command, "@EsSeguridad", SqlDbType.Bit, request.EsSeguridad);
+        Add(command, "@EsGuardia", SqlDbType.Bit, request.EsGuardia);
         Add(command, "@Activo", SqlDbType.Bit, request.Activo);
         Add(command, "@UsuarioModificacion", SqlDbType.VarChar, usuarioModificacion, 50);
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken)) > 0;
