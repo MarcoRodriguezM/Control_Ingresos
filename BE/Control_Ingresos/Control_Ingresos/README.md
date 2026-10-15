@@ -1,6 +1,6 @@
 # API de Control de Ingresos
 
-## Preparación
+## Preparacion
 
 1. Cree y mantenga `Control_Ingresos_DB`, sus tablas y procedimientos directamente en SQL Server.
 2. Ajuste `ConnectionStrings:ControlIngresos` en `appsettings.json` o mediante una variable de entorno:
@@ -11,7 +11,7 @@
 
 La URL HTTP de desarrollo es `http://localhost:5250`. Al ejecutar en Development:
 
-- Scalar está disponible en `http://localhost:5250/scalar/v1`.
+- Scalar esta disponible en `http://localhost:5250/scalar/v1`.
 - El documento OpenAPI se publica en `http://localhost:5250/openapi/v1.json`.
 
 ## Endpoints iniciales
@@ -27,7 +27,7 @@ La URL HTTP de desarrollo es `http://localhost:5250`. Al ejecutar en Development
 - `DELETE /api/solicitudes/{id}?usuario={idUsuario}`
 - `POST /api/solicitudes/{id}/personas`
 
-Todos los endpoints de escritura invocan procedimientos almacenados. Las relaciones lógicas se validan dentro de SQL Server antes de insertar.
+Todos los endpoints de escritura invocan procedimientos almacenados. Las relaciones logicas se validan dentro de SQL Server antes de insertar.
 
 ## Ejemplo de solicitud
 

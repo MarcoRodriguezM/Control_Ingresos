@@ -34,8 +34,8 @@ public sealed class CatalogosController(ISolicitudesRepository repository) : Con
         {
             return BadRequest(new ProblemDetails
             {
-                Title = "Catálogo no válido",
-                Detail = $"El catálogo '{catalogo}' no está permitido."
+                Title = "Catalogo no valido",
+                Detail = $"El catalogo '{catalogo}' no esta permitido."
             });
         }
 

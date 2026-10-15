@@ -8,7 +8,7 @@ namespace Control_Ingresos.Data;
 public sealed class SolicitudesRepository(IConfiguration configuration) : ISolicitudesRepository
 {
     private readonly string _connectionString = configuration.GetConnectionString("ControlIngresos")
-        ?? throw new InvalidOperationException("No se configuró ConnectionStrings:ControlIngresos.");
+        ?? throw new InvalidOperationException("No se configuro ConnectionStrings:ControlIngresos.");
 
     public async Task<SesionUsuario?> AutenticarAsync(
         LoginRequest request,
@@ -160,7 +160,7 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
         try
         {
             var idUsuario = Convert.ToString(await command.ExecuteScalarAsync(cancellationToken))
-                ?? throw new InvalidOperationException("No se recibió el identificador del usuario creado.");
+                ?? throw new InvalidOperationException("No se recibio el identificador del usuario creado.");
             if (request.EsSeguridad)
             {
                 await using var roleCommand = StoredProcedure(connection, "dbo.usp_Usuario_Rol_Asignar", transaction);
@@ -175,6 +175,15 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
                 await using var roleCommand = StoredProcedure(connection, "dbo.usp_Usuario_Rol_Asignar", transaction);
                 Add(roleCommand, "@IdUsuario", SqlDbType.VarChar, idUsuario, 50);
                 Add(roleCommand, "@CodigoRol", SqlDbType.VarChar, "GUARDIA", 30);
+                Add(roleCommand, "@UsuarioAsignacion", SqlDbType.VarChar, usuarioCreacion, 50);
+                await roleCommand.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            if (request.EsProveedor)
+            {
+                await using var roleCommand = StoredProcedure(connection, "dbo.usp_Usuario_Rol_Asignar", transaction);
+                Add(roleCommand, "@IdUsuario", SqlDbType.VarChar, idUsuario, 50);
+                Add(roleCommand, "@CodigoRol", SqlDbType.VarChar, "PROVEEDOR", 30);
                 Add(roleCommand, "@UsuarioAsignacion", SqlDbType.VarChar, usuarioCreacion, 50);
                 await roleCommand.ExecuteNonQueryAsync(cancellationToken);
             }
@@ -207,9 +216,125 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
         Add(command, "@EsAprobador", SqlDbType.Bit, request.EsAprobador);
         Add(command, "@EsSeguridad", SqlDbType.Bit, request.EsSeguridad);
         Add(command, "@EsGuardia", SqlDbType.Bit, request.EsGuardia);
+        Add(command, "@EsProveedor", SqlDbType.Bit, request.EsProveedor);
         Add(command, "@Activo", SqlDbType.Bit, request.Activo);
         Add(command, "@UsuarioModificacion", SqlDbType.VarChar, usuarioModificacion, 50);
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken)) > 0;
+    }
+
+    public async Task<ProveedorUsuario?> ObtenerProveedorUsuarioAsync(
+        string idUsuario,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = StoredProcedure(connection, "dbo.usp_Proveedor_Usuario_Obtener");
+        Add(command, "@IdUsuario", SqlDbType.VarChar, idUsuario, 50);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken)
+            ? new(reader.GetInt64(0), GetNullableString(reader, 1), GetNullableString(reader, 2))
+            : null;
+    }
+
+    public async Task<IReadOnlyCollection<SolicitudProveedorResumen>> ListarSolicitudesProveedorAsync(
+        string idUsuario,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = StoredProcedure(connection, "dbo.usp_Proveedor_Solicitud_Listar");
+        Add(command, "@IdUsuario", SqlDbType.VarChar, idUsuario, 50);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var items = new List<SolicitudProveedorResumen>();
+        while (await reader.ReadAsync(cancellationToken))
+            items.Add(new(
+                reader.GetInt64(0), GetNullableString(reader, 1), GetNullableString(reader, 2),
+                GetNullableString(reader, 3), GetNullableString(reader, 4), GetNullableDateOnly(reader, 5),
+                GetNullableDateOnly(reader, 6), GetNullableString(reader, 7), GetNullableString(reader, 8),
+                GetNullableString(reader, 9), reader.GetInt32(10), reader.GetInt32(11)));
+        return items;
+    }
+
+    public async Task<SolicitudProveedorDetalle?> ObtenerSolicitudProveedorAsync(
+        long idSolicitud,
+        string idUsuario,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = StoredProcedure(connection, "dbo.usp_Proveedor_Solicitud_Obtener");
+        Add(command, "@IdSolicitud", SqlDbType.BigInt, idSolicitud);
+        Add(command, "@IdUsuario", SqlDbType.VarChar, idUsuario, 50);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+
+        var detail = new SolicitudProveedorDetalle(
+            reader.GetInt64(0), GetNullableString(reader, 1), GetNullableString(reader, 2),
+            GetNullableString(reader, 3), GetNullableString(reader, 4), GetNullableDateOnly(reader, 5),
+            GetNullableDateOnly(reader, 6), GetNullableString(reader, 7), GetNullableString(reader, 8),
+            GetNullableString(reader, 9), GetNullableString(reader, 10), GetNullableString(reader, 11),
+            GetNullableString(reader, 12), GetNullableString(reader, 13), reader.GetInt32(14),
+            reader.GetInt32(15), GetNullableString(reader, 16), []);
+
+        var people = new List<PersonaSolicitudDetalle>();
+        if (await reader.NextResultAsync(cancellationToken))
+            while (await reader.ReadAsync(cancellationToken))
+                people.Add(new(
+                    reader.GetInt64(0), GetNullable<long>(reader, 1), GetNullableString(reader, 2),
+                    GetNullableString(reader, 3), GetNullable<short>(reader, 4), GetNullable<bool>(reader, 5),
+                    GetNullableString(reader, 6), GetNullableString(reader, 7), reader.GetInt32(8),
+                    reader.GetInt32(9), reader.GetInt32(10), GetNullableString(reader, 11),
+                    null, ParseIntList(GetNullableString(reader, 12))));
+        return detail with { Personas = people };
+    }
+
+    public async Task<IReadOnlyCollection<PersonaResumen>> ListarPersonasProveedorAsync(
+        string idUsuario,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = StoredProcedure(connection, "dbo.usp_Proveedor_Persona_Listar");
+        Add(command, "@IdUsuario", SqlDbType.VarChar, idUsuario, 50);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var items = new List<PersonaResumen>();
+        while (await reader.ReadAsync(cancellationToken))
+            items.Add(new(
+                reader.GetInt64(0), GetNullableString(reader, 1), GetNullableString(reader, 2),
+                GetNullableString(reader, 3), GetNullableString(reader, 4), GetNullableString(reader, 5),
+                reader.GetInt32(6)));
+        return items;
+    }
+
+    public async Task<long> AgregarPersonaProveedorAsync(
+        long idSolicitud,
+        string idUsuario,
+        AgregarPersonaSolicitudRequest request,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = StoredProcedure(connection, "dbo.usp_Proveedor_Solicitud_Persona_Agregar");
+        Add(command, "@IdSolicitud", SqlDbType.BigInt, idSolicitud);
+        Add(command, "@IdUsuario", SqlDbType.VarChar, idUsuario, 50);
+        Add(command, "@IdPersona", SqlDbType.BigInt, request.IdPersona);
+        Add(command, "@IdEstadoPersonaSolicitud", SqlDbType.SmallInt, request.IdEstadoPersonaSolicitud);
+        Add(command, "@DatosCompletos", SqlDbType.Bit, request.DatosCompletos);
+        Add(command, "@ObservacionesRevision", SqlDbType.NVarChar, request.ObservacionesRevision, 1000);
+        Add(command, "@AreasJson", SqlDbType.NVarChar, request.Areas is null ? null : JsonSerializer.Serialize(request.Areas), -1);
+        Add(command, "@RequerimientosJson", SqlDbType.NVarChar, request.Requerimientos is null ? null : JsonSerializer.Serialize(request.Requerimientos), -1);
+        return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken));
+    }
+
+    public async Task AsignarAreasPersonaAsync(
+        long idSolicitud,
+        long idSolicitudPersona,
+        IReadOnlyCollection<int> areas,
+        string usuario,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = StoredProcedure(connection, "dbo.usp_Solicitud_Persona_Areas_Asignar");
+        Add(command, "@IdSolicitud", SqlDbType.BigInt, idSolicitud);
+        Add(command, "@IdSolicitudPersona", SqlDbType.BigInt, idSolicitudPersona);
+        Add(command, "@AreasJson", SqlDbType.NVarChar, JsonSerializer.Serialize(areas), -1);
+        Add(command, "@Usuario", SqlDbType.VarChar, usuario, 50);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyCollection<CatalogoItem>> ListarCatalogoAsync(
@@ -270,12 +395,13 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
             usuarios);
     }
 
-    public async Task<long> CrearProveedorAsync(
+    public async Task<ProveedorUsuarioCreado> CrearProveedorAsync(
         CrearProveedorRequest request,
+        string contrasenaTemporal,
         CancellationToken cancellationToken)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
-        await using var command = StoredProcedure(connection, "dbo.usp_Proveedor_Crear");
+        await using var command = StoredProcedure(connection, "dbo.usp_Proveedor_Usuario_Crear");
 
         Add(command, "@Codigo", SqlDbType.VarChar, request.Codigo, 30);
         Add(command, "@NombreLegal", SqlDbType.NVarChar, request.NombreLegal, 200);
@@ -285,10 +411,14 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
         Add(command, "@CorreoPrincipal", SqlDbType.VarChar, request.CorreoPrincipal, 254);
         Add(command, "@TelefonoPrincipal", SqlDbType.VarChar, request.TelefonoPrincipal, 30);
         Add(command, "@IdEstadoGeneral", SqlDbType.SmallInt, request.IdEstadoGeneral);
-        Add(command, "@Usuario", SqlDbType.VarChar, request.Usuario, 50);
+        Add(command, "@ContrasenaTemporal", SqlDbType.VarChar, contrasenaTemporal, 200);
+        Add(command, "@UsuarioCreacion", SqlDbType.VarChar, request.Usuario, 50);
 
-        return Convert.ToInt64(
-            await command.ExecuteScalarAsync(cancellationToken));
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+            throw new InvalidOperationException("No se recibio la cuenta creada para el proveedor.");
+
+        return new ProveedorUsuarioCreado(reader.GetInt64(0), reader.GetString(1));
     }
 
     public async Task<long> CrearPersonaAsync(
@@ -671,6 +801,50 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
             await command.ExecuteScalarAsync(cancellationToken));
     }
 
+    public async Task<long> AgregarEmpleadoAsync(
+        long idSolicitud,
+        Empleado empleado,
+        AgregarEmpleadoSolicitudRequest request,
+        string usuario,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = StoredProcedure(connection, "dbo.usp_Solicitud_Empleado_Agregar");
+
+        Add(command, "@IdSolicitud", SqlDbType.BigInt, idSolicitud);
+        Add(command, "@CodigoEmpleado", SqlDbType.VarChar, request.CodigoEmpleado.Trim(), 50);
+        Add(command, "@NombreCompleto", SqlDbType.NVarChar, empleado.NombreCompleto, 200);
+        Add(command, "@Correo", SqlDbType.VarChar, empleado.Correo, 254);
+        Add(command, "@CargoFuncion", SqlDbType.NVarChar, empleado.CargoNivel, 150);
+        Add(command, "@AreasJson", SqlDbType.NVarChar, JsonSerializer.Serialize(request.Areas), -1);
+        Add(command, "@Usuario", SqlDbType.VarChar, usuario, 50);
+
+        return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken));
+    }
+
+    public async Task<IReadOnlyCollection<EmpleadoAccesoActual>> ListarAccesosEmpleadoAsync(
+        string codigoEmpleado,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = StoredProcedure(connection, "dbo.usp_Empleado_Accesos_Listar");
+        Add(command, "@CodigoEmpleado", SqlDbType.VarChar, codigoEmpleado.Trim(), 50);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var items = new List<EmpleadoAccesoActual>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            items.Add(new EmpleadoAccesoActual(
+                reader.GetInt32(0),
+                GetNullableString(reader, 1),
+                GetNullableString(reader, 2),
+                GetNullableDateOnly(reader, 3),
+                GetNullableDateOnly(reader, 4)));
+        }
+
+        return items;
+    }
+
     public async Task ReenviarAprobacionAsync(long idSolicitudPersonaArea, string idUsuarioSolicitante, CancellationToken cancellationToken)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
@@ -889,6 +1063,7 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
                     reader.GetInt32(10),
                     GetNullableString(reader, 11),
                     GetNullableString(reader, 12)));
+
             }
         }
 
@@ -975,6 +1150,15 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
         reader.IsDBNull(ordinal)
             ? null
             : reader.GetString(ordinal);
+
+    private static IReadOnlyCollection<int> ParseIntList(string? value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? []
+            : value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(item => int.TryParse(item, out var id) ? id : 0)
+                .Where(id => id > 0)
+                .Distinct()
+                .ToArray();
 
     private static T? GetNullable<T>(
         SqlDataReader reader,

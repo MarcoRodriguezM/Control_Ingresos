@@ -11,6 +11,10 @@ export const initials = (name) => name?.split(/\s+/).filter(Boolean).slice(0, 2)
 export const accessStatusClass = (codigoEstado = '') => ({
   PENDIENTE: 'pending',
   APROBADA: 'approved',
+  AUTORIZADA: 'approved',
   RECHAZADA: 'rejected',
-  NO_REQUIERE: 'neutral',
+  VENCIDA: 'expired',
+  NO_VIGENTE: 'future',
+  SOLICITUD_NO_HABILITADA: 'neutral',
+  PENDIENTE_AREAS: 'pending',
 }[codigoEstado.trim().toUpperCase()] ?? 'neutral')

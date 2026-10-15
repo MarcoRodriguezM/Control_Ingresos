@@ -8,10 +8,22 @@ namespace Control_Ingresos.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/empleados")]
-public sealed class EmpleadosController(
-    IEmpleadosRepository repository,
-    IEmpleadoSingularRepository singularRepository) : ControllerBase
+public sealed class EmpleadosController : ControllerBase
 {
+    private readonly IEmpleadosRepository _repository;
+    private readonly IEmpleadoSingularRepository _singularRepository;
+    private readonly ISolicitudesRepository _solicitudesRepository;
+
+    public EmpleadosController(
+        IEmpleadosRepository repository,
+        IEmpleadoSingularRepository singularRepository,
+        ISolicitudesRepository solicitudesRepository)
+    {
+        _repository = repository;
+        _singularRepository = singularRepository;
+        _solicitudesRepository = solicitudesRepository;
+    }
+
     [HttpGet]
     [ProducesResponseType<IReadOnlyCollection<Empleado>>(StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyCollection<Empleado>>> Listar(
@@ -19,8 +31,8 @@ public sealed class EmpleadosController(
         CancellationToken cancellationToken)
     {
         return Ok(soloActivos
-            ? await repository.ListarActivosAsync(cancellationToken)
-            : await repository.ListarAsync(cancellationToken));
+            ? await _repository.ListarActivosAsync(cancellationToken)
+            : await _repository.ListarAsync(cancellationToken));
     }
 
     [HttpGet("estados")]
@@ -28,7 +40,17 @@ public sealed class EmpleadosController(
     public async Task<ActionResult<IReadOnlyCollection<EmpleadoStatus>>> ListarEstados(
         CancellationToken cancellationToken)
     {
-        return Ok(await repository.ListarEstadosAsync(cancellationToken));
+        return Ok(await _repository.ListarEstadosAsync(cancellationToken));
+    }
+
+    [HttpGet("{codigoEmpleado}/accesos")]
+    [ProducesResponseType<IReadOnlyCollection<EmpleadoAccesoActual>>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyCollection<EmpleadoAccesoActual>>> ListarAccesos(
+        string codigoEmpleado,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(codigoEmpleado)) return BadRequest();
+        return Ok(await _solicitudesRepository.ListarAccesosEmpleadoAsync(codigoEmpleado, cancellationToken));
     }
 
     [HttpGet("{codigoEmpleado}/qr")]
@@ -40,7 +62,7 @@ public sealed class EmpleadosController(
     {
         if (string.IsNullOrWhiteSpace(codigoEmpleado)) return NotFound();
 
-        var codigoQr = await repository.ObtenerCodigoQrAsync(codigoEmpleado, cancellationToken);
+        var codigoQr = await _repository.ObtenerCodigoQrAsync(codigoEmpleado, cancellationToken);
         return string.IsNullOrWhiteSpace(codigoQr)
             ? NotFound()
             : Ok(new EmpleadoQrResponse(codigoQr));
@@ -56,7 +78,7 @@ public sealed class EmpleadosController(
         if (codigoQr.Length != 64 || codigoQr.Any(character => !Uri.IsHexDigit(character)))
             return NotFound();
 
-        var empleado = await repository.ConsultarQrAsync(codigoQr, cancellationToken);
+        var empleado = await _repository.ConsultarQrAsync(codigoQr, cancellationToken);
         return empleado is null ? NotFound() : Ok(empleado);
     }
 
@@ -69,7 +91,7 @@ public sealed class EmpleadosController(
     {
         if (string.IsNullOrWhiteSpace(codigoEmpleado)) return BadRequest();
 
-        var fotografia = await repository.ObtenerFotografiaAsync(codigoEmpleado, cancellationToken);
+        var fotografia = await _repository.ObtenerFotografiaAsync(codigoEmpleado, cancellationToken);
         if (fotografia is null || fotografia.Length == 0) return NotFound();
 
         return File(fotografia, DetectarTipoContenido(fotografia));
@@ -83,7 +105,7 @@ public sealed class EmpleadosController(
     {
         if (string.IsNullOrWhiteSpace(codigoEmpleado)) return BadRequest();
 
-        return Ok(await singularRepository.ObtenerAsync(codigoEmpleado, cancellationToken));
+        return Ok(await _singularRepository.ObtenerAsync(codigoEmpleado, cancellationToken));
     }
 
     private static string DetectarTipoContenido(ReadOnlySpan<byte> contenido)

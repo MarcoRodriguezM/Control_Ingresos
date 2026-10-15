@@ -16,12 +16,12 @@ public static partial class DatabaseProcedureInstaller
     {
         if (!configuration.GetValue("Database:InstallMissingStoredProceduresOnStartup", true))
         {
-            logger.LogInformation("La instalación automática de procedimientos almacenados está desactivada.");
+            logger.LogInformation("La instalacion automatica de procedimientos almacenados esta desactivada.");
             return;
         }
 
         var connectionString = configuration.GetConnectionString("ControlIngresos")
-            ?? throw new InvalidOperationException("No se configuró ConnectionStrings:ControlIngresos.");
+            ?? throw new InvalidOperationException("No se configuro ConnectionStrings:ControlIngresos.");
 
         var script = await ReadEmbeddedScriptAsync(cancellationToken);
         var procedureBatches = ParseProcedureBatches(script);
@@ -34,7 +34,7 @@ public static partial class DatabaseProcedureInstaller
             cancellationToken);
 
         logger.LogInformation(
-            "Sincronizando {ProcedureCount} procedimientos almacenados con la versión del backend.",
+            "Sincronizando {ProcedureCount} procedimientos almacenados con la version del backend.",
             procedureBatches.Count);
 
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
@@ -75,6 +75,18 @@ public static partial class DatabaseProcedureInstaller
                 logger.LogDebug("Procedimiento dbo.{ProcedureName} sincronizado.", procedureName);
             }
 
+            await using (var normalizeCommand = new SqlCommand(
+                "dbo.usp_Solicitud_Aprobacion_Obligatoria_Normalizar",
+                connection,
+                transaction)
+            {
+                CommandType = CommandType.StoredProcedure,
+                CommandTimeout = 120
+            })
+            {
+                await normalizeCommand.ExecuteNonQueryAsync(cancellationToken);
+            }
+
             await transaction.CommitAsync(cancellationToken);
         }
         catch
@@ -93,7 +105,7 @@ public static partial class DatabaseProcedureInstaller
                 $"No fue posible instalar: {string.Join(", ", notInstalled.Select(name => $"dbo.{name}"))}.");
 
         logger.LogInformation(
-            "Sincronización automática completada: {TotalCount} procedimientos verificados y actualizados.",
+            "Sincronizacion automatica completada: {TotalCount} procedimientos verificados y actualizados.",
             procedureBatches.Count);
     }
 
@@ -103,7 +115,7 @@ public static partial class DatabaseProcedureInstaller
         var resourceName = assembly.GetManifestResourceNames()
             .SingleOrDefault(name => name.EndsWith(ResourceSuffix, StringComparison.OrdinalIgnoreCase))
             ?? throw new InvalidOperationException(
-                $"No se encontró el recurso embebido {ResourceSuffix}.");
+                $"No se encontro el recurso embebido {ResourceSuffix}.");
 
         await using var stream = assembly.GetManifestResourceStream(resourceName)
             ?? throw new InvalidOperationException($"No se pudo abrir el recurso {resourceName}.");
@@ -163,7 +175,7 @@ public static partial class DatabaseProcedureInstaller
             {
                 await connection.DisposeAsync();
                 logger.LogWarning(
-                    "SQL Server todavía no está disponible. Reintento {Attempt} de {Attempts}.",
+                    "SQL Server todavia no esta disponible. Reintento {Attempt} de {Attempts}.",
                     attempt + 1,
                     attempts);
                 await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
@@ -175,7 +187,7 @@ public static partial class DatabaseProcedureInstaller
             }
         }
 
-        throw new InvalidOperationException("No fue posible abrir la conexión con SQL Server.");
+        throw new InvalidOperationException("No fue posible abrir la conexion con SQL Server.");
     }
 
     [GeneratedRegex(@"^\s*GO\s*(?:--.*)?$", RegexOptions.IgnoreCase | RegexOptions.Multiline)]

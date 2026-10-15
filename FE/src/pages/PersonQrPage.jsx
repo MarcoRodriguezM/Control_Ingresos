@@ -51,7 +51,7 @@ export function PersonQrPage({ idPersona, onBack, onError }) {
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1800)
     } catch {
-      onError('No fue posible copiar el enlace del código QR.')
+      onError('No fue posible copiar el enlace del codigo QR.')
     }
   }
 
@@ -81,7 +81,7 @@ export function PersonQrPage({ idPersona, onBack, onError }) {
       pdf.text('CONTROL DE INGRESOS', 6, 7.2)
       pdf.setFont('helvetica', 'normal')
       pdf.setFontSize(5)
-      pdf.text('IDENTIFICACIÓN DIGITAL', pageWidth - 6, 7.2, { align: 'right' })
+      pdf.text('IDENTIFICACION DIGITAL', pageWidth - 6, 7.2, { align: 'right' })
 
       const photoX = 5.5
       const photoY = 16.5
@@ -147,22 +147,22 @@ export function PersonQrPage({ idPersona, onBack, onError }) {
     }
   }
 
-  if (loading) return <div className="panel qr-placeholder">Generando código QR…</div>
+  if (loading) return <div className="panel qr-placeholder">Generando codigo QR…</div>
   if (!persona || !qrImage) return null
 
   return <>
     <div className="page-heading qr-page-heading">
-      <div><p className="eyebrow">Identificación digital</p><h1>QR de la persona</h1><p>Este código permite consultar sus datos y el estado de acceso de cada área.</p></div>
+      <div><p className="eyebrow">Identificacion digital</p><h1>QR de la persona</h1><p>Este codigo permite consultar sus datos y el estado de acceso de cada area.</p></div>
       <button type="button" className="secondary-button" onClick={onBack}><Icon name="back" />Volver a la persona</button>
     </div>
 
     <div className="qr-detail-layout">
       <section className="panel qr-card">
         <div className="qr-person-summary">
-          <div className="person-avatar large"><span>{initials(persona.nombreCompleto)}</span>{photograph && <img src={photograph} alt="Fotografía de la persona" />}</div>
+          <div className="person-avatar large"><span>{initials(persona.nombreCompleto)}</span>{photograph && <img src={photograph} alt="Fotografia de la persona" />}</div>
           <div><h2>{persona.nombreCompleto || 'Persona sin nombre'}</h2><p>{persona.numeroDocumento || 'Sin documento'} · {persona.empresa || 'Sin empresa'}</p></div>
         </div>
-        <div className="qr-image-shell"><img src={qrImage} alt={`Código QR de ${persona.nombreCompleto || 'la persona'}`} /></div>
+        <div className="qr-image-shell"><img src={qrImage} alt={`Codigo QR de ${persona.nombreCompleto || 'la persona'}`} /></div>
         <p className="qr-security-note"><Icon name="shield" />El QR contiene un identificador seguro; los datos personales se consultan desde el sistema al escanearlo.</p>
         <div className="qr-actions">
           <button type="button" className="primary-button" onClick={downloadCredentialPdf} disabled={generatingPdf}><Icon name="download" />{generatingPdf ? 'Generando PDF…' : 'Descargar carnet PDF'}</button>
@@ -180,7 +180,7 @@ async function resolvePhotograph(persona) {
     const result = await controlIngresosApi.obtenerFotografiaPersona(persona.idPersona)
     if (result?.dataUrl) return result.dataUrl
   } catch {
-    // Permite fotografías externas o instalaciones antiguas que todavía sirven la URL directamente.
+    // Permite fotografias externas o instalaciones antiguas que todavia sirven la URL directamente.
   }
 
   try {
@@ -230,7 +230,7 @@ async function cropPhotograph(dataUrl, targetAspectRatio) {
   const image = await new Promise((resolve, reject) => {
     const element = new Image()
     element.onload = () => resolve(element)
-    element.onerror = () => reject(new Error('No fue posible preparar la fotografía para el carnet.'))
+    element.onerror = () => reject(new Error('No fue posible preparar la fotografia para el carnet.'))
     element.src = dataUrl
   })
 
@@ -250,7 +250,7 @@ async function cropPhotograph(dataUrl, targetAspectRatio) {
   canvas.width = 700
   canvas.height = Math.round(canvas.width / targetAspectRatio)
   const context = canvas.getContext('2d', { alpha: false })
-  if (!context) throw new Error('El navegador no pudo procesar la fotografía.')
+  if (!context) throw new Error('El navegador no pudo procesar la fotografia.')
 
   context.fillStyle = '#ffffff'
   context.fillRect(0, 0, canvas.width, canvas.height)

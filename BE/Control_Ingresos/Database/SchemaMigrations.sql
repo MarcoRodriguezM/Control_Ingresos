@@ -1,7 +1,7 @@
 /*
     Migraciones estructurales posteriores al esquema base.
     Este archivo no contiene procedimientos almacenados; las definiciones activas
-    están consolidadas en Control_Ingresos/Database/StoredProcedures.sql.
+    estan consolidadas en Control_Ingresos/Database/StoredProcedures.sql.
 */
 USE [Control_Ingresos_DB];
 GO

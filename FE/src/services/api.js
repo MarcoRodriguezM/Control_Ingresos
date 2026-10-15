@@ -92,6 +92,14 @@ export const controlIngresosApi = {
     method: 'POST',
     body: JSON.stringify(proveedor),
   }),
+  obtenerMiEmpresaProveedor: () => request('/api/proveedores/mi-empresa'),
+  listarSolicitudesProveedor: () => request('/api/proveedores/solicitudes'),
+  obtenerSolicitudProveedor: (id) => request(`/api/proveedores/solicitudes/${id}`),
+  listarPersonasProveedor: () => request('/api/proveedores/personas'),
+  agregarPersonaSolicitudProveedor: (idSolicitud, persona) => request(`/api/proveedores/solicitudes/${idSolicitud}/personas`, {
+    method: 'POST',
+    body: JSON.stringify(persona),
+  }),
 
   crearPersona: (persona) => request('/api/personas', {
     method: 'POST',
@@ -115,6 +123,7 @@ export const controlIngresosApi = {
   },
   listarPersonas: () => request('/api/personas'),
   listarEmpleados: (soloActivos = false) => request(`/api/empleados${soloActivos ? '?soloActivos=true' : ''}`),
+  listarAccesosEmpleado: (codigoEmpleado) => request(`/api/empleados/${encodeURIComponent(codigoEmpleado)}/accesos`),
   listarEstadosEmpleado: () => request('/api/empleados/estados'),
   obtenerFotografiaEmpleado: (codigoEmpleado) => requestBlob(`/api/empleados/${encodeURIComponent(codigoEmpleado)}/fotografia`),
   obtenerQrEmpleado: (codigoEmpleado) => request(`/api/empleados/${encodeURIComponent(codigoEmpleado)}/qr`),
@@ -122,6 +131,10 @@ export const controlIngresosApi = {
   obtenerAutorizacionesEmpleado: (codigoEmpleado) => request(`/api/empleados/${encodeURIComponent(codigoEmpleado)}/autorizaciones`),
   consultarCredencialPublicaEmpleado: (codigoQr) => request(`/api/publico/empleados/qr/${encodeURIComponent(codigoQr)}`, {}, false),
   obtenerFotografiaPublicaEmpleado: (codigoQr) => requestBlob(`/api/publico/empleados/qr/${encodeURIComponent(codigoQr)}/fotografia`, false),
+  agregarEmpleadoSolicitud: (idSolicitud, empleado) => request(`/api/solicitudes/${idSolicitud}/empleados`, {
+    method: 'POST',
+    body: JSON.stringify(empleado),
+  }),
   listarPersonasConAccesos: () => request('/api/personas/accesos'),
   obtenerPersonaAccesos: (id) => request(`/api/personas/${id}/accesos`),
   obtenerQrPersona: (id) => request(`/api/personas/${id}/qr`),
@@ -162,5 +175,10 @@ export const controlIngresosApi = {
     request(`/api/solicitudes/${idSolicitud}/personas`, {
       method: 'POST',
       body: JSON.stringify(persona),
+    }),
+  asignarAreasPersonaSolicitud: (idSolicitud, idSolicitudPersona, areas) =>
+    request(`/api/solicitudes/${idSolicitud}/personas/${idSolicitudPersona}/areas`, {
+      method: 'PUT',
+      body: JSON.stringify({ areas }),
     }),
 }

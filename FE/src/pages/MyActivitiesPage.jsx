@@ -29,7 +29,7 @@ export function MyActivitiesPage({ items, loading, onRequest, onComplete }) {
     </div>
 
     <div className="filters activity-filters">
-      <div className="search-box"><Icon name="search" /><input aria-label="Buscar actividades" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar actividad, solicitud o área" /></div>
+      <div className="search-box"><Icon name="search" /><input aria-label="Buscar actividades" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar actividad, solicitud o area" /></div>
       <select className="filter-select" aria-label="Filtrar actividades" value={filter} onChange={(event) => setFilter(event.target.value)}>
         <option value="pendientes">Pendientes</option><option value="vencidas">Vencidas</option><option value="finalizadas">Finalizadas</option><option value="todas">Todas</option>
       </select>
@@ -42,13 +42,13 @@ export function MyActivitiesPage({ items, loading, onRequest, onComplete }) {
           <div className="activity-row-icon"><Icon name="tasks" /></div>
           <div className="activity-row-main">
             <div className="activity-title"><h2>{item.nombreActividad || `Actividad #${item.idActividad}`}</h2><span className={`access-status ${isOverdue(item) ? 'rejected' : item.esEstadoFinal ? 'approved' : 'pending'}`}>{isOverdue(item) ? 'Vencida' : item.estado || (item.esEstadoFinal ? 'Finalizada' : 'Pendiente')}</span></div>
-            <p>{item.areaResponsable || 'Área no indicada'}{item.numeroSolicitud ? ` · ${item.numeroSolicitud}` : ''}</p>
-            <div className="activity-meta"><span><strong>Fecha límite</strong>{formatDateTime(item.fechaLimite)}</span><span><strong>Inicio</strong>{formatDateTime(item.fechaInicio)}</span><span><strong>Finalización</strong>{formatDateTime(item.fechaFinalizacion)}</span>{item.requiereTicketExterno && <span className="activity-ticket">Requiere ticket externo</span>}</div>
+            <p>{item.areaResponsable || 'Area no indicada'}{item.numeroSolicitud ? ` · ${item.numeroSolicitud}` : ''}</p>
+            <div className="activity-meta"><span><strong>Fecha limite</strong>{formatDateTime(item.fechaLimite)}</span><span><strong>Inicio</strong>{formatDateTime(item.fechaInicio)}</span><span><strong>Finalizacion</strong>{formatDateTime(item.fechaFinalizacion)}</span>{item.requiereTicketExterno && <span className="activity-ticket">Requiere ticket externo</span>}</div>
             {item.comentarios && <p className="activity-comment">{item.comentarios}</p>}
           </div>
           <div className="activity-row-actions">
             {!item.esEstadoFinal && item.codigoEstado !== 'PENDIENTE_APROBACION' && <button type="button" className="primary-button teal activity-complete" onClick={() => onComplete(item.idActividad)}>Marcar completada</button>}
-            {item.codigoEstado === 'PENDIENTE_APROBACION' && <span className="activity-waiting">Esperando aprobación</span>}
+            {item.codigoEstado === 'PENDIENTE_APROBACION' && <span className="activity-waiting">Esperando aprobacion</span>}
             {item.idSolicitud && <button type="button" className="secondary-button activity-open" onClick={() => onRequest(item.idSolicitud)}>Abrir solicitud <Icon name="arrow" /></button>}
           </div>
         </article>)}

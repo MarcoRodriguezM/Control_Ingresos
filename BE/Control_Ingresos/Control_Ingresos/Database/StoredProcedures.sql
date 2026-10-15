@@ -1,7 +1,7 @@
 /*
     Archivo maestro de procedimientos almacenados de Control_Ingresos_DB.
-    Es idempotente: cada definición usa CREATE OR ALTER PROCEDURE.
-    El backend lee este recurso al iniciar e instala únicamente procedimientos faltantes.
+    Es idempotente: cada definicion usa CREATE OR ALTER PROCEDURE.
+    El backend lee este recurso al iniciar e instala unicamente procedimientos faltantes.
 */
 SET ANSI_NULLS ON;
 SET QUOTED_IDENTIFIER ON;
@@ -80,6 +80,397 @@ BEGIN
         LEFT JOIN EMPL_EMPLEADO_EMPR C ON C.COD_EMPLEADO = E.COD_EMPLEADO;'
         AS NVARCHAR(MAX)
     ) AS CONSULTA_SQL;
+END;
+GO
+
+-- dbo.usp_Empleado_Accesos_Listar
+CREATE OR ALTER PROCEDURE dbo.usp_Empleado_Accesos_Listar
+    @CodigoEmpleado VARCHAR(50)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT DISTINCT
+        a.IdArea,
+        a.Codigo,
+        a.Nombre AS Area,
+        s.FechaInicio,
+        s.FechaFin
+    FROM dbo.Persona AS p
+    INNER JOIN dbo.Solicitud_Persona AS sp ON sp.IdPersona = p.IdPersona
+    INNER JOIN dbo.Solicitud_Ingreso AS s ON s.IdSolicitud = sp.IdSolicitud
+    INNER JOIN dbo.Solicitud_Persona_Area AS spa ON spa.IdSolicitudPersona = sp.IdSolicitudPersona
+    INNER JOIN dbo.Cat_Area AS a ON a.IdArea = spa.IdArea
+    INNER JOIN dbo.Cat_Estado_Solicitud AS es ON es.IdEstadoSolicitud = s.IdEstadoSolicitud
+    CROSS APPLY
+    (
+        SELECT TOP (1) ea.Codigo
+        FROM dbo.Aprobacion_Area AS aa
+        INNER JOIN dbo.Cat_Estado_Aprobacion AS ea ON ea.IdEstadoAprobacion = aa.IdEstadoAprobacion
+        WHERE aa.IdSolicitudPersonaArea = spa.IdSolicitudPersonaArea
+        ORDER BY aa.FechaDecision DESC, aa.IdAprobacionArea DESC
+    ) AS aprobacion
+    WHERE p.NumeroDocumento = LTRIM(RTRIM(@CodigoEmpleado))
+      AND p.IdProveedor IS NULL
+      AND aprobacion.Codigo = 'APROBADA'
+      AND es.Codigo = 'LISTA_INGRESO'
+      AND CONVERT(DATE, GETDATE()) BETWEEN s.FechaInicio AND s.FechaFin
+    ORDER BY a.Nombre;
+END;
+GO
+
+-- dbo.usp_Solicitud_Empleado_Agregar
+CREATE OR ALTER PROCEDURE dbo.usp_Solicitud_Empleado_Agregar
+    @IdSolicitud BIGINT,
+    @CodigoEmpleado VARCHAR(50),
+    @NombreCompleto NVARCHAR(200),
+    @Correo VARCHAR(254) = NULL,
+    @CargoFuncion NVARCHAR(150) = NULL,
+    @AreasJson NVARCHAR(MAX),
+    @Usuario VARCHAR(50)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    SET @CodigoEmpleado = LTRIM(RTRIM(@CodigoEmpleado));
+    IF NULLIF(@CodigoEmpleado, '') IS NULL THROW 50700, 'El codigo del empleado es obligatorio.', 1;
+    IF NULLIF(LTRIM(RTRIM(@NombreCompleto)), '') IS NULL THROW 50701, 'El nombre del empleado es obligatorio.', 1;
+    IF ISJSON(@AreasJson) <> 1 OR NOT EXISTS (SELECT 1 FROM OPENJSON(@AreasJson))
+        THROW 50702, 'Debes asignar al menos un area al empleado.', 1;
+    IF NOT EXISTS
+    (
+        SELECT 1
+        FROM dbo.Solicitud_Ingreso AS s
+        INNER JOIN dbo.Cat_Tipo_Ingreso AS ti ON ti.IdTipoIngreso = s.IdTipoIngreso
+        WHERE s.IdSolicitud = @IdSolicitud AND ti.Codigo = 'EMPLEADO'
+    )
+        THROW 50703, 'La solicitud no corresponde al tipo Empleado.', 1;
+
+    DECLARE @IdPersona BIGINT =
+    (
+        SELECT TOP (1) IdPersona
+        FROM dbo.Persona
+        WHERE NumeroDocumento = @CodigoEmpleado AND IdProveedor IS NULL
+        ORDER BY IdPersona
+    );
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        IF @IdPersona IS NULL
+        BEGIN
+            DECLARE @IdEstadoActivo SMALLINT =
+                (SELECT TOP (1) IdEstadoGeneral FROM dbo.Cat_Estado_General WHERE Codigo = 'ACTIVO');
+            EXEC dbo.usp_ObtenerSiguienteId 'Persona', @IdPersona OUTPUT;
+            INSERT dbo.Persona
+            (
+                IdPersona, IdTipoDocumento, NumeroDocumento, NombreCompleto, Correo,
+                CargoFuncion, IdProveedor, EmpresaTexto, InformacionAdicional,
+                IdEstadoGeneral, FechaCreacion, UsuarioCreacion
+            )
+            VALUES
+            (
+                @IdPersona, NULL, @CodigoEmpleado, @NombreCompleto, @Correo,
+                @CargoFuncion, NULL, N'Empleado interno', N'Registro vinculado al directorio de empleados',
+                @IdEstadoActivo, SYSDATETIME(), @Usuario
+            );
+        END
+        ELSE
+        BEGIN
+            UPDATE dbo.Persona
+               SET NombreCompleto = @NombreCompleto,
+                   Correo = COALESCE(@Correo, Correo),
+                   CargoFuncion = COALESCE(@CargoFuncion, CargoFuncion),
+                   EmpresaTexto = N'Empleado interno',
+                   FechaModificacion = SYSDATETIME(),
+                   UsuarioModificacion = @Usuario
+             WHERE IdPersona = @IdPersona;
+        END;
+
+        DECLARE @Resultado TABLE (IdSolicitudPersona BIGINT);
+        INSERT @Resultado (IdSolicitudPersona)
+        EXEC dbo.usp_Solicitud_Persona_Agregar
+            @IdSolicitud = @IdSolicitud,
+            @IdPersona = @IdPersona,
+            @IdEstadoPersonaSolicitud = NULL,
+            @DatosCompletos = 1,
+            @ObservacionesRevision = NULL,
+            @AreasJson = @AreasJson,
+            @RequerimientosJson = NULL,
+            @Usuario = @Usuario;
+
+        DECLARE @IdSolicitudPersona BIGINT = (SELECT TOP (1) IdSolicitudPersona FROM @Resultado);
+
+        COMMIT TRANSACTION;
+        SELECT @IdSolicitudPersona;
+    END TRY
+    BEGIN CATCH
+        IF XACT_STATE() <> 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH;
+END;
+GO
+
+-- dbo.usp_Proveedor_Usuario_Obtener
+CREATE OR ALTER PROCEDURE dbo.usp_Proveedor_Usuario_Obtener
+    @IdUsuario VARCHAR(50)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT p.IdProveedor,
+           p.NombreLegal,
+           p.NombreComercial
+    FROM dbo.Usuario AS u
+    INNER JOIN dbo.Proveedor AS p
+        ON LOWER(LTRIM(RTRIM(p.CorreoPrincipal))) = LOWER(LTRIM(RTRIM(u.Correo)))
+    WHERE u.IdUsuario = @IdUsuario
+      AND NULLIF(LTRIM(RTRIM(u.Correo)), '') IS NOT NULL;
+END;
+GO
+
+-- dbo.usp_Proveedor_Solicitud_Listar
+CREATE OR ALTER PROCEDURE dbo.usp_Proveedor_Solicitud_Listar
+    @IdUsuario VARCHAR(50)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT s.IdSolicitud,
+           s.NumeroSolicitud,
+           ti.Nombre AS TipoIngreso,
+           es.Codigo AS CodigoEstado,
+           es.Nombre AS Estado,
+           s.FechaInicio,
+           s.FechaFin,
+           s.NombreActividad,
+           ub.Nombre AS Ubicacion,
+           us.NombreCompleto AS UsuarioSolicitante,
+           ISNULL(s.CantidadEstimada, 0) AS CantidadEstimada,
+           CONVERT(INT, COUNT(sp.IdSolicitudPersona)) AS CantidadPersonas
+    FROM dbo.Usuario AS up
+    INNER JOIN dbo.Proveedor AS p
+        ON LOWER(LTRIM(RTRIM(p.CorreoPrincipal))) = LOWER(LTRIM(RTRIM(up.Correo)))
+    INNER JOIN dbo.Solicitud_Ingreso AS s ON s.IdProveedor = p.IdProveedor
+    LEFT JOIN dbo.Cat_Tipo_Ingreso AS ti ON ti.IdTipoIngreso = s.IdTipoIngreso
+    LEFT JOIN dbo.Cat_Estado_Solicitud AS es ON es.IdEstadoSolicitud = s.IdEstadoSolicitud
+    LEFT JOIN dbo.Cat_Ubicacion AS ub ON ub.IdUbicacion = s.IdUbicacion
+    LEFT JOIN dbo.Usuario AS us ON us.IdUsuario = s.IdUsuarioSolicitante
+    LEFT JOIN dbo.Solicitud_Persona AS sp ON sp.IdSolicitud = s.IdSolicitud
+    WHERE up.IdUsuario = @IdUsuario
+      AND s.FechaEnvioProveedor IS NOT NULL
+      AND ISNULL(es.Codigo, '') <> 'CANCELADA'
+    GROUP BY s.IdSolicitud, s.NumeroSolicitud, ti.Nombre, es.Codigo, es.Nombre,
+             s.FechaInicio, s.FechaFin, s.NombreActividad, ub.Nombre,
+             us.NombreCompleto, s.CantidadEstimada, s.FechaEnvioProveedor
+    ORDER BY CASE WHEN es.Codigo = 'PENDIENTE_PROVEEDOR' THEN 0 ELSE 1 END,
+             s.FechaEnvioProveedor DESC,
+             s.IdSolicitud DESC;
+END;
+GO
+
+-- dbo.usp_Proveedor_Solicitud_Obtener
+CREATE OR ALTER PROCEDURE dbo.usp_Proveedor_Solicitud_Obtener
+    @IdSolicitud BIGINT,
+    @IdUsuario VARCHAR(50)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF NOT EXISTS
+    (
+        SELECT 1
+        FROM dbo.Usuario AS u
+        INNER JOIN dbo.Proveedor AS p
+            ON LOWER(LTRIM(RTRIM(p.CorreoPrincipal))) = LOWER(LTRIM(RTRIM(u.Correo)))
+        INNER JOIN dbo.Solicitud_Ingreso AS s ON s.IdProveedor = p.IdProveedor
+        WHERE u.IdUsuario = @IdUsuario
+          AND s.IdSolicitud = @IdSolicitud
+          AND s.FechaEnvioProveedor IS NOT NULL
+    )
+        RETURN;
+
+    SELECT s.IdSolicitud,
+           s.NumeroSolicitud,
+           ti.Nombre AS TipoIngreso,
+           es.Codigo AS CodigoEstado,
+           es.Nombre AS Estado,
+           s.FechaInicio,
+           s.FechaFin,
+           s.NombreActividad,
+           s.DescripcionActividad,
+           s.NumeroContrato,
+           s.ContactoProveedor,
+           s.CorreoProveedor,
+           ub.Nombre AS Ubicacion,
+           us.NombreCompleto AS UsuarioSolicitante,
+           ISNULL(s.CantidadEstimada, 0) AS CantidadEstimada,
+           CONVERT(INT, (SELECT COUNT(*) FROM dbo.Solicitud_Persona sp WHERE sp.IdSolicitud = s.IdSolicitud)) AS CantidadPersonas,
+           s.Observaciones
+    FROM dbo.Solicitud_Ingreso AS s
+    LEFT JOIN dbo.Cat_Tipo_Ingreso AS ti ON ti.IdTipoIngreso = s.IdTipoIngreso
+    LEFT JOIN dbo.Cat_Estado_Solicitud AS es ON es.IdEstadoSolicitud = s.IdEstadoSolicitud
+    LEFT JOIN dbo.Cat_Ubicacion AS ub ON ub.IdUbicacion = s.IdUbicacion
+    LEFT JOIN dbo.Usuario AS us ON us.IdUsuario = s.IdUsuarioSolicitante
+    WHERE s.IdSolicitud = @IdSolicitud;
+
+    SELECT sp.IdSolicitudPersona,
+           sp.IdPersona,
+           pe.NumeroDocumento,
+           pe.NombreCompleto,
+           sp.IdEstadoPersonaSolicitud,
+           sp.DatosCompletos,
+           CASE
+               WHEN ISNULL(r.AreasRechazadas, 0) > 0 THEN 'RECHAZADA'
+               WHEN ISNULL(r.AreasPendientes, 0) > 0 THEN 'PENDIENTE'
+               WHEN ISNULL(r.AreasRequeridas, 0) = 0 THEN 'PENDIENTE_AREAS'
+               ELSE 'APROBADA'
+           END,
+           CASE
+               WHEN ISNULL(r.AreasRechazadas, 0) > 0 THEN N'Rechazada'
+               WHEN ISNULL(r.AreasPendientes, 0) > 0 THEN N'Pendiente de aprobacion'
+               WHEN ISNULL(r.AreasRequeridas, 0) = 0 THEN N'Pendiente de asignar areas'
+               ELSE N'Aprobada'
+           END,
+           ISNULL(r.AreasAprobadas, 0),
+           ISNULL(r.AreasPendientes, 0),
+           ISNULL(r.AreasRechazadas, 0),
+           CAST(NULL AS NVARCHAR(MAX)),
+           CAST(NULL AS VARCHAR(MAX)) AS AreasCsv
+    FROM dbo.Solicitud_Persona AS sp
+    INNER JOIN dbo.Persona AS pe ON pe.IdPersona = sp.IdPersona
+    OUTER APPLY
+    (
+        SELECT COUNT(spa.IdSolicitudPersonaArea) AS AreasRequeridas,
+               COUNT(CASE WHEN ult.Codigo = 'APROBADA' THEN 1 END) AS AreasAprobadas,
+               COUNT(CASE WHEN ISNULL(ult.Codigo, 'PENDIENTE') NOT IN ('APROBADA', 'RECHAZADA') THEN 1 END) AS AreasPendientes,
+               COUNT(CASE WHEN ult.Codigo = 'RECHAZADA' THEN 1 END) AS AreasRechazadas
+        FROM dbo.Solicitud_Persona_Area AS spa
+        OUTER APPLY
+        (
+            SELECT TOP (1) ea.Codigo
+            FROM dbo.Aprobacion_Area AS aa
+            LEFT JOIN dbo.Cat_Estado_Aprobacion_Area AS ea ON ea.IdEstadoAprobacion = aa.IdEstadoAprobacion
+            WHERE aa.IdSolicitudPersonaArea = spa.IdSolicitudPersonaArea
+            ORDER BY COALESCE(aa.FechaDecision, aa.FechaSolicitud, aa.FechaCreacion) DESC, aa.IdAprobacionArea DESC
+        ) AS ult
+        WHERE spa.IdSolicitudPersona = sp.IdSolicitudPersona
+    ) AS r
+    WHERE sp.IdSolicitud = @IdSolicitud
+    ORDER BY pe.NombreCompleto;
+END;
+GO
+
+-- dbo.usp_Proveedor_Persona_Listar
+CREATE OR ALTER PROCEDURE dbo.usp_Proveedor_Persona_Listar
+    @IdUsuario VARCHAR(50)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT pe.IdPersona,
+           pe.NumeroDocumento,
+           pe.NombreCompleto,
+           pe.CargoFuncion,
+           COALESCE(p.NombreComercial, p.NombreLegal, pe.EmpresaTexto) AS Empresa,
+           eg.Nombre AS Estado,
+           CONVERT(INT, COUNT(DISTINCT spa.IdSolicitudPersonaArea)) AS CantidadAccesos
+    FROM dbo.Usuario AS u
+    INNER JOIN dbo.Proveedor AS p
+        ON LOWER(LTRIM(RTRIM(p.CorreoPrincipal))) = LOWER(LTRIM(RTRIM(u.Correo)))
+    INNER JOIN dbo.Persona AS pe ON pe.IdProveedor = p.IdProveedor
+    LEFT JOIN dbo.Cat_Estado_General AS eg ON eg.IdEstadoGeneral = pe.IdEstadoGeneral
+    LEFT JOIN dbo.Solicitud_Persona AS sp ON sp.IdPersona = pe.IdPersona
+    LEFT JOIN dbo.Solicitud_Persona_Area AS spa ON spa.IdSolicitudPersona = sp.IdSolicitudPersona
+    WHERE u.IdUsuario = @IdUsuario
+    GROUP BY pe.IdPersona, pe.NumeroDocumento, pe.NombreCompleto, pe.CargoFuncion,
+             p.NombreComercial, p.NombreLegal, pe.EmpresaTexto, eg.Nombre
+    ORDER BY pe.NombreCompleto, pe.IdPersona;
+END;
+GO
+
+-- dbo.usp_Proveedor_Solicitud_Persona_Agregar
+CREATE OR ALTER PROCEDURE dbo.usp_Proveedor_Solicitud_Persona_Agregar
+    @IdSolicitud BIGINT,
+    @IdUsuario VARCHAR(50),
+    @IdPersona BIGINT,
+    @IdEstadoPersonaSolicitud SMALLINT = NULL,
+    @DatosCompletos BIT = 1,
+    @ObservacionesRevision NVARCHAR(1000) = NULL,
+    @AreasJson NVARCHAR(MAX),
+    @RequerimientosJson NVARCHAR(MAX) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    DECLARE @IdProveedor BIGINT =
+    (
+        SELECT TOP (1) p.IdProveedor
+        FROM dbo.Usuario AS u
+        INNER JOIN dbo.Proveedor AS p
+            ON LOWER(LTRIM(RTRIM(p.CorreoPrincipal))) = LOWER(LTRIM(RTRIM(u.Correo)))
+        WHERE u.IdUsuario = @IdUsuario
+    );
+    IF @IdProveedor IS NULL THROW 50700, 'La cuenta no tiene un proveedor asignado.', 1;
+    IF NOT EXISTS
+    (
+        SELECT 1
+        FROM dbo.Solicitud_Ingreso AS s
+        INNER JOIN dbo.Cat_Estado_Solicitud AS es ON es.IdEstadoSolicitud = s.IdEstadoSolicitud
+        WHERE s.IdSolicitud = @IdSolicitud
+          AND s.IdProveedor = @IdProveedor
+          AND es.Codigo = 'PENDIENTE_PROVEEDOR'
+    ) THROW 50701, 'La solicitud no pertenece al proveedor o ya no admite personas.', 1;
+    IF NOT EXISTS (SELECT 1 FROM dbo.Persona WHERE IdPersona = @IdPersona AND IdProveedor = @IdProveedor)
+        THROW 50702, 'La persona no pertenece a este proveedor.', 1;
+    IF (SELECT COUNT(*) FROM dbo.Solicitud_Persona WHERE IdSolicitud = @IdSolicitud) >=
+       (SELECT ISNULL(CantidadEstimada, 0) FROM dbo.Solicitud_Ingreso WHERE IdSolicitud = @IdSolicitud)
+        THROW 50704, 'La solicitud ya alcanzo la cantidad estimada de personas.', 1;
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        DECLARE @Creada TABLE (IdSolicitudPersona BIGINT);
+        INSERT @Creada (IdSolicitudPersona)
+        EXEC dbo.usp_Solicitud_Persona_Agregar
+            @IdSolicitud = @IdSolicitud,
+            @IdPersona = @IdPersona,
+            @IdEstadoPersonaSolicitud = @IdEstadoPersonaSolicitud,
+            @DatosCompletos = @DatosCompletos,
+            @ObservacionesRevision = @ObservacionesRevision,
+            @AreasJson = N'[]',
+            @RequerimientosJson = @RequerimientosJson,
+            @Usuario = @IdUsuario;
+
+        DECLARE @IdSolicitudPersona BIGINT = (SELECT TOP (1) IdSolicitudPersona FROM @Creada);
+        DECLARE @CantidadActual INT = (SELECT COUNT(*) FROM dbo.Solicitud_Persona WHERE IdSolicitud = @IdSolicitud);
+        DECLARE @CantidadEstimada INT = (SELECT ISNULL(CantidadEstimada, 0) FROM dbo.Solicitud_Ingreso WHERE IdSolicitud = @IdSolicitud);
+
+        IF @CantidadActual >= @CantidadEstimada
+        BEGIN
+            DECLARE @CodigoEstado VARCHAR(40) = 'EN_REVISION';
+
+            UPDATE s
+               SET IdEstadoSolicitud = es.IdEstadoSolicitud,
+                   FechaModificacion = SYSDATETIME(),
+                   UsuarioModificacion = @IdUsuario
+            FROM dbo.Solicitud_Ingreso AS s
+            INNER JOIN dbo.Cat_Estado_Solicitud AS es ON es.Codigo = @CodigoEstado
+            WHERE s.IdSolicitud = @IdSolicitud;
+
+            EXEC dbo.usp_Historial_Solicitud_Registrar
+                @IdSolicitud, 'REGISTRO_PROVEEDOR', N'Proveedor completo el registro de personas. Pendiente de asignar areas', @CodigoEstado, @IdUsuario;
+        END;
+
+        COMMIT TRANSACTION;
+        SELECT @IdSolicitudPersona;
+    END TRY
+    BEGIN CATCH
+        IF XACT_STATE() <> 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH;
 END;
 GO
 
@@ -167,7 +558,7 @@ BEGIN
     SET XACT_ABORT ON;
 
     IF NOT EXISTS (SELECT 1 FROM dbo.Actividad WHERE IdActividad = @IdActividad AND IdUsuarioResponsable = @IdUsuarioResponsable)
-        THROW 50210, 'La actividad no existe o no estÃ¡ asignada al usuario actual.', 1;
+        THROW 50210, 'La actividad no existe o no esta asignada al usuario actual.', 1;
 
     DECLARE @CodigoActual VARCHAR(30) =
     (
@@ -218,11 +609,11 @@ BEGIN
     IF NULLIF(LTRIM(RTRIM(@NombreActividad)), '') IS NULL
         THROW 50200, 'El nombre de la actividad es obligatorio.', 1;
     IF NOT EXISTS (SELECT 1 FROM dbo.Usuario WHERE IdUsuario = @IdUsuarioResponsable AND ISNULL(IdEstadoGeneral, 1) = 1)
-        THROW 50201, 'El usuario responsable no existe o estÃ¡ inactivo.', 1;
+        THROW 50201, 'El usuario responsable no existe o esta inactivo.', 1;
     IF @IdSolicitud IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Solicitud_Ingreso WHERE IdSolicitud = @IdSolicitud)
         THROW 50202, 'La solicitud indicada no existe.', 1;
     IF @IdAreaResponsable IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Cat_Area WHERE IdArea = @IdAreaResponsable)
-        THROW 50203, 'El Ã¡rea responsable no existe.', 1;
+        THROW 50203, 'El area responsable no existe.', 1;
 
     DECLARE @IdEstadoActividad SMALLINT = (SELECT TOP (1) IdEstadoActividad FROM dbo.Cat_Estado_Actividad WHERE Codigo = 'PENDIENTE');
     IF @IdEstadoActividad IS NULL THROW 50204, 'No existe el estado PENDIENTE para actividades.', 1;
@@ -260,7 +651,7 @@ BEGIN
 
     SET @CodigoEstado = UPPER(LTRIM(RTRIM(@CodigoEstado)));
     IF @CodigoEstado NOT IN ('APROBADA', 'RECHAZADA')
-        THROW 50220, 'La decisiÃ³n debe ser APROBADA o RECHAZADA.', 1;
+        THROW 50220, 'La decision debe ser APROBADA o RECHAZADA.', 1;
     IF @CodigoEstado = 'RECHAZADA' AND NULLIF(LTRIM(RTRIM(@ComentarioDecision)), '') IS NULL
         THROW 50221, 'Debe indicar el motivo del rechazo.', 1;
     IF NOT EXISTS
@@ -270,7 +661,7 @@ BEGIN
         INNER JOIN dbo.Cat_Estado_Actividad ea ON ea.IdEstadoActividad = a.IdEstadoActividad
         WHERE a.IdActividad = @IdActividad AND ea.Codigo = 'PENDIENTE_APROBACION'
     )
-        THROW 50222, 'La actividad no estÃ¡ pendiente de aprobaciÃ³n.', 1;
+        THROW 50222, 'La actividad no esta pendiente de aprobacion.', 1;
 
     DECLARE @IdEstadoActividad SMALLINT = (SELECT TOP (1) IdEstadoActividad FROM dbo.Cat_Estado_Actividad WHERE Codigo = @CodigoEstado);
     IF @IdEstadoActividad IS NULL THROW 50223, 'El estado solicitado no existe.', 1;
@@ -335,7 +726,7 @@ BEGIN
     IF NULLIF(LTRIM(RTRIM(@IdUsuarioAprobador)), '') IS NULL
         THROW 50161, 'El usuario aprobador es obligatorio.', 1;
     IF @CodigoEstado NOT IN ('APROBADA', 'RECHAZADA')
-        THROW 50162, 'La decisión debe ser APROBADA o RECHAZADA.', 1;
+        THROW 50162, 'La decision debe ser APROBADA o RECHAZADA.', 1;
     IF @CodigoEstado = 'RECHAZADA' AND NULLIF(LTRIM(RTRIM(@ComentarioDecision)), '') IS NULL
         THROW 50163, 'Debes indicar el motivo del rechazo.', 1;
     IF NOT EXISTS
@@ -349,7 +740,11 @@ BEGIN
            AND (ca.FechaFin IS NULL OR ca.FechaFin >= CONVERT(DATE, SYSDATETIME()))
         WHERE spa.IdSolicitudPersonaArea = @IdSolicitudPersonaArea
     )
-        THROW 50164, 'El acceso no existe o no está asignado a este aprobador.', 1;
+        THROW 50164, 'El acceso no existe o no esta asignado a este aprobador.', 1;
+
+    UPDATE dbo.Solicitud_Persona_Area
+       SET RequiereAprobacion = 1
+     WHERE IdSolicitudPersonaArea = @IdSolicitudPersonaArea;
 
     DECLARE @IdEstadoAprobacion SMALLINT;
     SELECT @IdEstadoAprobacion = IdEstadoAprobacion
@@ -357,7 +752,7 @@ BEGIN
     WHERE Codigo = @CodigoEstado;
 
     IF @IdEstadoAprobacion IS NULL
-        THROW 50165, 'El estado de aprobación no está configurado.', 1;
+        THROW 50165, 'El estado de aprobacion no esta configurado.', 1;
 
     DECLARE @IdAprobacionArea BIGINT;
     DECLARE @NumeroReenvio SMALLINT =
@@ -419,8 +814,8 @@ BEGIN
         s.NumeroSolicitud,
         p.IdPersona,
         p.NombreCompleto AS Persona,
-        COALESCE(p.NumeroDocumento, sp.CodigoEmpleadoHtis) AS NumeroDocumento,
-        CASE WHEN sp.CodigoEmpleadoHtis IS NOT NULL THEN N'HTIS'
+        p.NumeroDocumento,
+        CASE WHEN ti.Codigo = 'EMPLEADO' THEN N'HTIS'
              ELSE COALESCE(pr.NombreComercial, pr.NombreLegal, p.EmpresaTexto) END AS Empresa,
         a.IdArea,
         a.Nombre AS Area,
@@ -434,12 +829,14 @@ BEGIN
         COALESCE(ultima.Estado, pendiente.Nombre, N'Pendiente') AS Estado,
         ultima.FechaDecision,
         ultima.ComentarioDecision,
-        sp.CodigoEmpleadoHtis
+        CASE WHEN ti.Codigo = 'EMPLEADO' THEN p.NumeroDocumento ELSE NULL END AS CodigoEmpleadoHtis
     FROM dbo.Solicitud_Persona_Area AS spa
     INNER JOIN dbo.Solicitud_Persona AS sp
         ON sp.IdSolicitudPersona = spa.IdSolicitudPersona
     INNER JOIN dbo.Solicitud_Ingreso AS s
         ON s.IdSolicitud = sp.IdSolicitud
+    LEFT JOIN dbo.Cat_Tipo_Ingreso AS ti
+        ON ti.IdTipoIngreso = s.IdTipoIngreso
     LEFT JOIN dbo.Persona AS p
         ON p.IdPersona = sp.IdPersona
     INNER JOIN dbo.Cat_Area AS a
@@ -476,7 +873,6 @@ BEGIN
         FROM dbo.Cat_Estado_Aprobacion_Area
         WHERE Codigo = 'PENDIENTE'
     ) AS pendiente
-    WHERE COALESCE(spa.RequiereAprobacion, a.RequiereAprobacion, 0) = 1
     ORDER BY
         CASE WHEN COALESCE(ultima.CodigoEstado, pendiente.Codigo, 'PENDIENTE') = 'PENDIENTE' THEN 0 ELSE 1 END,
         COALESCE(ultima.FechaSolicitud, spa.FechaCreacion) DESC,
@@ -487,7 +883,7 @@ GO
 -- dbo.usp_Catalogo_Listar
 /*
   Capa de acceso usada por la API. Como el modelo no tiene FOREIGN KEY,
-  estos procedimientos validan explícitamente las relaciones lógicas.
+  estos procedimientos validan explicitamente las relaciones logicas.
 */
 
 CREATE OR ALTER PROCEDURE dbo.usp_Catalogo_Listar
@@ -497,7 +893,7 @@ BEGIN
     SET NOCOUNT ON;
 
     IF @Catalogo = 'estados-generales'
-        SELECT CONVERT(INT, IdEstadoGeneral), Codigo, Nombre, Descripcion FROM dbo.Cat_Estado_General WHERE ISNULL(EsActivo, 1) = 1 ORDER BY OrdenVisualizacion, Nombre;
+        SELECT CONVERT(INT, IdEstadoGeneral), Codigo, Nombre, Descripcion FROM dbo.Cat_Estado_General ORDER BY OrdenVisualizacion, Nombre;
     ELSE IF @Catalogo = 'tipos-ingreso'
         SELECT CONVERT(INT, IdTipoIngreso), Codigo, Nombre, Descripcion FROM dbo.Cat_Tipo_Ingreso WHERE ISNULL(IdEstadoGeneral, 1) = 1 ORDER BY Nombre;
     ELSE IF @Catalogo = 'estados-solicitud'
@@ -517,7 +913,7 @@ BEGIN
     ELSE IF @Catalogo = 'requerimientos'
         SELECT IdRequerimiento, Codigo, Nombre, Descripcion FROM dbo.Cat_Requerimiento WHERE ISNULL(IdEstadoGeneral, 1) = 1 ORDER BY Nombre;
     ELSE
-        THROW 50100, 'Catálogo no permitido.', 1;
+        THROW 50100, 'Catalogo no permitido.', 1;
 END;
 GO
 
@@ -575,8 +971,41 @@ BEGIN
         );
     END;
 
+    -- La secuencia puede quedar atrasada cuando se importan datos o se restauran
+    -- respaldos. Se compara con la llave mayor existente antes de reservar el ID.
+    DECLARE @MaximoExistente BIGINT = 0;
+
+    IF @NombreEntidad = 'Actividad'
+        SELECT @MaximoExistente = ISNULL(MAX(IdActividad), 0) FROM dbo.Actividad;
+    ELSE IF @NombreEntidad = 'Aprobacion_Area'
+        SELECT @MaximoExistente = ISNULL(MAX(IdAprobacionArea), 0) FROM dbo.Aprobacion_Area;
+    ELSE IF @NombreEntidad = 'Config_Aprobador_Area'
+        SELECT @MaximoExistente = ISNULL(MAX(IdConfigAprobador), 0) FROM dbo.Config_Aprobador_Area;
+    ELSE IF @NombreEntidad = 'Historial_Solicitud'
+        SELECT @MaximoExistente = ISNULL(MAX(IdHistorialSolicitud), 0) FROM dbo.Historial_Solicitud;
+    ELSE IF @NombreEntidad = 'Persona'
+        SELECT @MaximoExistente = ISNULL(MAX(IdPersona), 0) FROM dbo.Persona;
+    ELSE IF @NombreEntidad = 'Proveedor'
+        SELECT @MaximoExistente = ISNULL(MAX(IdProveedor), 0) FROM dbo.Proveedor;
+    ELSE IF @NombreEntidad = 'Registro_Ingreso'
+        SELECT @MaximoExistente = ISNULL(MAX(IdRegistroIngreso), 0) FROM dbo.Registro_Ingreso;
+    ELSE IF @NombreEntidad = 'Solicitud_Ingreso'
+        SELECT @MaximoExistente = ISNULL(MAX(IdSolicitud), 0) FROM dbo.Solicitud_Ingreso;
+    ELSE IF @NombreEntidad = 'Solicitud_Persona'
+        SELECT @MaximoExistente = ISNULL(MAX(IdSolicitudPersona), 0) FROM dbo.Solicitud_Persona;
+    ELSE IF @NombreEntidad = 'Solicitud_Persona_Area'
+        SELECT @MaximoExistente = ISNULL(MAX(IdSolicitudPersonaArea), 0) FROM dbo.Solicitud_Persona_Area;
+    ELSE IF @NombreEntidad = 'Solicitud_Persona_Requerimiento'
+        SELECT @MaximoExistente = ISNULL(MAX(IdSolicitudPersonaReq), 0) FROM dbo.Solicitud_Persona_Requerimiento;
+    ELSE IF @NombreEntidad = 'Usuario_Area'
+        SELECT @MaximoExistente = ISNULL(MAX(IdUsuarioArea), 0) FROM dbo.Usuario_Area;
+
     UPDATE dbo.Control_Secuencia WITH (UPDLOCK, HOLDLOCK)
-       SET UltimoValor = ISNULL(UltimoValor, 0) + 1,
+       SET UltimoValor =
+               CASE
+                   WHEN ISNULL(UltimoValor, 0) < @MaximoExistente THEN @MaximoExistente
+                   ELSE ISNULL(UltimoValor, 0)
+               END + 1,
            FechaModificacion = SYSDATETIME()
      WHERE NombreEntidad = @NombreEntidad;
 
@@ -616,13 +1045,30 @@ BEGIN
         p.CargoFuncion,
         COALESCE(pr.NombreComercial, pr.NombreLegal, p.EmpresaTexto) AS Empresa,
         eg.Nombre AS Estado,
-        CONVERT(INT, COUNT(DISTINCT spa.IdSolicitudPersonaArea)) AS CantidadAccesos
+        CONVERT(INT, COUNT(DISTINCT CASE
+            WHEN ultimaAprobacion.Codigo = 'APROBADA'
+             AND es.Codigo = 'LISTA_INGRESO'
+             AND (s.FechaInicio IS NULL OR CONVERT(DATE, GETDATE()) >= s.FechaInicio)
+             AND (s.FechaFin IS NULL OR CONVERT(DATE, GETDATE()) <= s.FechaFin)
+            THEN spa.IdSolicitudPersonaArea
+        END)) AS CantidadAccesos
     FROM dbo.Persona AS p
     INNER JOIN dbo.Solicitud_Persona AS sp ON sp.IdPersona = p.IdPersona
     INNER JOIN dbo.Solicitud_Ingreso AS s ON s.IdSolicitud = sp.IdSolicitud
+    INNER JOIN dbo.Cat_Estado_Solicitud AS es ON es.IdEstadoSolicitud = s.IdEstadoSolicitud
     LEFT JOIN dbo.Solicitud_Persona_Area AS spa ON spa.IdSolicitudPersona = sp.IdSolicitudPersona
     LEFT JOIN dbo.Proveedor AS pr ON pr.IdProveedor = p.IdProveedor
     LEFT JOIN dbo.Cat_Estado_General AS eg ON eg.IdEstadoGeneral = p.IdEstadoGeneral
+    OUTER APPLY
+    (
+        SELECT TOP (1) ea.Codigo
+        FROM dbo.Aprobacion_Area AS aa
+        LEFT JOIN dbo.Cat_Estado_Aprobacion_Area AS ea
+            ON ea.IdEstadoAprobacion = aa.IdEstadoAprobacion
+        WHERE aa.IdSolicitudPersonaArea = spa.IdSolicitudPersonaArea
+        ORDER BY COALESCE(aa.FechaDecision, aa.FechaSolicitud, aa.FechaCreacion) DESC,
+                 aa.IdAprobacionArea DESC
+    ) AS ultimaAprobacion
     WHERE @AccesoTotal = 1
        OR s.IdUsuarioSolicitante = @IdUsuario
        OR EXISTS
@@ -661,7 +1107,7 @@ BEGIN
         THROW 50404, 'La persona no existe.', 1;
 
     IF NULLIF(LTRIM(RTRIM(@FotografiaUrl)), '') IS NULL
-        THROW 50405, 'La URL de la fotografía es obligatoria.', 1;
+        THROW 50405, 'La URL de la fotografia es obligatoria.', 1;
 
     UPDATE dbo.Persona
     SET FotografiaUrl = LTRIM(RTRIM(@FotografiaUrl)),
@@ -748,29 +1194,28 @@ BEGIN
         u.Nombre AS Ubicacion,
         s.FechaInicio,
         s.FechaFin,
-        COALESCE(spa.RequiereAprobacion, a.RequiereAprobacion) AS RequiereAprobacion,
-        COALESCE
-        (
-            ultimaAprobacion.EstadoAcceso,
-            CASE
-                WHEN COALESCE(spa.RequiereAprobacion, a.RequiereAprobacion, 0) = 0
-                    THEN N'No requiere aprobaciÃ³n'
-                ELSE N'Pendiente'
-            END
-        ) AS EstadoAcceso,
-        COALESCE
-        (
-            ultimaAprobacion.CodigoEstadoAcceso,
-            CASE
-                WHEN COALESCE(spa.RequiereAprobacion, a.RequiereAprobacion, 0) = 0
-                    THEN 'NO_REQUIERE'
-                ELSE 'PENDIENTE'
-            END
-        ) AS CodigoEstadoAcceso,
+        CONVERT(BIT, 1) AS RequiereAprobacion,
+        CASE
+            WHEN ultimaAprobacion.CodigoEstadoAcceso = 'RECHAZADA' THEN N'Rechazada'
+            WHEN ISNULL(ultimaAprobacion.CodigoEstadoAcceso, 'PENDIENTE') <> 'APROBADA' THEN N'Pendiente de aprobacion'
+            WHEN s.FechaInicio IS NOT NULL AND CONVERT(DATE, GETDATE()) < s.FechaInicio THEN N'Aun no vigente'
+            WHEN s.FechaFin IS NOT NULL AND CONVERT(DATE, GETDATE()) > s.FechaFin THEN N'Acceso vencido'
+            WHEN es.Codigo <> 'LISTA_INGRESO' THEN N'Solicitud no habilitada'
+            ELSE N'Acceso autorizado'
+        END AS EstadoAcceso,
+        CASE
+            WHEN ultimaAprobacion.CodigoEstadoAcceso = 'RECHAZADA' THEN 'RECHAZADA'
+            WHEN ISNULL(ultimaAprobacion.CodigoEstadoAcceso, 'PENDIENTE') <> 'APROBADA' THEN 'PENDIENTE'
+            WHEN s.FechaInicio IS NOT NULL AND CONVERT(DATE, GETDATE()) < s.FechaInicio THEN 'NO_VIGENTE'
+            WHEN s.FechaFin IS NOT NULL AND CONVERT(DATE, GETDATE()) > s.FechaFin THEN 'VENCIDA'
+            WHEN es.Codigo <> 'LISTA_INGRESO' THEN 'SOLICITUD_NO_HABILITADA'
+            ELSE 'AUTORIZADA'
+        END AS CodigoEstadoAcceso,
         ultimaAprobacion.FechaDecision,
         ultimaAprobacion.ComentarioDecision
     FROM dbo.Solicitud_Persona AS sp
     INNER JOIN dbo.Solicitud_Ingreso AS s ON s.IdSolicitud = sp.IdSolicitud
+    INNER JOIN dbo.Cat_Estado_Solicitud AS es ON es.IdEstadoSolicitud = s.IdEstadoSolicitud
     INNER JOIN dbo.Solicitud_Persona_Area AS spa
         ON spa.IdSolicitudPersona = sp.IdSolicitudPersona
     LEFT JOIN dbo.Cat_Area AS a ON a.IdArea = spa.IdArea
@@ -837,7 +1282,7 @@ BEGIN
     IF @IdEstadoGeneral IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Cat_Estado_General WHERE IdEstadoGeneral = @IdEstadoGeneral)
         THROW 50114, 'El estado general no existe.', 1;
     IF EXISTS (SELECT 1 FROM dbo.Persona WHERE NumeroDocumento = @NumeroDocumento AND (IdTipoDocumento = @IdTipoDocumento OR (IdTipoDocumento IS NULL AND @IdTipoDocumento IS NULL)))
-        THROW 50115, 'Ya existe una persona con ese tipo y número de documento.', 1;
+        THROW 50115, 'Ya existe una persona con ese tipo y numero de documento.', 1;
 
     DECLARE @IdPersona BIGINT;
     EXEC dbo.usp_ObtenerSiguienteId 'Persona', @IdPersona OUTPUT;
@@ -910,8 +1355,7 @@ BEGIN
         CASE
             WHEN asignacion.IdSolicitudPersonaArea IS NULL THEN 'NO_ASIGNADA'
             WHEN asignacion.CodigoAprobacion = 'RECHAZADA' THEN 'RECHAZADA'
-            WHEN ISNULL(asignacion.RequiereAprobacion, 0) = 1
-             AND ISNULL(asignacion.CodigoAprobacion, 'PENDIENTE') <> 'APROBADA' THEN 'PENDIENTE'
+            WHEN ISNULL(asignacion.CodigoAprobacion, 'PENDIENTE') <> 'APROBADA' THEN 'PENDIENTE'
             WHEN CONVERT(DATE, GETDATE()) NOT BETWEEN asignacion.FechaInicio AND asignacion.FechaFin THEN 'NO_VIGENTE'
             WHEN asignacion.CodigoEstadoSolicitud <> 'LISTA_INGRESO' THEN 'SOLICITUD_NO_HABILITADA'
             ELSE 'AUTORIZADA'
@@ -919,16 +1363,14 @@ BEGIN
         CASE
             WHEN asignacion.IdSolicitudPersonaArea IS NULL THEN N'No asignada'
             WHEN asignacion.CodigoAprobacion = 'RECHAZADA' THEN N'Rechazada'
-            WHEN ISNULL(asignacion.RequiereAprobacion, 0) = 1
-             AND ISNULL(asignacion.CodigoAprobacion, 'PENDIENTE') <> 'APROBADA' THEN N'Pendiente de aprobación'
+            WHEN ISNULL(asignacion.CodigoAprobacion, 'PENDIENTE') <> 'APROBADA' THEN N'Pendiente de aprobacion'
             WHEN CONVERT(DATE, GETDATE()) NOT BETWEEN asignacion.FechaInicio AND asignacion.FechaFin THEN N'Fuera de vigencia'
-            WHEN asignacion.CodigoEstadoSolicitud <> 'LISTA_INGRESO' THEN N'Solicitud aún no habilitada'
+            WHEN asignacion.CodigoEstadoSolicitud <> 'LISTA_INGRESO' THEN N'Solicitud aun no habilitada'
             ELSE N'Acceso autorizado'
         END AS EstadoAcceso,
         CONVERT(BIT, CASE
             WHEN asignacion.IdSolicitudPersonaArea IS NOT NULL
-             AND ISNULL(asignacion.CodigoAprobacion,
-                 CASE WHEN ISNULL(asignacion.RequiereAprobacion, 0) = 0 THEN 'APROBADA' ELSE 'PENDIENTE' END) = 'APROBADA'
+             AND ISNULL(asignacion.CodigoAprobacion, 'PENDIENTE') = 'APROBADA'
              AND CONVERT(DATE, GETDATE()) BETWEEN asignacion.FechaInicio AND asignacion.FechaFin
              AND asignacion.CodigoEstadoSolicitud = 'LISTA_INGRESO'
             THEN 1 ELSE 0 END) AS TieneAcceso,
@@ -943,7 +1385,7 @@ BEGIN
     (
         SELECT TOP (1)
             spa.IdSolicitudPersonaArea,
-            COALESCE(spa.RequiereAprobacion, a.RequiereAprobacion, 0) AS RequiereAprobacion,
+            CONVERT(BIT, 1) AS RequiereAprobacion,
             s.NumeroSolicitud,
             s.NombreActividad,
             u.Nombre AS Ubicacion,
@@ -1071,6 +1513,88 @@ BEGIN
 END;
 GO
 
+-- dbo.usp_Proveedor_Usuario_Crear
+CREATE OR ALTER PROCEDURE dbo.usp_Proveedor_Usuario_Crear
+    @Codigo VARCHAR(30) = NULL,
+    @NombreLegal NVARCHAR(200),
+    @NombreComercial NVARCHAR(200) = NULL,
+    @RTN VARCHAR(30) = NULL,
+    @ContactoPrincipal NVARCHAR(200) = NULL,
+    @CorreoPrincipal VARCHAR(254),
+    @TelefonoPrincipal VARCHAR(30) = NULL,
+    @IdEstadoGeneral SMALLINT = NULL,
+    @ContrasenaTemporal VARCHAR(200),
+    @UsuarioCreacion VARCHAR(50)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NULLIF(LTRIM(RTRIM(@CorreoPrincipal)), '') IS NULL
+        THROW 50105, 'El correo principal es obligatorio para crear la cuenta del proveedor.', 1;
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        DECLARE @ProveedorCreado TABLE (IdProveedor BIGINT);
+        INSERT INTO @ProveedorCreado (IdProveedor)
+        EXEC dbo.usp_Proveedor_Crear
+            @Codigo = @Codigo,
+            @NombreLegal = @NombreLegal,
+            @NombreComercial = @NombreComercial,
+            @RTN = @RTN,
+            @ContactoPrincipal = @ContactoPrincipal,
+            @CorreoPrincipal = @CorreoPrincipal,
+            @TelefonoPrincipal = @TelefonoPrincipal,
+            @IdEstadoGeneral = @IdEstadoGeneral,
+            @Usuario = @UsuarioCreacion;
+
+        DECLARE @IdProveedor BIGINT = (SELECT TOP (1) IdProveedor FROM @ProveedorCreado);
+        DECLARE @IdUsuario VARCHAR(50) = CONCAT('proveedor.', CONVERT(VARCHAR(20), @IdProveedor));
+        DECLARE @NombreUsuario NVARCHAR(200) = COALESCE
+        (
+            NULLIF(LTRIM(RTRIM(@ContactoPrincipal)), ''),
+            NULLIF(LTRIM(RTRIM(@NombreComercial)), ''),
+            @NombreLegal
+        );
+        DECLARE @Activo BIT = COALESCE
+        (
+            (SELECT TOP (1) EsActivo FROM dbo.Cat_Estado_General WHERE IdEstadoGeneral = @IdEstadoGeneral),
+            1
+        );
+
+        DECLARE @UsuarioCreado TABLE (IdUsuario VARCHAR(50));
+        INSERT INTO @UsuarioCreado (IdUsuario)
+        EXEC dbo.usp_Usuario_Crear
+            @IdUsuario = @IdUsuario,
+            @NombreCompleto = @NombreUsuario,
+            @Correo = @CorreoPrincipal,
+            @Telefono = @TelefonoPrincipal,
+            @Puesto = N'Proveedor',
+            @Contrasena = @ContrasenaTemporal,
+            @IdArea = NULL,
+            @PuedeSolicitar = 0,
+            @EsAprobador = 0,
+            @Activo = @Activo,
+            @UsuarioCreacion = @UsuarioCreacion;
+
+        EXEC dbo.usp_Usuario_Rol_Asignar
+            @IdUsuario = @IdUsuario,
+            @CodigoRol = 'PROVEEDOR',
+            @UsuarioAsignacion = @UsuarioCreacion;
+
+        COMMIT TRANSACTION;
+
+        SELECT @IdProveedor AS IdProveedor,
+               @IdUsuario AS IdUsuario;
+    END TRY
+    BEGIN CATCH
+        IF XACT_STATE() <> 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH;
+END;
+GO
+
 -- dbo.usp_Registro_Ingreso_Listar
 CREATE OR ALTER PROCEDURE dbo.usp_Registro_Ingreso_Listar AS
 BEGIN
@@ -1125,13 +1649,12 @@ BEGIN
                            aa.IdAprobacionArea DESC
               ) AS ultima
               WHERE spa.IdSolicitudPersona = sp.IdSolicitudPersona
-                AND ISNULL(spa.RequiereAprobacion, 0) = 1
                 AND ISNULL(ultima.Codigo, 'PENDIENTE') <> 'APROBADA'
           )
         ORDER BY s.FechaInicio DESC, s.IdSolicitud DESC;
 
         IF @IdSolicitud IS NULL
-            THROW 50512, 'La persona no tiene una autorizaciÃ³n vigente y completamente aprobada.', 1;
+            THROW 50512, 'La persona no tiene una autorizacion vigente y completamente aprobada.', 1;
 
         IF EXISTS
         (
@@ -1193,7 +1716,7 @@ BEGIN
     EXEC dbo.usp_Historial_Solicitud_Registrar
         @IdSolicitud,
         'CONTROL_ACCESO',
-        N'Movimiento registrado en porterÃ­a',
+        N'Movimiento registrado en porteria',
         @TipoMovimiento,
         @IdUsuarioSeguridad;
 
@@ -1225,6 +1748,10 @@ BEGIN
     IF @IdSolicitud IS NULL
         THROW 50530, 'El acceso de la persona no existe.', 1;
 
+    UPDATE dbo.Solicitud_Persona_Area
+       SET RequiereAprobacion = 1
+     WHERE IdSolicitudPersonaArea = @IdSolicitudPersonaArea;
+
     IF NOT EXISTS
     (
         SELECT 1
@@ -1243,7 +1770,7 @@ BEGIN
                  )
           )
     )
-        THROW 50531, 'No tienes permiso para reenviar esta aprobación.', 1;
+        THROW 50531, 'No tienes permiso para reenviar esta aprobacion.', 1;
 
     DECLARE @IdEstadoPendiente SMALLINT =
     (
@@ -1253,7 +1780,7 @@ BEGIN
     );
 
     IF @IdEstadoPendiente IS NULL
-        THROW 50532, 'El estado PENDIENTE no está configurado.', 1;
+        THROW 50532, 'El estado PENDIENTE no esta configurado.', 1;
 
     DECLARE @Aprobadores TABLE
     (
@@ -1271,7 +1798,7 @@ BEGIN
       AND (caa.FechaFin IS NULL OR caa.FechaFin >= CONVERT(DATE, SYSDATETIME()));
 
     IF NOT EXISTS (SELECT 1 FROM @Aprobadores)
-        THROW 50533, 'El área no tiene aprobadores activos configurados.', 1;
+        THROW 50533, 'El area no tiene aprobadores activos configurados.', 1;
 
     BEGIN TRANSACTION;
 
@@ -1318,6 +1845,18 @@ BEGIN
 END;
 GO
 
+-- dbo.usp_Solicitud_Aprobacion_Obligatoria_Normalizar
+CREATE OR ALTER PROCEDURE dbo.usp_Solicitud_Aprobacion_Obligatoria_Normalizar
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    UPDATE dbo.Solicitud_Persona_Area
+       SET RequiereAprobacion = 1
+     WHERE ISNULL(RequiereAprobacion, 0) <> 1;
+END;
+GO
+
 -- dbo.usp_Solicitud_Enviar
 CREATE OR ALTER PROCEDURE dbo.usp_Solicitud_Enviar @IdSolicitud BIGINT,@IdUsuario VARCHAR(50)
 AS
@@ -1325,16 +1864,39 @@ BEGIN
     SET NOCOUNT ON; SET XACT_ABORT ON;
     IF NOT EXISTS(SELECT 1 FROM dbo.Solicitud_Ingreso WHERE IdSolicitud=@IdSolicitud) THROW 50500,'La solicitud no existe.',1;
     IF NOT EXISTS(SELECT 1 FROM dbo.Solicitud_Ingreso s WHERE s.IdSolicitud=@IdSolicitud AND (s.IdUsuarioSolicitante=@IdUsuario OR EXISTS(SELECT 1 FROM dbo.Usuario_Rol ur JOIN dbo.Rol r ON r.IdRol=ur.IdRol WHERE ur.IdUsuario=@IdUsuario AND r.Codigo='ADMINISTRADOR'))) THROW 50501,'No tienes permiso para enviar esta solicitud.',1;
-    IF EXISTS(SELECT 1 FROM dbo.Solicitud_Ingreso s JOIN dbo.Cat_Estado_Solicitud e ON e.IdEstadoSolicitud=s.IdEstadoSolicitud WHERE s.IdSolicitud=@IdSolicitud AND e.EsEstadoFinal=1) THROW 50502,'La solicitud ya estÃ¡ finalizada o cancelada.',1;
+    IF EXISTS(SELECT 1 FROM dbo.Solicitud_Ingreso s JOIN dbo.Cat_Estado_Solicitud e ON e.IdEstadoSolicitud=s.IdEstadoSolicitud WHERE s.IdSolicitud=@IdSolicitud AND e.EsEstadoFinal=1) THROW 50502,'La solicitud ya esta finalizada o cancelada.',1;
+    IF EXISTS
+    (
+      SELECT 1
+      FROM dbo.Solicitud_Persona sp
+      WHERE sp.IdSolicitud=@IdSolicitud
+        AND NOT EXISTS (SELECT 1 FROM dbo.Solicitud_Persona_Area spa WHERE spa.IdSolicitudPersona=sp.IdSolicitudPersona)
+    ) THROW 50503,'Asigna al menos un area a cada persona antes de enviar la solicitud.',1;
 
-    UPDATE spa SET RequiereAprobacion=CONVERT(BIT,CASE WHEN EXISTS(SELECT 1 FROM dbo.Config_Aprobador_Area ca WHERE ca.IdArea=spa.IdArea AND ISNULL(ca.IdEstadoGeneral,1)=1 AND (ca.FechaInicio IS NULL OR ca.FechaInicio<=CONVERT(date,SYSDATETIME())) AND (ca.FechaFin IS NULL OR ca.FechaFin>=CONVERT(date,SYSDATETIME()))) THEN 1 ELSE 0 END)
+    IF EXISTS
+    (
+      SELECT 1
+      FROM dbo.Solicitud_Persona_Area spa
+      INNER JOIN dbo.Solicitud_Persona sp ON sp.IdSolicitudPersona=spa.IdSolicitudPersona
+      WHERE sp.IdSolicitud=@IdSolicitud
+        AND NOT EXISTS
+        (
+          SELECT 1 FROM dbo.Config_Aprobador_Area ca
+          WHERE ca.IdArea=spa.IdArea
+            AND ca.IdUsuarioAprobador IS NOT NULL
+            AND ISNULL(ca.IdEstadoGeneral,1)=1
+            AND (ca.FechaInicio IS NULL OR ca.FechaInicio<=CONVERT(date,SYSDATETIME()))
+            AND (ca.FechaFin IS NULL OR ca.FechaFin>=CONVERT(date,SYSDATETIME()))
+        )
+    ) THROW 50504,'Todas las areas deben tener al menos un aprobador activo antes de enviar la solicitud.',1;
+
+    UPDATE spa SET RequiereAprobacion=CONVERT(BIT,1)
     FROM dbo.Solicitud_Persona_Area spa JOIN dbo.Solicitud_Persona sp ON sp.IdSolicitudPersona=spa.IdSolicitudPersona WHERE sp.IdSolicitud=@IdSolicitud;
 
     DECLARE @Codigo VARCHAR(40)=CASE
       WHEN NOT EXISTS(SELECT 1 FROM dbo.Solicitud_Persona WHERE IdSolicitud=@IdSolicitud) AND EXISTS(SELECT 1 FROM dbo.Solicitud_Ingreso WHERE IdSolicitud=@IdSolicitud AND IdProveedor IS NOT NULL) THEN 'PENDIENTE_PROVEEDOR'
       WHEN NOT EXISTS(SELECT 1 FROM dbo.Solicitud_Persona WHERE IdSolicitud=@IdSolicitud) THEN 'EN_REVISION'
-      WHEN EXISTS(SELECT 1 FROM dbo.Solicitud_Persona_Area spa JOIN dbo.Solicitud_Persona sp ON sp.IdSolicitudPersona=spa.IdSolicitudPersona WHERE sp.IdSolicitud=@IdSolicitud AND spa.RequiereAprobacion=1) THEN 'PENDIENTE_APROBACIONES'
-      ELSE 'LISTA_INGRESO' END;
+      ELSE 'PENDIENTE_APROBACIONES' END;
     UPDATE s SET IdEstadoSolicitud=e.IdEstadoSolicitud,FechaModificacion=SYSDATETIME(),UsuarioModificacion=@IdUsuario,FechaEnvioProveedor=CASE WHEN @Codigo='PENDIENTE_PROVEEDOR' THEN SYSDATETIME() ELSE FechaEnvioProveedor END
     FROM dbo.Solicitud_Ingreso s JOIN dbo.Cat_Estado_Solicitud e ON e.Codigo=@Codigo WHERE s.IdSolicitud=@IdSolicitud;
     EXEC dbo.usp_Historial_Solicitud_Registrar @IdSolicitud,'ESTADO_SOLICITUD',N'Solicitud enviada al flujo',@Codigo,@IdUsuario;
@@ -1379,7 +1941,6 @@ BEGIN
                      aa.IdAprobacionArea DESC
         ) AS ultima
         WHERE sp.IdSolicitud = @IdSolicitud
-          AND ISNULL(spa.RequiereAprobacion, 0) = 1
           AND ISNULL(ultima.Codigo, 'PENDIENTE') NOT IN ('APROBADA', 'RECHAZADA')
     )
         SET @Codigo = 'PENDIENTE_APROBACIONES';
@@ -1397,7 +1958,7 @@ BEGIN
     EXEC dbo.usp_Historial_Solicitud_Registrar
         @IdSolicitud,
         'APROBACION_AREA',
-        N'Estado consolidado despuÃ©s de una decisiÃ³n',
+        N'Estado consolidado despues de una decision',
         @Codigo,
         @IdUsuario;
 END;
@@ -1476,9 +2037,9 @@ BEGIN
     IF NULLIF(LTRIM(RTRIM(@Usuario)), '') IS NULL
         THROW 50143, 'Usuario es obligatorio.', 1;
     IF @FechaInicio IS NOT NULL AND @FechaFin IS NOT NULL AND @FechaFin < @FechaInicio
-        THROW 50144, 'El rango de fechas no es vÃ¡lido.', 1;
+        THROW 50144, 'El rango de fechas no es valido.', 1;
     IF @CantidadEstimada IS NULL OR @CantidadEstimada < 1
-        THROW 50145, 'La cantidad estimada debe ser como mÃ­nimo una persona.', 1;
+        THROW 50145, 'La cantidad estimada debe ser como minimo una persona.', 1;
     IF NOT EXISTS (SELECT 1 FROM dbo.Usuario WHERE IdUsuario = @IdUsuarioSolicitante)
         THROW 50146, 'El usuario solicitante no existe.', 1;
     IF @IdTipoIngreso IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Cat_Tipo_Ingreso WHERE IdTipoIngreso = @IdTipoIngreso)
@@ -1488,30 +2049,36 @@ BEGIN
     IF @IdProveedor IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Proveedor WHERE IdProveedor = @IdProveedor)
         THROW 50149, 'El proveedor no existe.', 1;
     IF @IdAreaSolicitante IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Cat_Area WHERE IdArea = @IdAreaSolicitante)
-        THROW 50150, 'El Ã¡rea solicitante no existe.', 1;
+        THROW 50150, 'El area solicitante no existe.', 1;
     IF @IdUbicacion IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Cat_Ubicacion WHERE IdUbicacion = @IdUbicacion)
-        THROW 50151, 'La ubicaciÃ³n no existe.', 1;
+        THROW 50151, 'La ubicacion no existe.', 1;
 
+    DECLARE @CodigoTipoActual VARCHAR(30) =
+    (
+        SELECT UPPER(LTRIM(RTRIM(tipo.Codigo)))
+        FROM dbo.Solicitud_Ingreso AS solicitud
+        LEFT JOIN dbo.Cat_Tipo_Ingreso AS tipo ON tipo.IdTipoIngreso = solicitud.IdTipoIngreso
+        WHERE solicitud.IdSolicitud = @IdSolicitud
+    );
     DECLARE @CodigoTipo VARCHAR(30) =
     (
         SELECT UPPER(LTRIM(RTRIM(Codigo)))
         FROM dbo.Cat_Tipo_Ingreso
         WHERE IdTipoIngreso = @IdTipoIngreso
     );
+    IF ISNULL(@CodigoTipoActual, '') <> ISNULL(@CodigoTipo, '')
+       AND EXISTS (SELECT 1 FROM dbo.Solicitud_Persona WHERE IdSolicitud = @IdSolicitud)
+        THROW 50155, 'No se puede cambiar el tipo porque la solicitud ya contiene integrantes.', 1;
     IF @CodigoTipo IN ('EMPLEADO', 'NUEVO_EMPLEADO') SET @IdProveedor = NULL;
     IF @CodigoTipo = 'EMPLEADO'
     BEGIN
         SET @ContactoProveedor = NULL;
         SET @CorreoProveedor = NULL;
-        IF EXISTS (SELECT 1 FROM dbo.Solicitud_Persona WHERE IdSolicitud = @IdSolicitud AND IdPersona IS NOT NULL)
-            THROW 50155, 'La solicitud contiene personas locales y no puede cambiarse al tipo EMPLEADO.', 1;
     END
     ELSE
     BEGIN
         IF NULLIF(LTRIM(RTRIM(@ContactoProveedor)), '') IS NULL THROW 50152, 'El contacto es obligatorio.', 1;
         IF NULLIF(LTRIM(RTRIM(@CorreoProveedor)), '') IS NULL OR @CorreoProveedor NOT LIKE '%_@_%._%' THROW 50153, 'El correo es obligatorio y debe tener un formato vÃ¡lido.', 1;
-        IF EXISTS (SELECT 1 FROM dbo.Solicitud_Persona WHERE IdSolicitud = @IdSolicitud AND CodigoEmpleadoHtis IS NOT NULL)
-            THROW 50156, 'La solicitud contiene empleados HTIS y no puede cambiarse a un tipo de personas locales.', 1;
     END;
 
     UPDATE dbo.Solicitud_Ingreso
@@ -1564,9 +2131,9 @@ BEGIN
     IF NULLIF(LTRIM(RTRIM(@NombreActividad)), '') IS NULL
         THROW 50120, 'NombreActividad es obligatorio.', 1;
     IF @FechaInicio IS NOT NULL AND @FechaFin IS NOT NULL AND @FechaFin < @FechaInicio
-        THROW 50121, 'El rango de fechas no es vÃ¡lido.', 1;
+        THROW 50121, 'El rango de fechas no es valido.', 1;
     IF @CantidadEstimada IS NULL OR @CantidadEstimada < 1
-        THROW 50122, 'La cantidad estimada debe ser como mÃ­nimo una persona.', 1;
+        THROW 50122, 'La cantidad estimada debe ser como minimo una persona.', 1;
     IF NOT EXISTS (SELECT 1 FROM dbo.Usuario WHERE IdUsuario = @IdUsuarioSolicitante)
         THROW 50123, 'El usuario solicitante no existe.', 1;
     IF @IdTipoIngreso IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Cat_Tipo_Ingreso WHERE IdTipoIngreso = @IdTipoIngreso)
@@ -1576,9 +2143,9 @@ BEGIN
     IF @IdProveedor IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Proveedor WHERE IdProveedor = @IdProveedor)
         THROW 50126, 'El proveedor no existe.', 1;
     IF @IdAreaSolicitante IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Cat_Area WHERE IdArea = @IdAreaSolicitante)
-        THROW 50127, 'El Ã¡rea solicitante no existe.', 1;
+        THROW 50127, 'El area solicitante no existe.', 1;
     IF @IdUbicacion IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Cat_Ubicacion WHERE IdUbicacion = @IdUbicacion)
-        THROW 50128, 'La ubicaciÃ³n no existe.', 1;
+        THROW 50128, 'La ubicacion no existe.', 1;
 
     DECLARE @CodigoTipo VARCHAR(30) =
     (
@@ -1645,7 +2212,14 @@ CREATE OR ALTER PROCEDURE dbo.usp_Solicitud_Ingreso_Listar
 AS
 BEGIN
  SET NOCOUNT ON;
- SELECT s.IdSolicitud,s.NumeroSolicitud,ti.Nombre,es.Nombre,s.FechaInicio,s.FechaFin,s.NombreActividad,u.NombreCompleto,CONVERT(int,COUNT(sp.IdSolicitudPersona))
+ SELECT s.IdSolicitud,s.NumeroSolicitud,ti.Nombre,
+        CASE WHEN es.Codigo='EN_REVISION' AND EXISTS
+        (
+            SELECT 1 FROM dbo.Solicitud_Persona sp2
+            WHERE sp2.IdSolicitud=s.IdSolicitud
+              AND NOT EXISTS (SELECT 1 FROM dbo.Solicitud_Persona_Area spa2 WHERE spa2.IdSolicitudPersona=sp2.IdSolicitudPersona)
+        ) THEN N'Pendiente de asignar areas' ELSE es.Nombre END,
+        s.FechaInicio,s.FechaFin,s.NombreActividad,u.NombreCompleto,CONVERT(int,COUNT(sp.IdSolicitudPersona))
  FROM dbo.Solicitud_Ingreso s
  LEFT JOIN dbo.Cat_Tipo_Ingreso ti ON ti.IdTipoIngreso=s.IdTipoIngreso
  LEFT JOIN dbo.Cat_Estado_Solicitud es ON es.IdEstadoSolicitud=s.IdEstadoSolicitud
@@ -1653,7 +2227,7 @@ BEGIN
  LEFT JOIN dbo.Solicitud_Persona sp ON sp.IdSolicitud=s.IdSolicitud
  WHERE (@AccesoTotal=1 OR s.IdUsuarioSolicitante=@IdUsuario)
    AND ISNULL(es.Codigo,'')<>'CANCELADA'
- GROUP BY s.IdSolicitud,s.NumeroSolicitud,ti.Nombre,es.Nombre,s.FechaInicio,s.FechaFin,s.NombreActividad,u.NombreCompleto,s.FechaCreacion
+ GROUP BY s.IdSolicitud,s.NumeroSolicitud,ti.Nombre,es.Codigo,es.Nombre,s.FechaInicio,s.FechaFin,s.NombreActividad,u.NombreCompleto,s.FechaCreacion
  ORDER BY s.FechaCreacion DESC,s.IdSolicitud DESC;
 END;
 GO
@@ -1690,40 +2264,41 @@ BEGIN
     SELECT
         sp.IdSolicitudPersona,
         sp.IdPersona,
-        COALESCE(p.NumeroDocumento, sp.CodigoEmpleadoHtis) AS NumeroDocumento,
+        p.NumeroDocumento,
         p.NombreCompleto,
         sp.IdEstadoPersonaSolicitud,
         sp.DatosCompletos,
         CASE
             WHEN ISNULL(resumen.AreasRechazadas, 0) > 0 THEN 'RECHAZADA'
             WHEN ISNULL(resumen.AreasPendientes, 0) > 0 THEN 'PENDIENTE'
-            WHEN ISNULL(resumen.AreasRequeridas, 0) = 0 THEN 'NO_REQUIERE'
+            WHEN ISNULL(resumen.AreasRequeridas, 0) = 0 THEN 'PENDIENTE_AREAS'
             ELSE 'APROBADA'
         END AS CodigoEstadoAprobacion,
         CASE
             WHEN ISNULL(resumen.AreasRechazadas, 0) > 0 THEN N'Rechazada'
-            WHEN ISNULL(resumen.AreasPendientes, 0) > 0 THEN N'Pendiente de aprobaciÃ³n'
-            WHEN ISNULL(resumen.AreasRequeridas, 0) = 0 THEN N'No requiere aprobaciÃ³n'
+            WHEN ISNULL(resumen.AreasPendientes, 0) > 0 THEN N'Pendiente de aprobacion'
+            WHEN ISNULL(resumen.AreasRequeridas, 0) = 0 THEN N'Pendiente de asignar areas'
             ELSE N'Aprobada'
         END AS EstadoAprobacion,
         ISNULL(resumen.AreasAprobadas, 0) AS AreasAprobadas,
         ISNULL(resumen.AreasPendientes, 0) AS AreasPendientes,
         ISNULL(resumen.AreasRechazadas, 0) AS AreasRechazadas,
         rechazos.DetalleRechazos,
-        sp.CodigoEmpleadoHtis
+        CASE WHEN ti.Codigo = 'EMPLEADO' THEN p.NumeroDocumento ELSE NULL END AS CodigoEmpleadoHtis
     FROM dbo.Solicitud_Persona AS sp
     LEFT JOIN dbo.Persona AS p ON p.IdPersona = sp.IdPersona
+    LEFT JOIN dbo.Solicitud_Ingreso AS s ON s.IdSolicitud = sp.IdSolicitud
+    LEFT JOIN dbo.Cat_Tipo_Ingreso AS ti ON ti.IdTipoIngreso = s.IdTipoIngreso
     OUTER APPLY
     (
         SELECT
-            COUNT(CASE WHEN ISNULL(spa.RequiereAprobacion, 0) = 1 THEN 1 END) AS AreasRequeridas,
-            COUNT(CASE WHEN ISNULL(spa.RequiereAprobacion, 0) = 1 AND ultima.Codigo = 'APROBADA' THEN 1 END) AS AreasAprobadas,
-            COUNT(CASE WHEN ISNULL(spa.RequiereAprobacion, 0) = 1 AND ultima.Codigo = 'RECHAZADA' THEN 1 END) AS AreasRechazadas,
+            COUNT(spa.IdSolicitudPersonaArea) AS AreasRequeridas,
+            COUNT(CASE WHEN ultima.Codigo = 'APROBADA' THEN 1 END) AS AreasAprobadas,
+            COUNT(CASE WHEN ultima.Codigo = 'RECHAZADA' THEN 1 END) AS AreasRechazadas,
             COUNT
             (
                 CASE
-                    WHEN ISNULL(spa.RequiereAprobacion, 0) = 1
-                     AND ISNULL(ultima.Codigo, 'PENDIENTE') NOT IN ('APROBADA', 'RECHAZADA')
+                    WHEN ISNULL(ultima.Codigo, 'PENDIENTE') NOT IN ('APROBADA', 'RECHAZADA')
                     THEN 1
                 END
             ) AS AreasPendientes
@@ -1749,7 +2324,7 @@ BEGIN
                 NVARCHAR(MAX),
                 CONCAT
                 (
-                    COALESCE(a.Nombre, N'Ãrea sin nombre'),
+                    COALESCE(a.Nombre, N'Area sin nombre'),
                     CASE
                         WHEN NULLIF(LTRIM(RTRIM(ultima.ComentarioDecision)), N'') IS NULL THEN N''
                         ELSE CONCAT(N': ', ultima.ComentarioDecision)
@@ -1775,8 +2350,90 @@ BEGIN
         WHERE spa.IdSolicitudPersona = sp.IdSolicitudPersona
           AND ultima.Codigo = 'RECHAZADA'
     ) AS rechazos
+    OUTER APPLY
+    (
+        SELECT STRING_AGG(CONVERT(VARCHAR(MAX), spa.IdArea), ',') AS AreasCsv
+        FROM dbo.Solicitud_Persona_Area AS spa
+        WHERE spa.IdSolicitudPersona = sp.IdSolicitudPersona
+    ) AS areas
     WHERE sp.IdSolicitud = @IdSolicitud
-    ORDER BY COALESCE(p.NombreCompleto, sp.CodigoEmpleadoHtis), sp.IdSolicitudPersona;
+    ORDER BY p.NombreCompleto, sp.IdSolicitudPersona;
+END;
+GO
+
+-- dbo.usp_Solicitud_Persona_Areas_Asignar
+CREATE OR ALTER PROCEDURE dbo.usp_Solicitud_Persona_Areas_Asignar
+    @IdSolicitud BIGINT,
+    @IdSolicitudPersona BIGINT,
+    @AreasJson NVARCHAR(MAX),
+    @Usuario VARCHAR(50)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF ISJSON(COALESCE(@AreasJson, '')) <> 1 THROW 50800, 'La lista de areas no es valida.', 1;
+    IF NOT EXISTS (SELECT 1 FROM OPENJSON(@AreasJson)) THROW 50801, 'Selecciona al menos un area para la persona.', 1;
+    IF NOT EXISTS
+    (
+        SELECT 1 FROM dbo.Solicitud_Persona
+        WHERE IdSolicitudPersona = @IdSolicitudPersona AND IdSolicitud = @IdSolicitud
+    ) THROW 50802, 'La persona no pertenece a la solicitud.', 1;
+    IF NOT EXISTS
+    (
+        SELECT 1 FROM dbo.Solicitud_Ingreso s
+        WHERE s.IdSolicitud = @IdSolicitud
+          AND (s.IdUsuarioSolicitante = @Usuario OR EXISTS
+          (
+              SELECT 1 FROM dbo.Usuario_Rol ur
+              INNER JOIN dbo.Rol r ON r.IdRol = ur.IdRol
+              WHERE ur.IdUsuario = @Usuario AND r.Codigo = 'ADMINISTRADOR'
+          ))
+    ) THROW 50803, 'No tienes permiso para asignar areas a esta solicitud.', 1;
+    IF EXISTS
+    (
+        SELECT 1 FROM OPENJSON(@AreasJson) j
+        WHERE TRY_CONVERT(INT, j.[value]) IS NULL
+           OR NOT EXISTS (SELECT 1 FROM dbo.Cat_Area a WHERE a.IdArea = TRY_CONVERT(INT, j.[value]))
+    ) THROW 50804, 'Una de las areas seleccionadas no existe.', 1;
+    IF EXISTS
+    (
+        SELECT 1
+        FROM dbo.Aprobacion_Area aa
+        INNER JOIN dbo.Solicitud_Persona_Area spa ON spa.IdSolicitudPersonaArea = aa.IdSolicitudPersonaArea
+        WHERE spa.IdSolicitudPersona = @IdSolicitudPersona
+    ) THROW 50805, 'No puedes cambiar areas porque el proceso de aprobacion ya inicio.', 1;
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+        DELETE FROM dbo.Solicitud_Persona_Area WHERE IdSolicitudPersona = @IdSolicitudPersona;
+
+        DECLARE @IdArea INT, @IdDetalle BIGINT;
+        DECLARE areas_asignar_cursor CURSOR LOCAL FAST_FORWARD FOR
+            SELECT DISTINCT TRY_CONVERT(INT, [value]) FROM OPENJSON(@AreasJson);
+        OPEN areas_asignar_cursor;
+        FETCH NEXT FROM areas_asignar_cursor INTO @IdArea;
+        WHILE @@FETCH_STATUS = 0
+        BEGIN
+            EXEC dbo.usp_ObtenerSiguienteId 'Solicitud_Persona_Area', @IdDetalle OUTPUT;
+            INSERT dbo.Solicitud_Persona_Area
+                (IdSolicitudPersonaArea, IdSolicitudPersona, IdArea, RequiereAprobacion, FechaCreacion, UsuarioCreacion)
+            VALUES
+                (@IdDetalle, @IdSolicitudPersona, @IdArea, 1, SYSDATETIME(), @Usuario);
+            FETCH NEXT FROM areas_asignar_cursor INTO @IdArea;
+        END;
+        CLOSE areas_asignar_cursor;
+        DEALLOCATE areas_asignar_cursor;
+
+        UPDATE dbo.Solicitud_Ingreso
+           SET FechaModificacion = SYSDATETIME(), UsuarioModificacion = @Usuario
+         WHERE IdSolicitud = @IdSolicitud;
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        IF XACT_STATE() <> 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH;
 END;
 GO
 
@@ -1798,18 +2455,18 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM dbo.Persona WHERE IdPersona = @IdPersona) THROW 50131, 'La persona no existe.', 1;
     IF EXISTS (SELECT 1 FROM dbo.Solicitud_Persona WHERE IdSolicitud = @IdSolicitud AND IdPersona = @IdPersona) THROW 50132, 'La persona ya pertenece a la solicitud.', 1;
     IF @IdEstadoPersonaSolicitud IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Cat_Estado_Persona_Solicitud WHERE IdEstadoPersonaSolicitud = @IdEstadoPersonaSolicitud) THROW 50133, 'El estado de persona no existe.', 1;
-    IF @AreasJson IS NOT NULL AND ISJSON(@AreasJson) <> 1 THROW 50134, 'AreasJson no contiene JSON válido.', 1;
-    IF @RequerimientosJson IS NOT NULL AND ISJSON(@RequerimientosJson) <> 1 THROW 50135, 'RequerimientosJson no contiene JSON válido.', 1;
+    IF @AreasJson IS NOT NULL AND ISJSON(@AreasJson) <> 1 THROW 50134, 'AreasJson no contiene JSON valido.', 1;
+    IF @RequerimientosJson IS NOT NULL AND ISJSON(@RequerimientosJson) <> 1 THROW 50135, 'RequerimientosJson no contiene JSON valido.', 1;
 
     DECLARE @Areas TABLE (IdArea INT PRIMARY KEY);
     INSERT @Areas (IdArea) SELECT DISTINCT TRY_CONVERT(INT, [value]) FROM OPENJSON(COALESCE(@AreasJson, '[]')) WHERE TRY_CONVERT(INT, [value]) IS NOT NULL;
-    IF EXISTS (SELECT 1 FROM @Areas a WHERE NOT EXISTS (SELECT 1 FROM dbo.Cat_Area c WHERE c.IdArea = a.IdArea)) THROW 50136, 'Una de las áreas no existe.', 1;
+    IF EXISTS (SELECT 1 FROM @Areas a WHERE NOT EXISTS (SELECT 1 FROM dbo.Cat_Area c WHERE c.IdArea = a.IdArea)) THROW 50136, 'Una de las areas no existe.', 1;
 
     DECLARE @Requerimientos TABLE (IdRequerimiento INT PRIMARY KEY, IdTipoAplicacion SMALLINT NULL, Seleccionado BIT NULL, ConfiguradoAutomatico BIT NULL, Observaciones NVARCHAR(500) NULL);
     INSERT @Requerimientos SELECT IdRequerimiento, IdTipoAplicacion, Seleccionado, ConfiguradoAutomatico, Observaciones
     FROM OPENJSON(COALESCE(@RequerimientosJson, '[]')) WITH (IdRequerimiento INT '$.IdRequerimiento', IdTipoAplicacion SMALLINT '$.IdTipoAplicacion', Seleccionado BIT '$.Seleccionado', ConfiguradoAutomatico BIT '$.ConfiguradoAutomatico', Observaciones NVARCHAR(500) '$.Observaciones');
     IF EXISTS (SELECT 1 FROM @Requerimientos r WHERE NOT EXISTS (SELECT 1 FROM dbo.Cat_Requerimiento c WHERE c.IdRequerimiento = r.IdRequerimiento)) THROW 50137, 'Uno de los requerimientos no existe.', 1;
-    IF EXISTS (SELECT 1 FROM @Requerimientos r WHERE r.IdTipoAplicacion IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Cat_Tipo_Aplicacion_Requerimiento c WHERE c.IdTipoAplicacion = r.IdTipoAplicacion)) THROW 50138, 'Uno de los tipos de aplicación no existe.', 1;
+    IF EXISTS (SELECT 1 FROM @Requerimientos r WHERE r.IdTipoAplicacion IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Cat_Tipo_Aplicacion_Requerimiento c WHERE c.IdTipoAplicacion = r.IdTipoAplicacion)) THROW 50138, 'Uno de los tipos de aplicacion no existe.', 1;
 
     BEGIN TRY
         BEGIN TRANSACTION;
@@ -1824,8 +2481,8 @@ BEGIN
         WHILE @@FETCH_STATUS = 0
         BEGIN
             EXEC dbo.usp_ObtenerSiguienteId 'Solicitud_Persona_Area', @IdDetalle OUTPUT;
-            INSERT dbo.Solicitud_Persona_Area (IdSolicitudPersonaArea, IdSolicitudPersona, IdArea, FechaCreacion, UsuarioCreacion)
-            VALUES (@IdDetalle, @IdSolicitudPersona, @IdArea, SYSDATETIME(), @Usuario);
+            INSERT dbo.Solicitud_Persona_Area (IdSolicitudPersonaArea, IdSolicitudPersona, IdArea, RequiereAprobacion, FechaCreacion, UsuarioCreacion)
+            VALUES (@IdDetalle, @IdSolicitudPersona, @IdArea, 1, SYSDATETIME(), @Usuario);
             FETCH NEXT FROM areas_cursor INTO @IdArea;
         END
         CLOSE areas_cursor; DEALLOCATE areas_cursor;
@@ -1881,7 +2538,10 @@ BEGIN
     IF @CodigoTipo = 'EMPLEADO'
     BEGIN
         IF @IdPersona IS NOT NULL OR @CodigoEmpleadoHtis IS NULL THROW 50157, 'Selecciona un empleado válido de HTIS.', 1;
-        IF EXISTS (SELECT 1 FROM dbo.Solicitud_Persona WHERE IdSolicitud = @IdSolicitud AND CodigoEmpleadoHtis = @CodigoEmpleadoHtis) THROW 50158, 'El empleado ya pertenece a la solicitud.', 1;
+        SELECT TOP (1) @IdPersona = IdPersona
+        FROM dbo.Persona
+        WHERE NumeroDocumento = @CodigoEmpleadoHtis AND IdProveedor IS NULL
+        ORDER BY IdPersona;
     END
     ELSE
     BEGIN
@@ -1927,6 +2587,28 @@ BEGIN
     BEGIN TRY
         BEGIN TRANSACTION;
 
+        IF @CodigoTipo = 'EMPLEADO' AND @IdPersona IS NULL
+        BEGIN
+            DECLARE @IdEstadoActivo SMALLINT =
+                (SELECT TOP (1) IdEstadoGeneral FROM dbo.Cat_Estado_General WHERE Codigo = 'ACTIVO');
+            EXEC dbo.usp_ObtenerSiguienteId 'Persona', @IdPersona OUTPUT;
+            INSERT dbo.Persona
+            (
+                IdPersona, IdTipoDocumento, NumeroDocumento, NombreCompleto,
+                IdProveedor, EmpresaTexto, InformacionAdicional, IdEstadoGeneral,
+                FechaCreacion, UsuarioCreacion
+            )
+            VALUES
+            (
+                @IdPersona, NULL, @CodigoEmpleadoHtis, @CodigoEmpleadoHtis,
+                NULL, N'Empleado interno', N'Registro vinculado al directorio de empleados', @IdEstadoActivo,
+                SYSDATETIME(), @Usuario
+            );
+        END;
+
+        IF EXISTS (SELECT 1 FROM dbo.Solicitud_Persona WHERE IdSolicitud = @IdSolicitud AND IdPersona = @IdPersona)
+            THROW 50158, 'El integrante ya pertenece a la solicitud.', 1;
+
         DECLARE @CantidadEstimada INT;
         SELECT @CantidadEstimada = CantidadEstimada
         FROM dbo.Solicitud_Ingreso WITH (UPDLOCK, HOLDLOCK)
@@ -1938,13 +2620,13 @@ BEGIN
         EXEC dbo.usp_ObtenerSiguienteId 'Solicitud_Persona', @IdSolicitudPersona OUTPUT;
         INSERT dbo.Solicitud_Persona
         (
-            IdSolicitudPersona, IdSolicitud, IdPersona, CodigoEmpleadoHtis,
+            IdSolicitudPersona, IdSolicitud, IdPersona,
             IdEstadoPersonaSolicitud, DatosCompletos, ObservacionesRevision,
             FechaCreacion, UsuarioCreacion
         )
         VALUES
         (
-            @IdSolicitudPersona, @IdSolicitud, @IdPersona, @CodigoEmpleadoHtis,
+            @IdSolicitudPersona, @IdSolicitud, @IdPersona,
             @IdEstadoPersonaSolicitud, @DatosCompletos, @ObservacionesRevision,
             SYSDATETIME(), @Usuario
         );
@@ -2022,6 +2704,7 @@ CREATE OR ALTER PROCEDURE dbo.usp_Usuario_Actualizar
     @EsAprobador BIT = 0,
     @EsSeguridad BIT = 0,
     @EsGuardia BIT = 0,
+    @EsProveedor BIT = 0,
     @Activo BIT = 1,
     @UsuarioModificacion VARCHAR(50)
 AS
@@ -2046,9 +2729,9 @@ BEGIN
     IF @Correo IS NOT NULL AND EXISTS (SELECT 1 FROM dbo.Usuario WHERE Correo = @Correo AND IdUsuario <> @IdUsuario)
         THROW 50601, 'Ya existe otro usuario con ese correo.', 1;
     IF @IdArea IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Cat_Area WHERE IdArea = @IdArea)
-        THROW 50602, 'El Ã¡rea seleccionada no existe.', 1;
+        THROW 50602, 'El area seleccionada no existe.', 1;
     IF (@PuedeSolicitar = 1 OR @EsAprobador = 1) AND @IdArea IS NULL
-        THROW 50603, 'Debe seleccionar un Ã¡rea para asignar permisos.', 1;
+        THROW 50603, 'Debe seleccionar un area para asignar permisos.', 1;
 
     DECLARE @IdEstadoActivo SMALLINT = COALESCE((SELECT TOP (1) IdEstadoGeneral FROM dbo.Cat_Estado_General WHERE Codigo = 'ACTIVO'), 1);
     DECLARE @IdEstadoInactivo SMALLINT = COALESCE((SELECT TOP (1) IdEstadoGeneral FROM dbo.Cat_Estado_General WHERE Codigo = 'INACTIVO'), 2);
@@ -2158,12 +2841,21 @@ BEGIN
             DECLARE @NuevoIdRolGuardia SMALLINT =
                 (SELECT CONVERT(SMALLINT, ISNULL(MAX(IdRol), 0) + 1) FROM dbo.Rol WITH (UPDLOCK, HOLDLOCK));
             INSERT dbo.Rol (IdRol, Codigo, Nombre, Descripcion, Activo)
-            VALUES (@NuevoIdRolGuardia, 'GUARDIA', N'Guardia', N'Solo escanea códigos QR y consulta los resultados.', 1);
+            VALUES (@NuevoIdRolGuardia, 'GUARDIA', N'Guardia', N'Solo escanea codigos QR y consulta los resultados.', 1);
+        END;
+
+        IF @EsProveedor = 1 AND NOT EXISTS (SELECT 1 FROM dbo.Rol WHERE Codigo = 'PROVEEDOR')
+        BEGIN
+            DECLARE @NuevoIdRolProveedor SMALLINT =
+                (SELECT CONVERT(SMALLINT, ISNULL(MAX(IdRol), 0) + 1) FROM dbo.Rol WITH (UPDLOCK, HOLDLOCK));
+            INSERT dbo.Rol (IdRol, Codigo, Nombre, Descripcion, Activo)
+            VALUES (@NuevoIdRolProveedor, 'PROVEEDOR', N'Proveedor', N'Acceso exclusivo al portal de proveedores.', 1);
         END;
 
         DECLARE @IdRolAprobador SMALLINT = (SELECT TOP (1) IdRol FROM dbo.Rol WHERE Codigo = 'APROBADOR');
         DECLARE @IdRolSeguridad SMALLINT = (SELECT TOP (1) IdRol FROM dbo.Rol WHERE Codigo = 'SEGURIDAD');
         DECLARE @IdRolGuardia SMALLINT = (SELECT TOP (1) IdRol FROM dbo.Rol WHERE Codigo = 'GUARDIA');
+        DECLARE @IdRolProveedor SMALLINT = (SELECT TOP (1) IdRol FROM dbo.Rol WHERE Codigo = 'PROVEEDOR');
         DECLARE @IdRolSolicitante SMALLINT = (SELECT TOP (1) IdRol FROM dbo.Rol WHERE Codigo = 'SOLICITANTE');
 
         IF @PuedeSolicitar = 1 AND @IdRolSolicitante IS NOT NULL
@@ -2193,7 +2885,7 @@ BEGIN
             FROM dbo.Usuario_Rol AS ur
             INNER JOIN dbo.Rol AS r ON r.IdRol = ur.IdRol
             WHERE ur.IdUsuario = @IdUsuario
-              AND r.Codigo IN ('SOLICITANTE', 'APROBADOR', 'RESPONSABLE', 'SEGURIDAD');
+              AND r.Codigo IN ('SOLICITANTE', 'APROBADOR', 'RESPONSABLE', 'SEGURIDAD', 'PROVEEDOR');
 
             IF NOT EXISTS (SELECT 1 FROM dbo.Usuario_Rol WHERE IdUsuario = @IdUsuario AND IdRol = @IdRolGuardia)
                 INSERT dbo.Usuario_Rol (IdUsuario, IdRol, FechaAsignacion, UsuarioAsignacion)
@@ -2201,6 +2893,21 @@ BEGIN
         END
         ELSE IF @IdRolGuardia IS NOT NULL
             DELETE FROM dbo.Usuario_Rol WHERE IdUsuario = @IdUsuario AND IdRol = @IdRolGuardia;
+
+        IF @EsProveedor = 1 AND @IdRolProveedor IS NOT NULL
+        BEGIN
+            DELETE ur
+            FROM dbo.Usuario_Rol AS ur
+            INNER JOIN dbo.Rol AS r ON r.IdRol = ur.IdRol
+            WHERE ur.IdUsuario = @IdUsuario
+              AND r.Codigo IN ('SOLICITANTE', 'APROBADOR', 'RESPONSABLE', 'SEGURIDAD', 'GUARDIA');
+
+            IF NOT EXISTS (SELECT 1 FROM dbo.Usuario_Rol WHERE IdUsuario = @IdUsuario AND IdRol = @IdRolProveedor)
+                INSERT dbo.Usuario_Rol (IdUsuario, IdRol, FechaAsignacion, UsuarioAsignacion)
+                VALUES (@IdUsuario, @IdRolProveedor, SYSDATETIME(), @UsuarioModificacion);
+        END
+        ELSE IF @IdRolProveedor IS NOT NULL
+            DELETE FROM dbo.Usuario_Rol WHERE IdUsuario = @IdUsuario AND IdRol = @IdRolProveedor;
 
         COMMIT TRANSACTION;
         SELECT 1;
@@ -2324,10 +3031,35 @@ BEGIN
  CONVERT(bit,CASE WHEN EXISTS(SELECT 1 FROM dbo.Usuario_Rol ur JOIN dbo.Rol r ON r.IdRol=ur.IdRol WHERE ur.IdUsuario=u.IdUsuario AND r.Codigo='APROBADOR') THEN 1 ELSE 0 END),
  CONVERT(bit,CASE WHEN EXISTS(SELECT 1 FROM dbo.Usuario_Area ua WHERE ua.IdUsuario=u.IdUsuario AND ISNULL(ua.PuedeSolicitar,0)=1) THEN 1 ELSE 0 END),
  roles.Roles
- FROM dbo.Usuario u JOIN dbo.Usuario_Credencial c ON c.IdUsuario=u.IdUsuario LEFT JOIN dbo.Cat_Estado_General eg ON eg.IdEstadoGeneral=u.IdEstadoGeneral
+ FROM dbo.Usuario u LEFT JOIN dbo.Cat_Estado_General eg ON eg.IdEstadoGeneral=u.IdEstadoGeneral
  OUTER APPLY(SELECT TOP(1) ua.IdArea,a.Nombre Area FROM dbo.Usuario_Area ua LEFT JOIN dbo.Cat_Area a ON a.IdArea=ua.IdArea WHERE ua.IdUsuario=u.IdUsuario ORDER BY ISNULL(ua.EsAreaPrincipal,0) DESC,ua.IdUsuarioArea) ap
  OUTER APPLY(SELECT STRING_AGG(r.Nombre,',') Roles FROM dbo.Usuario_Rol ur JOIN dbo.Rol r ON r.IdRol=ur.IdRol WHERE ur.IdUsuario=u.IdUsuario AND r.Activo=1) roles
- WHERE (u.IdUsuario=@Usuario OR u.Correo=@Usuario) AND c.Contrasena=@Contrasena AND ISNULL(eg.EsActivo,1)=1;
+ WHERE (u.IdUsuario=@Usuario OR u.Correo=@Usuario) AND u.Usuario_Password=@Contrasena AND ISNULL(eg.EsActivo,1)=1;
+END;
+GO
+
+-- dbo.usp_Usuario_Contrasena_Actualizar
+CREATE OR ALTER PROCEDURE dbo.usp_Usuario_Contrasena_Actualizar
+    @IdUsuario VARCHAR(50),
+    @Contrasena VARCHAR(200),
+    @UsuarioModificacion VARCHAR(50)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.Usuario WHERE IdUsuario = @IdUsuario)
+        THROW 50310, 'El usuario indicado no existe.', 1;
+    IF NULLIF(@Contrasena, '') IS NULL
+        THROW 50311, 'La contrasena es obligatoria.', 1;
+
+    UPDATE dbo.Usuario
+       SET Usuario_Password = @Contrasena,
+           FechaModificacion = SYSDATETIME(),
+           UsuarioModificacion = @UsuarioModificacion
+     WHERE IdUsuario = @IdUsuario;
+
+    SELECT 1;
 END;
 GO
 
@@ -2352,11 +3084,11 @@ BEGIN
     SET @IdUsuario = LTRIM(RTRIM(@IdUsuario));
     IF NULLIF(@IdUsuario, '') IS NULL THROW 50300, 'El identificador del usuario es obligatorio.', 1;
     IF NULLIF(LTRIM(RTRIM(@NombreCompleto)), '') IS NULL THROW 50301, 'El nombre completo es obligatorio.', 1;
-    IF LEN(ISNULL(@Contrasena, '')) < 8 THROW 50302, 'La contraseÃ±a inicial debe tener al menos 8 caracteres.', 1;
+    IF LEN(ISNULL(@Contrasena, '')) < 8 THROW 50302, 'La contrasena inicial debe tener al menos 8 caracteres.', 1;
     IF EXISTS (SELECT 1 FROM dbo.Usuario WHERE IdUsuario = @IdUsuario) THROW 50303, 'Ya existe un usuario con ese identificador.', 1;
     IF @Correo IS NOT NULL AND EXISTS (SELECT 1 FROM dbo.Usuario WHERE Correo = @Correo) THROW 50304, 'Ya existe un usuario con ese correo.', 1;
-    IF @IdArea IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Cat_Area WHERE IdArea = @IdArea) THROW 50305, 'El Ã¡rea seleccionada no existe.', 1;
-    IF (@PuedeSolicitar = 1 OR @EsAprobador = 1) AND @IdArea IS NULL THROW 50306, 'Debe seleccionar un Ã¡rea para asignar permisos.', 1;
+    IF @IdArea IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Cat_Area WHERE IdArea = @IdArea) THROW 50305, 'El area seleccionada no existe.', 1;
+    IF (@PuedeSolicitar = 1 OR @EsAprobador = 1) AND @IdArea IS NULL THROW 50306, 'Debe seleccionar un area para asignar permisos.', 1;
 
     DECLARE @IdEstadoActivo SMALLINT = COALESCE((SELECT TOP (1) IdEstadoGeneral FROM dbo.Cat_Estado_General WHERE Codigo = 'ACTIVO'), 1);
     DECLARE @IdEstadoInactivo SMALLINT = COALESCE((SELECT TOP (1) IdEstadoGeneral FROM dbo.Cat_Estado_General WHERE Codigo = 'INACTIVO'), 2);
@@ -2364,11 +3096,8 @@ BEGIN
 
     BEGIN TRANSACTION;
 
-    INSERT dbo.Usuario (IdUsuario, NombreCompleto, Correo, Telefono, Puesto, IdEstadoGeneral, FechaCreacion, UsuarioCreacion)
-    VALUES (@IdUsuario, @NombreCompleto, NULLIF(LTRIM(RTRIM(@Correo)), ''), NULLIF(LTRIM(RTRIM(@Telefono)), ''), NULLIF(LTRIM(RTRIM(@Puesto)), ''), @IdEstadoGeneral, SYSDATETIME(), @UsuarioCreacion);
-
-    INSERT dbo.Usuario_Credencial (IdUsuario, PasswordHash, Contrasena, FechaCreacion, UsuarioCreacion)
-    VALUES (@IdUsuario, NULL, @Contrasena, SYSDATETIME(), @UsuarioCreacion);
+    INSERT dbo.Usuario (IdUsuario, NombreCompleto, Correo, Telefono, Puesto, Usuario_Password, IdEstadoGeneral, FechaCreacion, UsuarioCreacion)
+    VALUES (@IdUsuario, @NombreCompleto, NULLIF(LTRIM(RTRIM(@Correo)), ''), NULLIF(LTRIM(RTRIM(@Telefono)), ''), NULLIF(LTRIM(RTRIM(@Puesto)), ''), @Contrasena, @IdEstadoGeneral, SYSDATETIME(), @UsuarioCreacion);
 
     IF @IdArea IS NOT NULL
     BEGIN
@@ -2490,13 +3219,20 @@ BEGIN
  BEGIN
   DECLARE @NuevoIdRol SMALLINT=(SELECT CONVERT(SMALLINT,ISNULL(MAX(IdRol),0)+1) FROM dbo.Rol WITH(UPDLOCK,HOLDLOCK));
   INSERT dbo.Rol(IdRol,Codigo,Nombre,Descripcion,Activo)
-  VALUES(@NuevoIdRol,'GUARDIA',N'Guardia',N'Solo escanea códigos QR y consulta los resultados.',1);
+  VALUES(@NuevoIdRol,'GUARDIA',N'Guardia',N'Solo escanea codigos QR y consulta los resultados.',1);
+ END;
+ IF @CodigoRol='PROVEEDOR' AND NOT EXISTS(SELECT 1 FROM dbo.Rol WHERE Codigo='PROVEEDOR')
+ BEGIN
+  DECLARE @NuevoIdRolProveedor SMALLINT=(SELECT CONVERT(SMALLINT,ISNULL(MAX(IdRol),0)+1) FROM dbo.Rol WITH(UPDLOCK,HOLDLOCK));
+  INSERT dbo.Rol(IdRol,Codigo,Nombre,Descripcion,Activo)
+  VALUES(@NuevoIdRolProveedor,'PROVEEDOR',N'Proveedor',N'Acceso exclusivo al portal de proveedores.',1);
  END;
  DECLARE @IdRol SMALLINT=(SELECT IdRol FROM dbo.Rol WHERE Codigo=@CodigoRol AND Activo=1);
  IF @IdRol IS NULL THROW 50521,'El rol solicitado no existe.',1;
- IF @CodigoRol='GUARDIA'
+ IF @CodigoRol IN('GUARDIA','PROVEEDOR')
   DELETE ur FROM dbo.Usuario_Rol ur INNER JOIN dbo.Rol r ON r.IdRol=ur.IdRol
-  WHERE ur.IdUsuario=@IdUsuario AND r.Codigo IN('SOLICITANTE','APROBADOR','RESPONSABLE','SEGURIDAD');
+  WHERE ur.IdUsuario=@IdUsuario AND r.Codigo<>@CodigoRol
+    AND r.Codigo IN('SOLICITANTE','APROBADOR','RESPONSABLE','SEGURIDAD','GUARDIA','PROVEEDOR');
  IF NOT EXISTS(SELECT 1 FROM dbo.Usuario_Rol WHERE IdUsuario=@IdUsuario AND IdRol=@IdRol)
   INSERT dbo.Usuario_Rol(IdUsuario,IdRol,UsuarioAsignacion) VALUES(@IdUsuario,@IdRol,@UsuarioAsignacion);
 END;

@@ -12,7 +12,12 @@ public interface ISolicitudesRepository
     Task<bool> ActualizarUsuarioAsync(string idUsuario, ActualizarUsuarioRequest request, string usuarioModificacion, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<CatalogoItem>> ListarCatalogoAsync(string catalogo, CancellationToken cancellationToken);
     Task<SolicitudFormularioDatos> ObtenerDatosFormularioSolicitudAsync(CancellationToken cancellationToken);
-    Task<long> CrearProveedorAsync(CrearProveedorRequest request, CancellationToken cancellationToken);
+    Task<ProveedorUsuarioCreado> CrearProveedorAsync(CrearProveedorRequest request, string contrasenaTemporal, CancellationToken cancellationToken);
+    Task<ProveedorUsuario?> ObtenerProveedorUsuarioAsync(string idUsuario, CancellationToken cancellationToken);
+    Task<IReadOnlyCollection<SolicitudProveedorResumen>> ListarSolicitudesProveedorAsync(string idUsuario, CancellationToken cancellationToken);
+    Task<SolicitudProveedorDetalle?> ObtenerSolicitudProveedorAsync(long idSolicitud, string idUsuario, CancellationToken cancellationToken);
+    Task<IReadOnlyCollection<PersonaResumen>> ListarPersonasProveedorAsync(string idUsuario, CancellationToken cancellationToken);
+    Task<long> AgregarPersonaProveedorAsync(long idSolicitud, string idUsuario, AgregarPersonaSolicitudRequest request, CancellationToken cancellationToken);
     Task<long> CrearPersonaAsync(CrearPersonaRequest request, CancellationToken cancellationToken);
     Task<bool> ActualizarFotografiaPersonaAsync(long idPersona, string fotografiaUrl, string usuario, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<PersonaResumen>> ListarPersonasAsync(CancellationToken cancellationToken);
@@ -27,6 +32,9 @@ public interface ISolicitudesRepository
     Task<bool> ActualizarSolicitudAsync(long idSolicitud, CrearSolicitudRequest request, CancellationToken cancellationToken);
     Task<bool> EliminarSolicitudAsync(long idSolicitud, string usuario, CancellationToken cancellationToken);
     Task<long> AgregarPersonaAsync(long idSolicitud, AgregarPersonaSolicitudRequest request, CancellationToken cancellationToken);
+    Task<long> AgregarEmpleadoAsync(long idSolicitud, Empleado empleado, AgregarEmpleadoSolicitudRequest request, string usuario, CancellationToken cancellationToken);
+    Task<IReadOnlyCollection<EmpleadoAccesoActual>> ListarAccesosEmpleadoAsync(string codigoEmpleado, CancellationToken cancellationToken);
+    Task AsignarAreasPersonaAsync(long idSolicitud, long idSolicitudPersona, IReadOnlyCollection<int> areas, string usuario, CancellationToken cancellationToken);
     Task ReenviarAprobacionAsync(long idSolicitudPersonaArea, string idUsuarioSolicitante, CancellationToken cancellationToken);
     Task EnviarSolicitudAsync(long idSolicitud, string idUsuario, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<SolicitudResumen>> ListarSolicitudesAsync(string idUsuario, bool accesoTotal, CancellationToken cancellationToken);

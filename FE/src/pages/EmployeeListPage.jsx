@@ -69,7 +69,7 @@ export function EmployeeListPage({ items, statuses = [], selected, loading, phot
 
   return <div className={`directory-page employee-directory ${mobileDetailOpen ? 'mobile-detail-active' : ''}`}>
     <div className="page-heading">
-      <div><p className="eyebrow">Directorio de empleados</p><h1>Empleados</h1><p>Selecciona un empleado para consultar su información personal y laboral.</p></div>
+      <div><p className="eyebrow">Directorio de empleados</p><h1>Empleados</h1><p>Selecciona un empleado para consultar su informacion personal y laboral.</p></div>
     </div>
 
     <section className={`panel employee-toolbar ${filtersOpen ? 'filters-open' : ''}`} aria-label="Filtros de empleados">
@@ -106,28 +106,28 @@ export function EmployeeListPage({ items, statuses = [], selected, loading, phot
 
       <section className="panel person-detail-panel employee-detail-panel">
         {mobileDetailOpen && <button type="button" className="secondary-button mobile-detail-back" onClick={onBack}><Icon name="back" />Volver al listado</button>}
-        {loading && !selected && <div className="person-placeholder">Cargando información…</div>}
-        {!loading && !selected && <div className="person-placeholder">Selecciona un empleado para consultar su información.</div>}
+        {loading && !selected && <div className="person-placeholder">Cargando informacion…</div>}
+        {!loading && !selected && <div className="person-placeholder">Selecciona un empleado para consultar su informacion.</div>}
         {selected && <>
           <div className="person-profile person-profile-with-action employee-profile">
             <EmployeeAvatar employee={selected} photographUrl={photographUrl} loading={photographLoading} />
-            <div><div className="profile-title"><h2>{selected.nombreCompleto || 'Empleado sin nombre'}</h2><span className="status-badge">{selected.descripcionStatus || selected.codigoStatus || 'Sin estado'}</span></div><p>{selected.cargoNivel || 'Cargo no indicado'} · {selected.departamento || 'Departamento no indicado'}</p>{photographLoading && <span className="employee-photo-state">Cargando fotografía…</span>}</div>
+            <div><div className="profile-title"><h2>{selected.nombreCompleto || 'Empleado sin nombre'}</h2><span className="status-badge">{selected.descripcionStatus || selected.codigoStatus || 'Sin estado'}</span></div><p>{selected.cargoNivel || 'Cargo no indicado'} · {selected.departamento || 'Departamento no indicado'}</p>{photographLoading && <span className="employee-photo-state">Cargando fotografia…</span>}</div>
             <button type="button" className="primary-button person-qr-button" onClick={() => onQr(selected.codigoEmpleado)} disabled={!selected.codigoEmpleado}><Icon name="qr" />Ver QR</button>
           </div>
 
-          <EmployeeSection icon="tasks" title="Información laboral">
-            <InfoValue label="Código de empleado" value={selected.codigoEmpleado} />
+          <EmployeeSection icon="tasks" title="Informacion laboral">
+            <InfoValue label="Codigo de empleado" value={selected.codigoEmpleado} />
             <InfoValue label="Departamento" value={selected.departamento} />
             <InfoValue label="Cargo / nivel" value={selected.cargoNivel} />
             <InfoValue label="Estado" value={selected.descripcionStatus} />
-            <InfoValue label="Código de estado" value={selected.codigoStatus} />
+            <InfoValue label="Codigo de estado" value={selected.codigoStatus} />
             <InfoValue label="Fecha de ingreso" value={formatEmployeeDate(selected.fechaIngreso)} />
             <InfoValue label="Fecha de egreso" value={formatEmployeeDate(selected.fechaEgreso)} />
             <InfoValue label="Tipo de licencia" value={selected.tipoLicencia} />
             <InfoValue label="Correo" value={selected.correo} />
           </EmployeeSection>
 
-          <EmployeeSection icon="user" title="Información personal">
+          <EmployeeSection icon="user" title="Informacion personal">
             <InfoValue label="Primer nombre" value={selected.nombre1} />
             <InfoValue label="Segundo nombre" value={selected.nombre2} />
             <InfoValue label="Primer apellido" value={selected.apellido1} />
@@ -176,7 +176,7 @@ function EmployeeAvatar({ employee, photographUrl, loading }) {
 
   return <span className={`person-avatar large employee-avatar ${loading ? 'loading' : ''}`}>
     <span>{initials(employee.nombreCompleto)}</span>
-    {showPhotograph && <img src={photographUrl} alt={`Fotografía de ${employee.nombreCompleto || 'empleado'}`} onError={() => setFailedUrl(photographUrl)} />}
+    {showPhotograph && <img src={photographUrl} alt={`Fotografia de ${employee.nombreCompleto || 'empleado'}`} onError={() => setFailedUrl(photographUrl)} />}
   </span>
 }
 

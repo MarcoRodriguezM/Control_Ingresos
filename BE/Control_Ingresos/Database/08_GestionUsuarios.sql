@@ -1,32 +1,5 @@
-/* Listado y creación de usuarios compatibles con el inicio de sesión actual. */
+/* Listado y creacion de usuarios usando unicamente dbo.Usuario.Usuario_Password. */
 USE [Control_Ingresos_DB];
-GO
-
-IF COL_LENGTH('dbo.Usuario_Credencial', 'Contrasena') IS NULL
-BEGIN
-    ALTER TABLE dbo.Usuario_Credencial ADD Contrasena VARCHAR(200) NULL;
-END;
-GO
-ALTER TABLE dbo.Usuario_Credencial ALTER COLUMN PasswordHash VARBINARY(32) NULL;
-GO
-
-UPDATE credencial
-SET credencial.Contrasena = 'Control2026!',
-    credencial.FechaModificacion = SYSDATETIME(),
-    credencial.UsuarioModificacion = 'MIGRACION_TEXTO_PLANO'
-FROM dbo.Usuario_Credencial AS credencial
-WHERE credencial.Contrasena IS NULL
-  AND credencial.PasswordHash = HASHBYTES('SHA2_256', CONVERT(VARBINARY(MAX), CONCAT(credencial.IdUsuario, ':', 'Control2026!')));
-GO
-
-IF EXISTS (SELECT 1 FROM dbo.Usuario_Credencial WHERE Contrasena IS NULL)
-    THROW 50400, 'Hay credenciales cuyo texto original no puede recuperarse. Asigne una contraseña antes de completar la migración.', 1;
-GO
-
-ALTER TABLE dbo.Usuario_Credencial ALTER COLUMN Contrasena VARCHAR(200) NOT NULL;
-GO
-
-UPDATE dbo.Usuario_Credencial SET PasswordHash = NULL;
 GO
 
 CREATE OR ALTER PROCEDURE dbo.usp_Usuario_Administracion_Listar
@@ -59,10 +32,8 @@ BEGIN
                  AND (ca.FechaFin IS NULL OR ca.FechaFin >= CONVERT(DATE, SYSDATETIME()))
            ) THEN 1 ELSE 0 END) AS EsAprobador,
            CONVERT(BIT, CASE WHEN ISNULL(u.IdEstadoGeneral, 1) = 1 THEN 1 ELSE 0 END) AS Activo,
-           u.FechaCreacion,
-           credencial.Contrasena
+           u.FechaCreacion
     FROM dbo.Usuario u
-    LEFT JOIN dbo.Usuario_Credencial credencial ON credencial.IdUsuario = u.IdUsuario
     OUTER APPLY
     (
         SELECT TOP (1) ua.IdArea, a.Nombre AS Area
@@ -96,11 +67,11 @@ BEGIN
     SET @IdUsuario = LTRIM(RTRIM(@IdUsuario));
     IF NULLIF(@IdUsuario, '') IS NULL THROW 50300, 'El identificador del usuario es obligatorio.', 1;
     IF NULLIF(LTRIM(RTRIM(@NombreCompleto)), '') IS NULL THROW 50301, 'El nombre completo es obligatorio.', 1;
-    IF LEN(ISNULL(@Contrasena, '')) < 8 THROW 50302, 'La contraseña inicial debe tener al menos 8 caracteres.', 1;
+    IF LEN(ISNULL(@Contrasena, '')) < 8 THROW 50302, 'La contrasena inicial debe tener al menos 8 caracteres.', 1;
     IF EXISTS (SELECT 1 FROM dbo.Usuario WHERE IdUsuario = @IdUsuario) THROW 50303, 'Ya existe un usuario con ese identificador.', 1;
     IF @Correo IS NOT NULL AND EXISTS (SELECT 1 FROM dbo.Usuario WHERE Correo = @Correo) THROW 50304, 'Ya existe un usuario con ese correo.', 1;
-    IF @IdArea IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Cat_Area WHERE IdArea = @IdArea) THROW 50305, 'El área seleccionada no existe.', 1;
-    IF (@PuedeSolicitar = 1 OR @EsAprobador = 1) AND @IdArea IS NULL THROW 50306, 'Debe seleccionar un área para asignar permisos.', 1;
+    IF @IdArea IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Cat_Area WHERE IdArea = @IdArea) THROW 50305, 'El area seleccionada no existe.', 1;
+    IF (@PuedeSolicitar = 1 OR @EsAprobador = 1) AND @IdArea IS NULL THROW 50306, 'Debe seleccionar un area para asignar permisos.', 1;
 
     DECLARE @IdEstadoActivo SMALLINT = COALESCE((SELECT TOP (1) IdEstadoGeneral FROM dbo.Cat_Estado_General WHERE Codigo = 'ACTIVO'), 1);
     DECLARE @IdEstadoInactivo SMALLINT = COALESCE((SELECT TOP (1) IdEstadoGeneral FROM dbo.Cat_Estado_General WHERE Codigo = 'INACTIVO'), 2);
@@ -108,11 +79,8 @@ BEGIN
 
     BEGIN TRANSACTION;
 
-    INSERT dbo.Usuario (IdUsuario, NombreCompleto, Correo, Telefono, Puesto, IdEstadoGeneral, FechaCreacion, UsuarioCreacion)
-    VALUES (@IdUsuario, @NombreCompleto, NULLIF(LTRIM(RTRIM(@Correo)), ''), NULLIF(LTRIM(RTRIM(@Telefono)), ''), NULLIF(LTRIM(RTRIM(@Puesto)), ''), @IdEstadoGeneral, SYSDATETIME(), @UsuarioCreacion);
-
-    INSERT dbo.Usuario_Credencial (IdUsuario, PasswordHash, Contrasena, FechaCreacion, UsuarioCreacion)
-    VALUES (@IdUsuario, NULL, @Contrasena, SYSDATETIME(), @UsuarioCreacion);
+    INSERT dbo.Usuario (IdUsuario, NombreCompleto, Correo, Telefono, Puesto, Usuario_Password, IdEstadoGeneral, FechaCreacion, UsuarioCreacion)
+    VALUES (@IdUsuario, @NombreCompleto, NULLIF(LTRIM(RTRIM(@Correo)), ''), NULLIF(LTRIM(RTRIM(@Telefono)), ''), NULLIF(LTRIM(RTRIM(@Puesto)), ''), @Contrasena, @IdEstadoGeneral, SYSDATETIME(), @UsuarioCreacion);
 
     IF @IdArea IS NOT NULL
     BEGIN

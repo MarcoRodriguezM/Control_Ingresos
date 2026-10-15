@@ -1,5 +1,6 @@
 using Control_Ingresos.Data;
 using Control_Ingresos.Models;
+using Control_Ingresos.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Mvc;
@@ -19,6 +20,7 @@ builder.Services.AddScoped<ISolicitudesRepository, SolicitudesRepository>();
 builder.Services.AddScoped<IEmpleadosRepository, EmpleadosRepository>();
 builder.Services.AddScoped<IEmpleadoSingularRepository, EmpleadoSingularRepository>();
 builder.Services.AddSingleton<ApplicationSession>();
+builder.Services.AddSingleton<ICredentialEmailSender, SmtpCredentialEmailSender>();
 
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<HtisExceptionHandler>();
@@ -119,6 +121,9 @@ app.Use(async (context, next) =>
     var guardiaRestringido = context.User.Identity?.IsAuthenticated == true
         && context.User.IsInRole("Guardia")
         && !context.User.IsInRole("Administrador");
+    var proveedorRestringido = context.User.Identity?.IsAuthenticated == true
+        && context.User.IsInRole("Proveedor")
+        && !context.User.IsInRole("Administrador");
 
     if (guardiaRestringido && !EsRutaPermitidaParaGuardia(context.Request))
     {
@@ -126,7 +131,19 @@ app.Use(async (context, next) =>
         await context.Response.WriteAsJsonAsync(new ProblemDetails
         {
             Title = "Acceso restringido",
-            Detail = "El rol Guardia solo puede escanear códigos QR y consultar sus resultados.",
+            Detail = "El rol Guardia solo puede escanear codigos QR y consultar sus resultados.",
+            Status = StatusCodes.Status403Forbidden
+        });
+        return;
+    }
+
+    if (proveedorRestringido && !EsRutaPermitidaParaProveedor(context.Request))
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        await context.Response.WriteAsJsonAsync(new ProblemDetails
+        {
+            Title = "Acceso restringido",
+            Detail = "Esta cuenta solo puede utilizar los servicios del portal de proveedores.",
             Status = StatusCodes.Status403Forbidden
         });
         return;
@@ -161,4 +178,22 @@ static bool EsRutaPermitidaParaGuardia(HttpRequest request)
              && segments[3].Equals("fotografia-contenido", StringComparison.OrdinalIgnoreCase))
             || (segments[1].Equals("empleados", StringComparison.OrdinalIgnoreCase)
                 && segments[3].Equals("fotografia", StringComparison.OrdinalIgnoreCase)));
+}
+
+static bool EsRutaPermitidaParaProveedor(HttpRequest request)
+{
+    if (HttpMethods.IsPost(request.Method))
+    {
+        return request.Path.Equals("/api/autenticacion/logout", StringComparison.OrdinalIgnoreCase)
+            || request.Path.Equals("/api/personas", StringComparison.OrdinalIgnoreCase)
+            || request.Path.Equals("/api/personas/fotografia", StringComparison.OrdinalIgnoreCase)
+            || request.Path.StartsWithSegments("/api/proveedores/solicitudes", StringComparison.OrdinalIgnoreCase);
+    }
+
+    if (!HttpMethods.IsGet(request.Method)) return false;
+
+    return request.Path.Equals("/api/catalogos/tipos-documento", StringComparison.OrdinalIgnoreCase)
+        || request.Path.Equals("/api/catalogos/estados-generales", StringComparison.OrdinalIgnoreCase)
+        || request.Path.Equals("/api/catalogos/areas", StringComparison.OrdinalIgnoreCase)
+        || request.Path.StartsWithSegments("/api/proveedores", StringComparison.OrdinalIgnoreCase);
 }

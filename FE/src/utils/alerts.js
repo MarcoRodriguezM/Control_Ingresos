@@ -4,7 +4,7 @@ import 'sweetalert2/dist/sweetalert2.min.css'
 export function showSuccessAlert(message) {
   return Swal.fire({
     icon: 'success',
-    title: 'Operación completada',
+    title: 'Operacion completada',
     text: message,
     timer: 1500,
     timerProgressBar: true,
@@ -21,7 +21,7 @@ export async function confirmSendDraft(number) {
     text: `La solicitud ${number || ''} fue creada correctamente. ¿Deseas enviarla ahora?`.replace('solicitud  fue', 'solicitud fue'),
     showCancelButton: true,
     confirmButtonText: 'Enviar ahora',
-    cancelButtonText: 'Enviar después',
+    cancelButtonText: 'Enviar despues',
     confirmButtonColor: '#119c87',
     cancelButtonColor: '#64748b',
     reverseButtons: true,

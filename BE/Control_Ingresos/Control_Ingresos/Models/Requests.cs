@@ -8,10 +8,20 @@ public sealed record CrearProveedorRequest(
     string? NombreComercial,
     string? Rtn,
     string? ContactoPrincipal,
-    [EmailAddress] string? CorreoPrincipal,
+    [Required, EmailAddress, MaxLength(254)] string CorreoPrincipal,
     string? TelefonoPrincipal,
     short? IdEstadoGeneral,
     [Required, MaxLength(50)] string Usuario);
+
+public sealed record ProveedorCreadoResponse(
+    long Id,
+    string IdUsuario,
+    bool CredencialesEnviadas,
+    string? ContrasenaTemporal = null);
+
+public sealed record ProveedorUsuarioCreado(
+    long IdProveedor,
+    string IdUsuario);
 
 public sealed record CrearPersonaRequest(
     short? IdTipoDocumento,
@@ -54,6 +64,13 @@ public sealed record AgregarPersonaSolicitudRequest(
     IReadOnlyCollection<int>? Areas,
     IReadOnlyCollection<RequerimientoSolicitudRequest>? Requerimientos,
     [Required, MaxLength(50)] string Usuario);
+
+public sealed record AgregarEmpleadoSolicitudRequest(
+    [Required, MaxLength(50)] string CodigoEmpleado,
+    [Required, MinLength(1)] IReadOnlyCollection<int> Areas);
+
+public sealed record AsignarAreasPersonaSolicitudRequest(
+    [Required, MinLength(1)] IReadOnlyCollection<int> Areas);
 
 public sealed record RequerimientoSolicitudRequest(
     int IdRequerimiento,
@@ -187,7 +204,9 @@ public sealed record PersonaSolicitudDetalle(
     int AreasPendientes,
     int AreasRechazadas,
     string? DetalleRechazos,
-    string? CodigoEmpleadoHtis);
+    string? CodigoEmpleadoHtis,
+    IReadOnlyCollection<int>? Areas = null);
+
 
 public sealed record PersonaResumen(
     long IdPersona,
@@ -295,6 +314,45 @@ public sealed record SesionUsuario(
     bool PuedeSolicitar,
     IReadOnlyCollection<string> Roles);
 
+public sealed record ProveedorUsuario(
+    long IdProveedor,
+    string? NombreLegal,
+    string? NombreComercial);
+
+public sealed record SolicitudProveedorResumen(
+    long IdSolicitud,
+    string? NumeroSolicitud,
+    string? TipoIngreso,
+    string? CodigoEstado,
+    string? Estado,
+    DateOnly? FechaInicio,
+    DateOnly? FechaFin,
+    string? NombreActividad,
+    string? Ubicacion,
+    string? UsuarioSolicitante,
+    int CantidadEstimada,
+    int CantidadPersonas);
+
+public sealed record SolicitudProveedorDetalle(
+    long IdSolicitud,
+    string? NumeroSolicitud,
+    string? TipoIngreso,
+    string? CodigoEstado,
+    string? Estado,
+    DateOnly? FechaInicio,
+    DateOnly? FechaFin,
+    string? NombreActividad,
+    string? DescripcionActividad,
+    string? NumeroContrato,
+    string? ContactoProveedor,
+    string? CorreoProveedor,
+    string? Ubicacion,
+    string? UsuarioSolicitante,
+    int CantidadEstimada,
+    int CantidadPersonas,
+    string? Observaciones,
+    IReadOnlyCollection<PersonaSolicitudDetalle> Personas);
+
 public sealed record CrearSolicitudCompletaRequest(
     [Required] CrearSolicitudRequest Solicitud,
     IReadOnlyCollection<AgregarPersonaSolicitudRequest>? Personas);
@@ -390,6 +448,7 @@ public sealed record CrearUsuarioRequest(
     bool EsAprobador,
     bool EsSeguridad,
     bool EsGuardia,
+    bool EsProveedor,
     bool Activo);
 
 public sealed record ActualizarUsuarioRequest(
@@ -402,4 +461,5 @@ public sealed record ActualizarUsuarioRequest(
     bool EsAprobador,
     bool EsSeguridad,
     bool EsGuardia,
+    bool EsProveedor,
     bool Activo);

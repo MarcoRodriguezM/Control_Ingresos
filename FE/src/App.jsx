@@ -15,6 +15,11 @@ import {
   PersonQrPage,
   ProfilePage,
   PublicEmployeeCredentialPage,
+  ProviderFormPage,
+  ProviderPortalPage,
+  ProviderRequestDetailPage,
+  ProviderRequestsPage,
+  ProviderTrackingPage,
   QrScannerPage,
   RequestApprovalDetailPage,
   RequestFormPage,
@@ -55,7 +60,9 @@ function App() {
     setSession(authenticatedUser)
     const returnTo = isGuardSession(authenticatedUser)
       ? '/escanear-qr'
-      : sessionStorage.getItem('control-ingresos-return-to') || '/dashboard'
+      : isProviderSession(authenticatedUser)
+        ? '/portal-proveedor'
+        : sessionStorage.getItem('control-ingresos-return-to') || '/dashboard'
     sessionStorage.removeItem('control-ingresos-return-to')
     navigate(returnTo, { replace: true })
   }
@@ -64,7 +71,7 @@ function App() {
     try {
       await controlIngresosApi.cerrarSesion()
     } catch {
-      // La sesión local siempre debe cerrarse, incluso si la API no está disponible.
+      // La sesion local siempre debe cerrarse, incluso si la API no esta disponible.
     } finally {
       localStorage.removeItem(sessionKey)
       setSession(null)
@@ -84,7 +91,198 @@ function App() {
     return <GuardApp session={session} onLogout={logout} />
   }
 
+  if (isProviderSession(session)) {
+    return <ProviderApp session={session} onLogout={logout} />
+  }
+
   return <AuthenticatedApp session={session} onLogout={logout} />
+}
+
+function ProviderApp({ session, onLogout }) {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [error, setError] = useState('')
+  const [providerCompany, setProviderCompany] = useState(null)
+  const [providerRequests, setProviderRequests] = useState([])
+  const [providerPeople, setProviderPeople] = useState([])
+  const [providerRequest, setProviderRequest] = useState(null)
+  const [providerTracking, setProviderTracking] = useState([])
+  const [providerLoading, setProviderLoading] = useState(true)
+  const [providerTrackingLoading, setProviderTrackingLoading] = useState(false)
+  const [providerSaving, setProviderSaving] = useState(false)
+  const requestRoute = matchPath('/portal-proveedor/solicitudes/:id', location.pathname)
+  const requestPersonRoute = matchPath('/portal-proveedor/solicitudes/:id/personas/nueva', location.pathname)
+  const isTrackingRoute = location.pathname === '/portal-proveedor/seguimiento'
+
+  useEffect(() => {
+    let active = true
+    Promise.all([
+      controlIngresosApi.obtenerMiEmpresaProveedor(),
+      controlIngresosApi.listarSolicitudesProveedor(),
+      controlIngresosApi.listarPersonasProveedor(),
+    ])
+      .then(([company, requests, people]) => {
+        if (!active) return
+        setProviderCompany(company)
+        setProviderRequests(requests)
+        setProviderPeople(people)
+      })
+      .catch((requestError) => active && setError(requestError.status === 404
+        ? 'La cuenta de proveedor no tiene una empresa asignada.'
+        : requestError.message))
+      .finally(() => active && setProviderLoading(false))
+    return () => { active = false }
+  }, [])
+
+  useEffect(() => {
+    const id = Number(requestRoute?.params.id)
+    if (!id) {
+      setProviderRequest(null)
+      return undefined
+    }
+    let active = true
+    setProviderLoading(true)
+    controlIngresosApi.obtenerSolicitudProveedor(id)
+      .then((request) => active && setProviderRequest(request))
+      .catch((requestError) => active && setError(requestError.message))
+      .finally(() => active && setProviderLoading(false))
+    return () => { active = false }
+  }, [requestRoute?.params.id])
+
+  useEffect(() => {
+    if (!isTrackingRoute) return undefined
+    if (providerRequests.length === 0) return undefined
+
+    let active = true
+    setProviderTrackingLoading(true)
+    Promise.all(providerRequests.map((request) => controlIngresosApi.obtenerSolicitudProveedor(request.idSolicitud)))
+      .then((items) => active && setProviderTracking(items.filter(Boolean)))
+      .catch((requestError) => active && setError(requestError.message))
+      .finally(() => active && setProviderTrackingLoading(false))
+    return () => { active = false }
+  }, [isTrackingRoute, providerRequests])
+
+  function openPortal() {
+    setError('')
+    setMenuOpen(false)
+    navigate('/portal-proveedor')
+  }
+
+  function openRequests() {
+    setError('')
+    setMenuOpen(false)
+    navigate('/portal-proveedor/solicitudes')
+  }
+
+  function openTracking() {
+    setError('')
+    setMenuOpen(false)
+    navigate('/portal-proveedor/seguimiento')
+  }
+
+  function openPersonForm(requestId = null) {
+    setError('')
+    setMenuOpen(false)
+    navigate(requestId
+      ? `/portal-proveedor/solicitudes/${requestId}/personas/nueva`
+      : '/portal-proveedor/personas/nueva')
+  }
+
+  async function personCreated(created, requestId = null) {
+    try {
+      setProviderPeople(await controlIngresosApi.listarPersonasProveedor())
+    } catch {
+      // La persona ya fue creada; el listado se actualizara en la siguiente carga.
+    }
+    if (requestId) navigate(`/portal-proveedor/solicitudes/${requestId}`)
+    else openPortal()
+    return created
+  }
+
+  async function addProviderPerson(idPersona) {
+    const idSolicitud = Number(requestRoute?.params.id)
+    if (!idSolicitud) return { success: false }
+    setProviderSaving(true)
+    setError('')
+    try {
+      await controlIngresosApi.agregarPersonaSolicitudProveedor(idSolicitud, {
+        idPersona,
+        idEstadoPersonaSolicitud: null,
+        datosCompletos: true,
+        observacionesRevision: null,
+        areas: [],
+        requerimientos: null,
+        usuario: session.idUsuario,
+      })
+      const [detail, requests] = await Promise.all([
+        controlIngresosApi.obtenerSolicitudProveedor(idSolicitud),
+        controlIngresosApi.listarSolicitudesProveedor(),
+      ])
+      setProviderRequest(detail)
+      setProviderRequests(requests)
+      await showSuccessAlert(detail.cantidadPersonas >= detail.cantidadEstimada
+        ? 'Se completo el registro de personas y la solicitud avanzo al siguiente estado.'
+        : 'La persona fue agregada correctamente a la solicitud.')
+      return { success: true }
+    } catch (requestError) {
+      setError(requestError.message)
+      return { success: false, message: requestError.message }
+    } finally {
+      setProviderSaving(false)
+    }
+  }
+
+  const breadcrumb = requestPersonRoute
+    ? 'Registrar persona'
+    : requestRoute
+      ? 'Detalle de solicitud'
+      : isTrackingRoute
+        ? 'Seguimiento'
+        : location.pathname === '/portal-proveedor/solicitudes'
+        ? 'Solicitudes recibidas'
+        : location.pathname.endsWith('/personas/nueva')
+          ? 'Registrar persona'
+          : 'Inicio'
+
+  return <div className="app-shell">
+    <AlertModal message={error} onClose={() => setError('')} />
+    {menuOpen && <button className="sidebar-backdrop" onClick={() => setMenuOpen(false)} aria-label="Cerrar menu" />}
+    <aside className={`sidebar ${menuOpen ? 'open' : ''}`} aria-label="Navegacion del proveedor">
+      <div className="sidebar-brand"><img className="sidebar-brand-logo" src={auraLogo} alt="Aura Minerals" /></div>
+      <p className="side-label">Portal del proveedor</p>
+      <nav className="main-nav">
+        <Nav icon="home" label="Inicio" active={location.pathname === '/portal-proveedor'} onClick={openPortal} />
+        <Nav icon="file" label="Solicitudes" count={providerRequests.filter((item) => item.codigoEstado === 'PENDIENTE_PROVEEDOR').length || undefined} active={location.pathname.startsWith('/portal-proveedor/solicitudes')} onClick={openRequests} />
+        <Nav icon="users" label="Registrar persona" active={location.pathname === '/portal-proveedor/personas/nueva'} onClick={() => openPersonForm()} />
+        <Nav icon="check" label="Seguimiento" active={isTrackingRoute} onClick={openTracking} />
+      </nav>
+      <div className="sidebar-footer">
+        <button type="button" className="nav-item" onClick={onLogout}><Icon name="logout" /><span>Cerrar sesion</span></button>
+      </div>
+    </aside>
+
+    <main className="main">
+      <header className="topbar">
+        <button className="icon-button menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label="Abrir menu"><Icon name="menu" /></button>
+        <div className="breadcrumb"><span>Proveedor</span><strong>{breadcrumb}</strong></div>
+        <div className="top-actions">
+          <div className="top-profile"><div><strong>{session.nombreCompleto ?? session.idUsuario}</strong><span>Proveedor</span></div><div className="avatar">{initials(session.nombreCompleto)}</div></div>
+        </div>
+      </header>
+      <section className="content">
+        <Routes>
+          <Route path="/portal-proveedor" element={<ProviderPortalPage session={session} requests={providerRequests} onCreatePerson={() => openPersonForm()} onRequests={openRequests} onTracking={openTracking} />} />
+          <Route path="/portal-proveedor/solicitudes" element={<ProviderRequestsPage items={providerRequests} loading={providerLoading} onOpen={(id) => navigate(`/portal-proveedor/solicitudes/${id}`)} />} />
+          <Route path="/portal-proveedor/solicitudes/:id" element={<ProviderRequestDetailPage request={providerRequest} people={providerPeople} loading={providerLoading} saving={providerSaving} onBack={location.state?.fromTracking ? openTracking : openRequests} onNewPerson={() => openPersonForm(Number(requestRoute?.params.id))} onAddPerson={addProviderPerson} />} />
+          <Route path="/portal-proveedor/solicitudes/:id/personas/nueva" element={<PersonFormPage session={session} providerMode providerCompany={providerCompany} onCancel={() => navigate(`/portal-proveedor/solicitudes/${requestPersonRoute?.params.id}`)} onCreated={(created) => personCreated(created, Number(requestPersonRoute?.params.id))} onError={setError} />} />
+          <Route path="/portal-proveedor/personas/nueva" element={<PersonFormPage session={session} providerMode providerCompany={providerCompany} onCancel={openPortal} onCreated={(created) => personCreated(created)} onError={setError} />} />
+          <Route path="/portal-proveedor/seguimiento" element={<ProviderTrackingPage items={providerTracking} loading={providerTrackingLoading || providerLoading} onOpen={(id) => navigate(`/portal-proveedor/solicitudes/${id}`, { state: { fromTracking: true } })} />} />
+          <Route path="*" element={<Navigate to="/portal-proveedor" replace />} />
+        </Routes>
+      </section>
+    </main>
+  </div>
 }
 
 function GuardApp({ session, onLogout }) {
@@ -101,21 +299,21 @@ function GuardApp({ session, onLogout }) {
 
   return <div className="app-shell">
     <AlertModal message={error} onClose={() => setError('')} />
-    {menuOpen && <button className="sidebar-backdrop" onClick={() => setMenuOpen(false)} aria-label="Cerrar menú" />}
-    <aside className={`sidebar ${menuOpen ? 'open' : ''}`} aria-label="Navegación principal">
+    {menuOpen && <button className="sidebar-backdrop" onClick={() => setMenuOpen(false)} aria-label="Cerrar menu" />}
+    <aside className={`sidebar ${menuOpen ? 'open' : ''}`} aria-label="Navegacion principal">
       <div className="sidebar-brand"><img className="sidebar-brand-logo" src={auraLogo} alt="Aura Minerals" /></div>
       <p className="side-label">Control de ingresos</p>
       <nav className="main-nav">
         <Nav icon="qr" label="Escanear QR" active={location.pathname === '/escanear-qr'} onClick={openScanner} />
       </nav>
       <div className="sidebar-footer">
-        <button type="button" className="nav-item" onClick={onLogout}><Icon name="logout" /><span>Cerrar sesión</span></button>
+        <button type="button" className="nav-item" onClick={onLogout}><Icon name="logout" /><span>Cerrar sesion</span></button>
       </div>
     </aside>
 
     <main className="main">
       <header className="topbar">
-        <button className="icon-button menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label="Abrir menú"><Icon name="menu" /></button>
+        <button className="icon-button menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label="Abrir menu"><Icon name="menu" /></button>
         <div className="breadcrumb"><span>Control de ingreso</span><strong>Escanear QR</strong></div>
         <div className="top-actions">
           <div className="top-profile"><div><strong>{session.nombreCompleto ?? session.idUsuario}</strong><span>Guardia</span></div><div className="avatar">{initials(session.nombreCompleto)}</div></div>
@@ -143,6 +341,7 @@ function AuthenticatedApp({ session, onLogout }) {
   const employeeQrCode = employeeQrRoute?.params.codigoEmpleado
   const employeeRoute = employeeQrRoute ? null : matchPath('/empleados/:codigoEmpleado', location.pathname)
   const isNewPersonRoute = location.pathname === '/personas/nueva'
+  const isNewProviderRoute = location.pathname === '/proveedores/nuevo'
   const approvalDetailRoute = matchPath('/aprobaciones/:idSolicitudPersonaArea/detalle', location.pathname)
   const isPersonsRoute = location.pathname.startsWith('/personas')
   const isEmployeesRoute = location.pathname.startsWith('/empleados')
@@ -194,6 +393,7 @@ function AuthenticatedApp({ session, onLogout }) {
   const [error, setError] = useState('')
   const activeEditingId = editRoute ? editingId : null
   const requestTypeCode = typeCodeFromId(options?.tiposIngreso, form.idTipoIngreso)
+  const requestUsesEmployees = requestTypeCode === 'EMPLEADO'
 
   useEffect(() => {
     let active = true
@@ -211,6 +411,10 @@ function AuthenticatedApp({ session, onLogout }) {
   }, [session.idUsuario])
 
   useEffect(() => {
+    if (requestUsesEmployees && peopleEntryMode !== 'manual') setPeopleEntryMode('manual')
+  }, [requestUsesEmployees, peopleEntryMode])
+
+  useEffect(() => {
     const id = Number(editRoute?.params.id)
     if (!id || !options || editingId === id) return
     let active = true
@@ -224,7 +428,11 @@ function AuthenticatedApp({ session, onLogout }) {
         if (!active) return
         setEditingId(id)
         setForm(formFromDetail(item, options))
-        setExistingRequestPeople(item.personas ?? [])
+        setExistingRequestPeople((item.personas ?? []).map((person) => ({
+          ...person,
+          areas: person.areas ?? [],
+          originalAreas: person.areas ?? [],
+        })))
         setRequestPeople([])
         const itemTypeCode = typeCodeFromId(options.tiposIngreso, item.idTipoIngreso)
         setPeopleEntryMode(itemTypeCode === 'EMPLEADO' ? 'employee' : itemTypeCode === 'NUEVO_EMPLEADO' ? 'manual' : item.personas?.length ? 'manual' : item.idProveedor ? 'provider' : '')
@@ -251,10 +459,10 @@ function AuthenticatedApp({ session, onLogout }) {
   useEffect(() => {
     if (!isPersonsRoute || isNewPersonRoute || personQrRoute) return
     let active = true
-    const load = async () => {
+    const load = async (showLoading = true) => {
       await Promise.resolve()
       if (!active) return
-      setPersonLoading(true)
+      if (showLoading) setPersonLoading(true)
       setError('')
       try {
         const records = await controlIngresosApi.listarPersonasConAccesos()
@@ -273,11 +481,15 @@ function AuthenticatedApp({ session, onLogout }) {
       } catch (requestError) {
         if (active) setError(requestError.message)
       } finally {
-        if (active) setPersonLoading(false)
+        if (active && showLoading) setPersonLoading(false)
       }
     }
     load()
-    return () => { active = false }
+    const refreshTimer = window.setInterval(() => load(false), 60_000)
+    return () => {
+      active = false
+      window.clearInterval(refreshTimer)
+    }
   }, [isPersonsRoute, isNewPersonRoute, personQrRoute, personRoute?.params.idPersona, session.idUsuario])
 
   useEffect(() => {
@@ -506,9 +718,12 @@ function AuthenticatedApp({ session, onLogout }) {
   }, [selectedEmployee?.codigoEmpleado, employeeQrCode])
   const totalRequestPeople = requestPeople.length + existingRequestPeople.length
   const estimatedPeople = Number(form.cantidadEstimada) || 0
+  const allExistingPeopleHaveAreas = existingRequestPeople.every((person) => (person.areas ?? []).length > 0)
   const canSendRequest = peopleEntryMode === 'provider'
     ? Boolean(form.idProveedor) && totalRequestPeople === 0
     : estimatedPeople > 0 && totalRequestPeople === estimatedPeople
+      && requestPeople.every((person) => person.areas.length > 0)
+      && allExistingPeopleHaveAreas
 
   function change(event) {
     const { name, value } = event.target
@@ -540,7 +755,29 @@ function AuthenticatedApp({ session, onLogout }) {
     setError('')
   }
 
-  function next() { goToStep(Math.min(4, step + 1)) }
+  async function addRequestEmployee(codigoEmpleado) {
+    const employee = empleados.find((item) => String(item.codigoEmpleado) === String(codigoEmpleado))
+    if (!employee) return
+    try {
+      const accesosActuales = await controlIngresosApi.listarAccesosEmpleado(codigoEmpleado)
+      setRequestPeople((current) => [...current, { codigoEmpleado, areas: [], accesosActuales }])
+    } catch (requestError) {
+      setError(requestError.message)
+      throw requestError
+    }
+  }
+
+  function next() {
+    const steps = requestUsesEmployees ? [1, 3, 4] : [1, 2, 3, 4]
+    const currentIndex = steps.indexOf(step)
+    goToStep(steps[Math.min(steps.length - 1, currentIndex + 1)])
+  }
+
+  function previous() {
+    const steps = requestUsesEmployees ? [1, 3, 4] : [1, 2, 3, 4]
+    const currentIndex = steps.indexOf(step)
+    setStep(steps[Math.max(0, currentIndex - 1)])
+  }
 
   function goToStep(targetStep) {
     for (let currentStep = 1; currentStep < targetStep; currentStep += 1) {
@@ -604,6 +841,12 @@ function AuthenticatedApp({ session, onLogout }) {
     setError('')
   }
 
+  function openNewProvider() {
+    navigate('/proveedores/nuevo')
+    setMenuOpen(false)
+    setError('')
+  }
+
   function personCreated(created) {
     setPersonas([])
     setPersonasConAccesos([])
@@ -636,7 +879,7 @@ function AuthenticatedApp({ session, onLogout }) {
       await controlIngresosApi.actualizarFotografiaPersona(idPersona, photograph)
       const detail = await controlIngresosApi.obtenerPersonaAccesos(idPersona)
       setPersonaSeleccionada(detail)
-      await showSuccessAlert('La fotografía fue actualizada correctamente.')
+      await showSuccessAlert('La fotografia fue actualizada correctamente.')
       return { success: true }
     } catch (requestError) {
       setError(requestError.message)
@@ -686,13 +929,13 @@ function AuthenticatedApp({ session, onLogout }) {
   }
 
   async function completeActivity(idActividad) {
-    const comentarios = window.prompt('Comentario de finalización (opcional):')
+    const comentarios = window.prompt('Comentario de finalizacion (opcional):')
     if (comentarios === null) return
     setError('')
     try {
       await controlIngresosApi.completarActividad(idActividad, comentarios.trim() || null)
       setActividades(await controlIngresosApi.listarMisActividades())
-      showSuccessAlert('La actividad fue enviada para aprobación.')
+      showSuccessAlert('La actividad fue enviada para aprobacion.')
     } catch (requestError) {
       setError(requestError.message)
     }
@@ -705,12 +948,49 @@ function AuthenticatedApp({ session, onLogout }) {
       try {
         setUsuarios(await controlIngresosApi.listarUsuarios())
       } catch {
-        // La creación ya fue confirmada por el servidor. El listado se recargará
+        // La creacion ya fue confirmada por el servidor. El listado se recargara
         // al volver a entrar para que un fallo de refresco no simule un fallo al crear.
       }
       await showSuccessAlert('El usuario fue creado correctamente.')
       navigate('/usuarios')
       return { success: true }
+    } catch (requestError) {
+      setError(requestError.message)
+      return { success: false, message: requestError.message }
+    }
+  }
+
+  async function createProvider(provider) {
+    setError('')
+    try {
+      const created = await controlIngresosApi.crearProveedor(provider)
+      let refreshedOptions = null
+      try {
+        refreshedOptions = await controlIngresosApi.obtenerDatosFormularioSolicitud()
+        setOptions(refreshedOptions)
+      } catch {
+        // El proveedor ya fue creado; el catalogo se actualizara al recargar la aplicacion.
+      }
+
+      const message = created.credencialesEnviadas
+        ? `El proveedor #${created.id} y el usuario ${created.idUsuario} fueron creados. Las credenciales se enviaron a su correo.`
+        : `El proveedor #${created.id} y el usuario ${created.idUsuario} fueron creados, pero el correo no pudo enviarse. Contrasena temporal: ${created.contrasenaTemporal}`
+      await showSuccessAlert(message)
+      if (refreshedOptions) {
+        setEditingId(null)
+        setRequestPeople([])
+        setExistingRequestPeople([])
+        setPeopleEntryMode('')
+        setStep(1)
+        setForm({
+          ...withDefaults(initialForm(), refreshedOptions, session.idUsuario),
+          idProveedor: String(created.id),
+        })
+        navigate('/solicitudes/nueva')
+      } else {
+        navigate('/solicitudes')
+      }
+      return { success: true, id: created.id }
     } catch (requestError) {
       setError(requestError.message)
       return { success: false, message: requestError.message }
@@ -771,9 +1051,9 @@ function AuthenticatedApp({ session, onLogout }) {
         observaciones: textOrNull(form.observaciones),
         usuario: session.idUsuario,
       }
-      const personPayloads = requestPeople.map((person) => ({
+      const personPayloads = requestUsesEmployees ? [] : requestPeople.map((person) => ({
         idPersona: person.idPersona ?? null,
-        codigoEmpleadoHtis: person.codigoEmpleadoHtis ?? null,
+        codigoEmpleadoHtis: null,
         idEstadoPersonaSolicitud: null,
         datosCompletos: true,
         observacionesRevision: null,
@@ -786,9 +1066,16 @@ function AuthenticatedApp({ session, onLogout }) {
         : await controlIngresosApi.crearSolicitudCompleta({ solicitud: payload, personas: personPayloads })
       const requestId = activeEditingId ?? created.id
       const failedPeople = []
-      for (const person of activeEditingId ? personPayloads : []) {
+      const peopleToAdd = requestUsesEmployees
+        ? requestPeople.map((person) => ({
+            codigoEmpleado: person.codigoEmpleado ?? person.codigoEmpleadoHtis,
+            areas: person.areas,
+          }))
+        : activeEditingId ? personPayloads : []
+      for (const person of peopleToAdd) {
         try {
-          await controlIngresosApi.agregarPersonaSolicitud(requestId, person)
+          if (requestUsesEmployees) await controlIngresosApi.agregarEmpleadoSolicitud(requestId, person)
+          else await controlIngresosApi.agregarPersonaSolicitud(requestId, person)
         } catch (personError) {
           failedPeople.push({ ...person, error: personError.message })
         }
@@ -800,15 +1087,22 @@ function AuthenticatedApp({ session, onLogout }) {
         setError(`La solicitud fue guardada, pero no se pudieron agregar ${failedPeople.length} persona(s): ${failedPeople.map((person) => person.error).join(' ')}`)
         return
       }
+      for (const person of existingRequestPeople) {
+        const areas = person.areas ?? []
+        const originalAreas = person.originalAreas ?? []
+        if (JSON.stringify([...areas].sort()) !== JSON.stringify([...originalAreas].sort())) {
+          await controlIngresosApi.asignarAreasPersonaSolicitud(requestId, person.idSolicitudPersona, areas)
+        }
+      }
       let shouldSend = sendAfterSave
       if (!activeEditingId && canSendRequest) {
         shouldSend = await confirmSendDraft(created.numero ?? `#${created.id}`)
       }
       if (shouldSend) {
         await controlIngresosApi.enviarSolicitud(requestId)
-        showSuccessAlert(activeEditingId ? 'La solicitud fue actualizada y enviada correctamente.' : `Se creó y envió ${created.numero ?? `la solicitud #${created.id}`}.`)
+        showSuccessAlert(activeEditingId ? 'La solicitud fue actualizada y enviada correctamente.' : `Se creo y envio ${created.numero ?? `la solicitud #${created.id}`}.`)
       } else {
-        showSuccessAlert(activeEditingId ? 'La solicitud fue actualizada correctamente.' : `Se creó ${created.numero ?? `la solicitud #${created.id}`} como borrador.`)
+        showSuccessAlert(activeEditingId ? 'La solicitud fue actualizada correctamente.' : `Se creo ${created.numero ?? `la solicitud #${created.id}`} como borrador.`)
       }
       setSolicitudes(await controlIngresosApi.listarSolicitudes())
       setForm(withDefaults(initialForm(), options, session.idUsuario))
@@ -841,8 +1135,8 @@ function AuthenticatedApp({ session, onLogout }) {
   return (
     <div className="app-shell">
       <AlertModal message={error} onClose={() => setError('')} />
-      {menuOpen && <button className="sidebar-backdrop" onClick={() => setMenuOpen(false)} aria-label="Cerrar menú" />}
-      <aside className={`sidebar ${menuOpen ? 'open' : ''}`} aria-label="Navegación principal">
+      {menuOpen && <button className="sidebar-backdrop" onClick={() => setMenuOpen(false)} aria-label="Cerrar menu" />}
+      <aside className={`sidebar ${menuOpen ? 'open' : ''}`} aria-label="Navegacion principal">
         <div className="sidebar-brand"><img className="sidebar-brand-logo" src={auraLogo} alt="Aura Minerals" /></div>
         <p className="side-label">Control de ingresos</p>
         <nav className="main-nav">
@@ -852,20 +1146,21 @@ function AuthenticatedApp({ session, onLogout }) {
           <Nav icon="tasks" label="Mis actividades" count={actividades.filter((item) => !item.esEstadoFinal).length || undefined} active={isActivitiesRoute} onClick={() => { navigate('/mis-actividades'); setMenuOpen(false); setError('') }} />
           <Nav icon="users" label="Personas" count={personas.length || undefined} active={isPersonsRoute} onClick={openPersons} />
           <Nav icon="user" label="Empleados" count={empleados.length || undefined} active={isEmployeesRoute} onClick={openEmployees} />
+          <Nav icon="company" label="Nuevo proveedor" active={isNewProviderRoute} onClick={openNewProvider} />
           <Nav icon="qr" label="Escanear QR" active={isQrScannerRoute} onClick={() => { navigate('/escanear-qr'); setMenuOpen(false); setError('') }} />
           {isAdministrator && <Nav icon="settings" label="Usuarios" count={usuarios.length || undefined} active={isUsersRoute} onClick={() => { navigate('/usuarios'); setMenuOpen(false); setError('') }} />}
         </nav>
         <div className="sidebar-footer">
-          <button type="button" className="nav-item" onClick={onLogout}><Icon name="logout" /><span>Cerrar sesión</span></button>
+          <button type="button" className="nav-item" onClick={onLogout}><Icon name="logout" /><span>Cerrar sesion</span></button>
         </div>
       </aside>
 
       <main className="main">
         <header className="topbar">
-          <button className="icon-button menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label="Abrir menú"><Icon name="menu" /></button>
+          <button className="icon-button menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label="Abrir menu"><Icon name="menu" /></button>
           <div className="breadcrumb">
             <Link to="/dashboard" onClick={() => { setError(''); setMenuOpen(false) }}>Inicio</Link>
-            <strong>{approvalDetailRoute ? 'Detalle de solicitud' : isDashboardRoute ? 'Dashboard' : isProfileRoute ? 'Mi perfil' : isNewUserRoute ? 'Crear usuario' : userEditRoute ? 'Editar usuario' : userDetailRoute ? 'Detalle del usuario' : isUsersRoute ? 'Usuarios' : isActivitiesRoute ? 'Mis actividades' : isApprovalsRoute ? 'Mis aprobaciones' : isQrScannerRoute ? 'Escanear QR' : isPublicEmployeeCredentialRoute ? 'Credencial del empleado' : personQrRoute ? 'QR de la persona' : employeeQrRoute ? 'QR del empleado' : isNewPersonRoute ? 'Nueva persona' : isPersonsRoute ? 'Personas y accesos' : isEmployeesRoute ? 'Empleados' : editRoute ? 'Editar solicitud' : location.pathname === '/solicitudes/nueva' ? 'Nueva solicitud' : 'Solicitudes'}</strong>
+            <strong>{approvalDetailRoute ? 'Detalle de solicitud' : isDashboardRoute ? 'Dashboard' : isProfileRoute ? 'Mi perfil' : isNewUserRoute ? 'Crear usuario' : userEditRoute ? 'Editar usuario' : userDetailRoute ? 'Detalle del usuario' : isUsersRoute ? 'Usuarios' : isActivitiesRoute ? 'Mis actividades' : isApprovalsRoute ? 'Mis aprobaciones' : isQrScannerRoute ? 'Escanear QR' : isPublicEmployeeCredentialRoute ? 'Credencial del empleado' : personQrRoute ? 'QR de la persona' : employeeQrRoute ? 'QR del empleado' : isNewPersonRoute ? 'Nueva persona' : isNewProviderRoute ? 'Nuevo proveedor' : isPersonsRoute ? 'Personas y accesos' : isEmployeesRoute ? 'Empleados' : editRoute ? 'Editar solicitud' : location.pathname === '/solicitudes/nueva' ? 'Nueva solicitud' : 'Solicitudes'}</strong>
           </div>
           <div className="top-actions">
             {/* <button className="ghost-button"><Icon name="help" />Ayuda</button> */}
@@ -886,6 +1181,7 @@ function AuthenticatedApp({ session, onLogout }) {
             <Route path="/solicitudes" element={<RequestsListPage items={solicitudes} loading={loading} onNew={openNew} onEdit={openEdit} onDelete={remove} />} />
             <Route path="/solicitudes/nueva" element={<RequestFormPage form={form} options={options} people={personas} employees={empleados} employeesLoading={employeesLoading} employeesError={employeesError} requestPeople={requestPeople} existingPeople={existingRequestPeople} peopleEntryMode={peopleEntryMode} loading={loading} saving={saving} editingId={null} step={step} selected={selected} canSend={canSendRequest} onPeopleEntryModeChange={(mode) => { setPeopleEntryMode(mode); if (mode === 'provider') setRequestPeople([]) }} onPeopleChange={setRequestPeople} onChange={change} onStepChange={goToStep} onNext={next} onBack={() => setStep((current) => current - 1)} onCancel={cancelForm} onSubmit={submit} />} />
             <Route path="/solicitudes/:id/editar" element={<RequestFormPage form={form} options={options} people={personas} employees={empleados} employeesLoading={employeesLoading} employeesError={employeesError} requestPeople={requestPeople} existingPeople={existingRequestPeople} peopleEntryMode={peopleEntryMode} loading={loading} saving={saving} editingId={activeEditingId} step={step} selected={selected} canSend={canSendRequest} onPeopleEntryModeChange={(mode) => { setPeopleEntryMode(mode); if (mode === 'provider') setRequestPeople([]) }} onPeopleChange={setRequestPeople} onChange={change} onStepChange={goToStep} onNext={next} onBack={() => setStep((current) => current - 1)} onCancel={cancelForm} onSubmit={submit} />} />
+            <Route path="/proveedores/nuevo" element={<ProviderFormPage session={session} onCreate={createProvider} onCancel={() => { setError(''); navigate('/solicitudes') }} onError={setError} />} />
             <Route path="/personas/nueva" element={<PersonFormPage session={session} providers={options?.proveedores} onCancel={openPersons} onCreated={personCreated} onError={setError} />} />
             <Route path="/personas/:idPersona/qr" element={<PersonQrPage idPersona={Number(personQrRoute?.params.idPersona)} onBack={() => navigate(`/personas/${personQrRoute?.params.idPersona}`)} onError={setError} />} />
             <Route path="/personas/:idPersona?" element={<PersonAccessPage items={personasConAccesos} selected={personaSeleccionada} loading={personLoading} mobileDetailOpen={Boolean(personRoute)} onSelect={selectPerson} onBack={() => location.state?.directory === 'personas' ? navigate(-1) : navigate('/personas')} onNew={openNewPerson} onQr={(idPersona) => navigate(`/personas/${idPersona}/qr`)} onPhotographChange={updatePersonPhotograph} />} />
@@ -940,7 +1236,7 @@ function validateStep(step, form, typeCode, peopleEntryMode, requestPeople = [],
   if (step === 1 && form.fechaFin < form.fechaInicio) return 'La fecha final no puede ser anterior a la fecha inicial.'
   const estimatedPeople = Number(form.cantidadEstimada)
   const totalPeople = requestPeople.length + existingPeople.length
-  if (step === 1 && (!Number.isInteger(estimatedPeople) || estimatedPeople < 1)) return 'La cantidad estimada de personas debe ser un número entero mayor que cero.'
+  if (step === 1 && (!Number.isInteger(estimatedPeople) || estimatedPeople < 1)) return 'La cantidad estimada de personas debe ser un numero entero mayor que cero.'
   if (step === 1 && totalPeople > estimatedPeople) return `La cantidad estimada no puede ser menor que las ${totalPeople} personas ya agregadas.`
   if (step === 2 && typeCode !== 'EMPLEADO' && (!form.contactoProveedor.trim() || !form.correoProveedor.trim())) return typeCode === 'NUEVO_EMPLEADO' ? 'Completa el nombre y el correo del nuevo empleado.' : 'Completa el contacto y el correo del proveedor.'
   if (step === 2 && typeCode !== 'EMPLEADO' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.correoProveedor.trim())) return 'Ingresa un correo electrónico válido.'
@@ -967,6 +1263,7 @@ const hasRole = (session, role) => Boolean(
 )
 
 const isGuardSession = (session) => hasRole(session, 'Guardia') && !hasRole(session, 'Administrador')
+const isProviderSession = (session) => hasRole(session, 'Proveedor') && !hasRole(session, 'Administrador')
 
 function readSession() {
   try {

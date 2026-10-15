@@ -28,3 +28,10 @@ public sealed record EmpleadoStatus(
     string? Descripcion);
 
 public sealed record EmpleadoQrResponse(string CodigoQr);
+
+public sealed record EmpleadoAccesoActual(
+    int IdArea,
+    string? Codigo,
+    string? Area,
+    DateOnly? FechaInicio,
+    DateOnly? FechaFin);

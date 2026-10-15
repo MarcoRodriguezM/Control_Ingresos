@@ -1,6 +1,6 @@
 /*
     Listado y detalle de personas con accesos visibles para el usuario autenticado.
-    Las definiciones activas también se encuentran en Database/StoredProcedures.sql.
+    Las definiciones activas tambien se encuentran en Database/StoredProcedures.sql.
 */
 USE [Control_Ingresos_DB];
 GO
@@ -144,25 +144,9 @@ BEGIN
         u.Nombre AS Ubicacion,
         s.FechaInicio,
         s.FechaFin,
-        COALESCE(spa.RequiereAprobacion, a.RequiereAprobacion) AS RequiereAprobacion,
-        COALESCE
-        (
-            ultimaAprobacion.EstadoAcceso,
-            CASE
-                WHEN COALESCE(spa.RequiereAprobacion, a.RequiereAprobacion, 0) = 0
-                    THEN N'No requiere aprobaciÃ³n'
-                ELSE N'Pendiente'
-            END
-        ) AS EstadoAcceso,
-        COALESCE
-        (
-            ultimaAprobacion.CodigoEstadoAcceso,
-            CASE
-                WHEN COALESCE(spa.RequiereAprobacion, a.RequiereAprobacion, 0) = 0
-                    THEN 'NO_REQUIERE'
-                ELSE 'PENDIENTE'
-            END
-        ) AS CodigoEstadoAcceso,
+        CONVERT(BIT, 1) AS RequiereAprobacion,
+        COALESCE(ultimaAprobacion.EstadoAcceso, N'Pendiente') AS EstadoAcceso,
+        COALESCE(ultimaAprobacion.CodigoEstadoAcceso, 'PENDIENTE') AS CodigoEstadoAcceso,
         ultimaAprobacion.FechaDecision,
         ultimaAprobacion.ComentarioDecision
     FROM dbo.Solicitud_Persona AS sp

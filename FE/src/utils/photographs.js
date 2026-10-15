@@ -5,7 +5,7 @@ const allowedPhotographTypes = ['image/jpeg', 'image/png', 'image/webp']
 
 export async function preparePhotograph(file) {
   if (!allowedPhotographTypes.includes(file.type)) {
-    throw new Error('La fotografía debe estar en formato JPG, PNG o WebP.')
+    throw new Error('La fotografia debe estar en formato JPG, PNG o WebP.')
   }
 
   const optimized = file.size > maximumPhotographBytes
@@ -13,7 +13,7 @@ export async function preparePhotograph(file) {
     : file
 
   if (optimized.size > maximumPhotographBytes) {
-    throw new Error('No fue posible reducir la fotografía a menos de 5 MB.')
+    throw new Error('No fue posible reducir la fotografia a menos de 5 MB.')
   }
 
   return optimized
@@ -28,7 +28,7 @@ async function compressPhotograph(file) {
   const image = await loadImage(file)
   const canvas = document.createElement('canvas')
   const context = canvas.getContext('2d', { alpha: false })
-  if (!context) throw new Error('El navegador no pudo procesar la fotografía.')
+  if (!context) throw new Error('El navegador no pudo procesar la fotografia.')
 
   const maximumDimension = 2400
   const initialScale = Math.min(1, maximumDimension / Math.max(image.width, image.height))
@@ -56,7 +56,7 @@ async function compressPhotograph(file) {
 
   image.release()
   if (!result || result.size > maximumPhotographBytes) {
-    throw new Error('La fotografía es demasiado grande y no fue posible reducirla a menos de 5 MB.')
+    throw new Error('La fotografia es demasiado grande y no fue posible reducirla a menos de 5 MB.')
   }
 
   const baseName = file.name.replace(/\.[^.]+$/, '') || 'fotografia'
@@ -84,7 +84,7 @@ async function loadImage(file) {
 function canvasToBlob(canvas, quality) {
   return new Promise((resolve, reject) => {
     canvas.toBlob(
-      (blob) => blob ? resolve(blob) : reject(new Error('No fue posible convertir la fotografía.')),
+      (blob) => blob ? resolve(blob) : reject(new Error('No fue posible convertir la fotografia.')),
       'image/jpeg',
       quality,
     )

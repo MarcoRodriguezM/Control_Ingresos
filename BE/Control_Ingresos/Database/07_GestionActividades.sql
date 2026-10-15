@@ -1,4 +1,4 @@
-/* Gestión completa de actividades: creación, asignación, finalización y aprobación. */
+/* Gestion completa de actividades: creacion, asignacion, finalizacion y aprobacion. */
 USE [Control_Ingresos_DB];
 GO
 
@@ -12,13 +12,13 @@ GO
 
 IF NOT EXISTS (SELECT 1 FROM dbo.Cat_Estado_Actividad WHERE Codigo = 'PENDIENTE')
     INSERT dbo.Cat_Estado_Actividad (IdEstadoActividad, Codigo, Nombre, Descripcion, EsEstadoFinal, IdEstadoGeneral, FechaCreacion, UsuarioCreacion)
-    VALUES (1, 'PENDIENTE', N'Pendiente', N'Actividad asignada y pendiente de ejecución.', 0, 1, SYSDATETIME(), 'script');
+    VALUES (1, 'PENDIENTE', N'Pendiente', N'Actividad asignada y pendiente de ejecucion.', 0, 1, SYSDATETIME(), 'script');
 IF NOT EXISTS (SELECT 1 FROM dbo.Cat_Estado_Actividad WHERE Codigo = 'EN_PROGRESO')
     INSERT dbo.Cat_Estado_Actividad (IdEstadoActividad, Codigo, Nombre, Descripcion, EsEstadoFinal, IdEstadoGeneral, FechaCreacion, UsuarioCreacion)
-    VALUES (2, 'EN_PROGRESO', N'En progreso', N'Actividad en ejecución.', 0, 1, SYSDATETIME(), 'script');
+    VALUES (2, 'EN_PROGRESO', N'En progreso', N'Actividad en ejecucion.', 0, 1, SYSDATETIME(), 'script');
 IF NOT EXISTS (SELECT 1 FROM dbo.Cat_Estado_Actividad WHERE Codigo = 'PENDIENTE_APROBACION')
     INSERT dbo.Cat_Estado_Actividad (IdEstadoActividad, Codigo, Nombre, Descripcion, EsEstadoFinal, IdEstadoGeneral, FechaCreacion, UsuarioCreacion)
-    VALUES (3, 'PENDIENTE_APROBACION', N'Pendiente de aprobación', N'El responsable completó la actividad y espera revisión.', 0, 1, SYSDATETIME(), 'script');
+    VALUES (3, 'PENDIENTE_APROBACION', N'Pendiente de aprobacion', N'El responsable completo la actividad y espera revision.', 0, 1, SYSDATETIME(), 'script');
 IF NOT EXISTS (SELECT 1 FROM dbo.Cat_Estado_Actividad WHERE Codigo = 'APROBADA')
     INSERT dbo.Cat_Estado_Actividad (IdEstadoActividad, Codigo, Nombre, Descripcion, EsEstadoFinal, IdEstadoGeneral, FechaCreacion, UsuarioCreacion)
     VALUES (4, 'APROBADA', N'Aprobada', N'Actividad completada y aprobada.', 1, 1, SYSDATETIME(), 'script');
@@ -79,11 +79,11 @@ BEGIN
     IF NULLIF(LTRIM(RTRIM(@NombreActividad)), '') IS NULL
         THROW 50200, 'El nombre de la actividad es obligatorio.', 1;
     IF NOT EXISTS (SELECT 1 FROM dbo.Usuario WHERE IdUsuario = @IdUsuarioResponsable AND ISNULL(IdEstadoGeneral, 1) = 1)
-        THROW 50201, 'El usuario responsable no existe o está inactivo.', 1;
+        THROW 50201, 'El usuario responsable no existe o esta inactivo.', 1;
     IF @IdSolicitud IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Solicitud_Ingreso WHERE IdSolicitud = @IdSolicitud)
         THROW 50202, 'La solicitud indicada no existe.', 1;
     IF @IdAreaResponsable IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Cat_Area WHERE IdArea = @IdAreaResponsable)
-        THROW 50203, 'El área responsable no existe.', 1;
+        THROW 50203, 'El area responsable no existe.', 1;
 
     DECLARE @IdEstadoActividad SMALLINT = (SELECT TOP (1) IdEstadoActividad FROM dbo.Cat_Estado_Actividad WHERE Codigo = 'PENDIENTE');
     IF @IdEstadoActividad IS NULL THROW 50204, 'No existe el estado PENDIENTE para actividades.', 1;
@@ -118,7 +118,7 @@ BEGIN
     SET XACT_ABORT ON;
 
     IF NOT EXISTS (SELECT 1 FROM dbo.Actividad WHERE IdActividad = @IdActividad AND IdUsuarioResponsable = @IdUsuarioResponsable)
-        THROW 50210, 'La actividad no existe o no está asignada al usuario actual.', 1;
+        THROW 50210, 'La actividad no existe o no esta asignada al usuario actual.', 1;
 
     DECLARE @CodigoActual VARCHAR(30) =
     (
@@ -163,7 +163,7 @@ BEGIN
 
     SET @CodigoEstado = UPPER(LTRIM(RTRIM(@CodigoEstado)));
     IF @CodigoEstado NOT IN ('APROBADA', 'RECHAZADA')
-        THROW 50220, 'La decisión debe ser APROBADA o RECHAZADA.', 1;
+        THROW 50220, 'La decision debe ser APROBADA o RECHAZADA.', 1;
     IF @CodigoEstado = 'RECHAZADA' AND NULLIF(LTRIM(RTRIM(@ComentarioDecision)), '') IS NULL
         THROW 50221, 'Debe indicar el motivo del rechazo.', 1;
     IF NOT EXISTS
@@ -173,7 +173,7 @@ BEGIN
         INNER JOIN dbo.Cat_Estado_Actividad ea ON ea.IdEstadoActividad = a.IdEstadoActividad
         WHERE a.IdActividad = @IdActividad AND ea.Codigo = 'PENDIENTE_APROBACION'
     )
-        THROW 50222, 'La actividad no está pendiente de aprobación.', 1;
+        THROW 50222, 'La actividad no esta pendiente de aprobacion.', 1;
 
     DECLARE @IdEstadoActividad SMALLINT = (SELECT TOP (1) IdEstadoActividad FROM dbo.Cat_Estado_Actividad WHERE Codigo = @CodigoEstado);
     IF @IdEstadoActividad IS NULL THROW 50223, 'El estado solicitado no existe.', 1;

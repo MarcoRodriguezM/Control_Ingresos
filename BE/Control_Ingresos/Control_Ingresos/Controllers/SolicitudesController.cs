@@ -13,6 +13,7 @@ public sealed class SolicitudesController(
     ISolicitudesRepository repository,
     IEmpleadosRepository empleadosRepository,
     ILogger<SolicitudesController> logger) : ControllerBase
+
 {
     [HttpGet("formulario-datos")]
     [ProducesResponseType<SolicitudFormularioDatos>(StatusCodes.Status200OK)]
@@ -199,6 +200,54 @@ public sealed class SolicitudesController(
             nameof(Obtener),
             new { id },
             new IdCreadoResponse(idSolicitudPersona));
+    }
+
+    [HttpPost("{id:long}/empleados")]
+    [Authorize(Roles = "Solicitante,Administrador")]
+    [ProducesResponseType<IdCreadoResponse>(StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<IdCreadoResponse>> AgregarEmpleado(
+        long id,
+        AgregarEmpleadoSolicitudRequest request,
+        CancellationToken cancellationToken)
+    {
+        var usuario = CurrentUserId();
+        if (usuario is null) return Unauthorized();
+        var existing = await repository.ObtenerSolicitudAsync(id, cancellationToken);
+        if (existing is null) return NotFound();
+        if (!User.IsInRole("Administrador") && existing.IdUsuarioSolicitante != usuario) return Forbid();
+
+        var codigo = request.CodigoEmpleado.Trim();
+        var empleado = (await empleadosRepository.ListarAsync(cancellationToken)).FirstOrDefault(item =>
+            string.Equals(item.CodigoEmpleado?.Trim(), codigo, StringComparison.OrdinalIgnoreCase));
+        if (empleado is null) return NotFound();
+
+        var idSolicitudPersona = await repository.AgregarEmpleadoAsync(
+            id,
+            empleado,
+            request with { CodigoEmpleado = codigo },
+            usuario,
+            cancellationToken);
+
+        return CreatedAtAction(nameof(Obtener), new { id }, new IdCreadoResponse(idSolicitudPersona));
+    }
+
+    [HttpPut("{id:long}/personas/{idSolicitudPersona:long}/areas")]
+    [Authorize(Roles = "Solicitante,Administrador")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> AsignarAreasPersona(
+        long id,
+        long idSolicitudPersona,
+        AsignarAreasPersonaSolicitudRequest request,
+        CancellationToken cancellationToken)
+    {
+        var usuario = CurrentUserId();
+        if (usuario is null) return Unauthorized();
+        var existing = await repository.ObtenerSolicitudAsync(id, cancellationToken);
+        if (existing is null) return NotFound();
+        if (!User.IsInRole("Administrador") && existing.IdUsuarioSolicitante != usuario) return Forbid();
+        await repository.AsignarAreasPersonaAsync(id, idSolicitudPersona, request.Areas, usuario, cancellationToken);
+        return NoContent();
     }
 
     [HttpPost("{id:long}/enviar")]
