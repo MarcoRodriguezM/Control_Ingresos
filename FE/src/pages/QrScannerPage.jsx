@@ -31,7 +31,7 @@ export function QrScannerPage({ onError }) {
     const match = String(rawValue ?? '').match(qrPattern)
     if (!match) {
       processingRef.current = false
-      onError('El codigo leido no corresponde a una identificacion registrada en el sistema.')
+      onError('El código leído no corresponde a una identificación registrada en el sistema.')
       return
     }
 
@@ -50,7 +50,7 @@ export function QrScannerPage({ onError }) {
           const photograph = await controlIngresosApi.obtenerFotografiaEmpleado(result.data.codigoEmpleado)
           setEmployeePhotoUrl(URL.createObjectURL(photograph))
         } catch {
-          // La fotografia es opcional y no impide validar al empleado.
+          // La fotografía es opcional y no impide validar al empleado.
         }
       } else {
         setPersona(result.data)
@@ -58,11 +58,11 @@ export function QrScannerPage({ onError }) {
           const photograph = await controlIngresosApi.obtenerFotografiaPersona(result.data.idPersona)
           setPersonPhotoUrl(photograph?.dataUrl ?? '')
         } catch {
-          // La fotografia es opcional y no impide validar a la persona.
+          // La fotografía es opcional y no impide validar a la persona.
         }
       }
     } catch (error) {
-      onError(error.status === 404 ? 'El codigo QR no existe o ya no es valido.' : error.message)
+      onError(error.status === 404 ? 'El código QR no existe o ya no es válido.' : error.message)
     } finally {
       setLoading(false)
       processingRef.current = false
@@ -74,7 +74,7 @@ export function QrScannerPage({ onError }) {
     const initialCode = parameters.get('codigo')
     if (initialCode) consult(initialCode, parameters.get('tipo'))
     return stopCamera
-    // La consulta inicial solo corresponde al codigo presente al abrir la ruta.
+    // La consulta inicial solo corresponde al código presente al abrir la ruta.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -84,7 +84,7 @@ export function QrScannerPage({ onError }) {
 
   async function startCamera() {
     if (!('BarcodeDetector' in window) || !navigator.mediaDevices?.getUserMedia) {
-      onError('Este navegador no permite leer QR directamente. Puedes pegar el codigo o abrir el enlace del QR.')
+      onError('Este navegador no permite leer QR directamente. Puedes pegar el código o abrir el enlace del QR.')
       return
     }
 
@@ -108,14 +108,14 @@ export function QrScannerPage({ onError }) {
             return
           }
         } catch {
-          // Un fotograma todavia no disponible se intenta nuevamente.
+          // Un fotograma todavía no disponible se intenta nuevamente.
         }
         frameRef.current = requestAnimationFrame(scan)
       }
       frameRef.current = requestAnimationFrame(scan)
     } catch (error) {
       stopCamera()
-      onError(error.name === 'NotAllowedError' ? 'Debes permitir el acceso a la camara para escanear el QR.' : 'No fue posible iniciar la camara del dispositivo.')
+      onError(error.name === 'NotAllowedError' ? 'Debes permitir el acceso a la cámara para escanear el QR.' : 'No fue posible iniciar la cámara del dispositivo.')
     }
   }
 
@@ -130,36 +130,36 @@ export function QrScannerPage({ onError }) {
 
   return <>
     <div className="page-heading qr-page-heading">
-      <div><p className="eyebrow">Control de ingreso</p><h1>Escanear QR</h1><p>Identifica personas o empleados y consulta su informacion vigente en tiempo real.</p></div>
+      <div><p className="eyebrow">Control de ingreso</p><h1>Escanear QR</h1><p>Identifica personas o empleados y consulta su información vigente en tiempo real.</p></div>
     </div>
 
     <section className="panel scanner-panel">
       <div className={`camera-shell ${cameraActive ? 'active' : ''}`}>
         <video ref={videoRef} playsInline muted />
-        {!cameraActive && <div className="camera-placeholder"><Icon name="qr" /><strong>Camara detenida</strong><span>Presiona el boton para comenzar a escanear.</span></div>}
+        {!cameraActive && <div className="camera-placeholder"><Icon name="qr" /><strong>Cámara detenida</strong><span>Presiona el botón para comenzar a escanear.</span></div>}
         {cameraActive && <div className="scanner-frame" aria-hidden="true" />}
       </div>
       <div className="scanner-controls">
-        <button type="button" className={cameraActive ? 'danger-button primary-button' : 'primary-button'} onClick={cameraActive ? stopCamera : startCamera}><Icon name={cameraActive ? 'close' : 'camera'} />{cameraActive ? 'Detener camara' : 'Abrir camara'}</button>
-        <span>o ingresa el codigo/enlace manualmente</span>
-        <form onSubmit={submit} className="qr-manual-form"><input value={value} onChange={(event) => setValue(event.target.value)} placeholder="Pega aqui el codigo o enlace del QR" aria-label="Codigo QR" /><button type="submit" className="secondary-button" disabled={loading}>{loading ? 'Consultando…' : 'Consultar'}</button></form>
+        <button type="button" className={cameraActive ? 'danger-button primary-button' : 'primary-button'} onClick={cameraActive ? stopCamera : startCamera}><Icon name={cameraActive ? 'close' : 'camera'} />{cameraActive ? 'Detener cámara' : 'Abrir cámara'}</button>
+        <span>o ingresa el código/enlace manualmente</span>
+        <form onSubmit={submit} className="qr-manual-form"><input value={value} onChange={(event) => setValue(event.target.value)} placeholder="Pega aquí el código o enlace del QR" aria-label="Código QR" /><button type="submit" className="secondary-button" disabled={loading}>{loading ? 'Consultando…' : 'Consultar'}</button></form>
       </div>
     </section>
 
-    {loading && <div className="panel qr-placeholder">Consultando informacion de la identificacion…</div>}
+    {loading && <div className="panel qr-placeholder">Consultando información de la identificación…</div>}
     {persona && <section className="qr-result">
       <div className={`panel qr-access-identity ${authorizedCount > 0 ? 'has-access' : 'without-access'}`}>
         <div className="qr-access-person">
-          <div className="person-avatar qr-person-photo"><span>{initials(persona.nombreCompleto)}</span>{personPhotoUrl && <img src={personPhotoUrl} alt="Fotografia de la persona" />}</div>
+          <div className="person-avatar qr-person-photo"><span>{initials(persona.nombreCompleto)}</span>{personPhotoUrl && <img src={personPhotoUrl} alt="Fotografía de la persona" />}</div>
           <div className="qr-access-person-copy"><p className="eyebrow">Persona identificada</p><h2>{persona.nombreCompleto || 'Sin nombre'}</h2><p>{persona.numeroDocumento || 'Sin documento'} · {persona.empresa || 'Empresa no indicada'}</p></div>
         </div>
-        <div className="qr-current-access"><Icon name={authorizedCount > 0 ? 'check' : 'lock'} /><span><strong>{authorizedCount > 0 ? 'Acceso vigente' : 'Sin acceso vigente'}</strong><small>{authorizedCount > 0 ? `${authorizedCount} ${authorizedCount === 1 ? 'area autorizada' : 'areas autorizadas'} en este momento` : 'No tiene areas autorizadas en este momento'}</small></span></div>
+        <div className="qr-current-access"><Icon name={authorizedCount > 0 ? 'check' : 'lock'} /><span><strong>{authorizedCount > 0 ? 'Acceso vigente' : 'Sin acceso vigente'}</strong><small>{authorizedCount > 0 ? `${authorizedCount} ${authorizedCount === 1 ? 'área autorizada' : 'áreas autorizadas'} en este momento` : 'No tiene áreas autorizadas en este momento'}</small></span></div>
       </div>
 
       <section className="panel qr-assigned-areas">
-        <div className="qr-assigned-heading"><div><p className="eyebrow">Permisos de ingreso</p><h2>Areas asignadas</h2><p>La autorizacion se calcula con el estado de aprobacion y las fechas de vigencia.</p></div><span>{assignedAreas.length}</span></div>
+        <div className="qr-assigned-heading"><div><p className="eyebrow">Permisos de ingreso</p><h2>Áreas asignadas</h2><p>La autorización se calcula con el estado de aprobación y las fechas de vigencia.</p></div><span>{assignedAreas.length}</span></div>
         {assignedAreas.length === 0
-          ? <div className="qr-no-areas"><Icon name="lock" /><strong>No tiene areas asignadas</strong><span>Esta persona no cuenta con permisos de ingreso registrados.</span></div>
+          ? <div className="qr-no-areas"><Icon name="lock" /><strong>No tiene áreas asignadas</strong><span>Esta persona no cuenta con permisos de ingreso registrados.</span></div>
           : <div className="qr-assigned-list">{assignedAreas.map((area) => <AssignedArea key={`${area.idArea}-${area.numeroSolicitud}`} area={area} />)}</div>}
       </section>
     </section>}
@@ -171,16 +171,16 @@ function EmployeeQrResult({ employee, photographUrl }) {
   return <section className="qr-result">
     <div className="panel qr-access-identity employee-qr-identity">
       <div className="qr-access-person">
-        <div className="person-avatar qr-person-photo"><span>{initials(employee.nombreCompleto)}</span>{photographUrl && <img src={photographUrl} alt="Fotografia del empleado" />}</div>
-        <div className="qr-access-person-copy"><p className="eyebrow">Empleado identificado</p><h2>{employee.nombreCompleto || 'Sin nombre'}</h2><p>{employee.codigoEmpleado || 'Sin codigo'} · {employee.departamento || 'Departamento no indicado'}</p></div>
+        <div className="person-avatar qr-person-photo"><span>{initials(employee.nombreCompleto)}</span>{photographUrl && <img src={photographUrl} alt="Fotografía del empleado" />}</div>
+        <div className="qr-access-person-copy"><p className="eyebrow">Empleado identificado</p><h2>{employee.nombreCompleto || 'Sin nombre'}</h2><p>{employee.codigoEmpleado || 'Sin código'} · {employee.departamento || 'Departamento no indicado'}</p></div>
       </div>
       <div className="employee-qr-status"><Icon name="user" /><span><strong>{employee.descripcionStatus || employee.codigoStatus || 'Estado no indicado'}</strong><small>Estado laboral consultado en HTIS</small></span></div>
     </div>
 
     <section className="panel employee-qr-information">
-      <div className="qr-assigned-heading"><div><p className="eyebrow">Informacion laboral</p><h2>Datos actuales del empleado</h2><p>Estos datos no se almacenan con el QR; se consultan en el servidor de empleados.</p></div></div>
+      <div className="qr-assigned-heading"><div><p className="eyebrow">Información laboral</p><h2>Datos actuales del empleado</h2><p>Estos datos no se almacenan con el QR; se consultan en el servidor de empleados.</p></div></div>
       <div className="employee-detail-grid employee-qr-grid">
-        <EmployeeValue label="Codigo de empleado" value={employee.codigoEmpleado} />
+        <EmployeeValue label="Código de empleado" value={employee.codigoEmpleado} />
         <EmployeeValue label="Estado" value={employee.descripcionStatus || employee.codigoStatus} />
         <EmployeeValue label="Departamento" value={employee.departamento} />
         <EmployeeValue label="Cargo / nivel" value={employee.cargoNivel} />
@@ -230,8 +230,8 @@ function AssignedArea({ area }) {
   return <article className={`qr-assigned-card ${allowed ? 'allowed' : 'denied'}`}>
     <div className="qr-area-symbol"><Icon name={allowed ? 'check' : 'lock'} /></div>
     <div className="qr-assigned-copy">
-      <div className="qr-assigned-title"><div><h3>{area.area || 'Area sin nombre'}</h3><p>{area.actividad || 'Actividad no indicada'} · {area.numeroSolicitud}</p></div><span className={`qr-access-state ${allowed ? 'allowed' : 'denied'}`}>{allowed ? 'Acceso autorizado' : 'Sin acceso'}</span></div>
-      <div className="qr-validity-row"><span><strong>Vigencia</strong>{area.fechaInicio && area.fechaFin ? `${formatDate(area.fechaInicio)} – ${formatDate(area.fechaFin)}` : 'Sin fechas definidas'}</span>{area.ubicacion && <span><strong>Ubicacion</strong>{area.ubicacion}</span>}<span className={`qr-validity-message ${validity.kind}`}><strong>Estado actual</strong>{allowed ? validity.message : accessMessage(area, validity)}</span></div>
+      <div className="qr-assigned-title"><div><h3>{area.area || 'Área sin nombre'}</h3><p>{area.actividad || 'Actividad no indicada'} · {area.numeroSolicitud}</p></div><span className={`qr-access-state ${allowed ? 'allowed' : 'denied'}`}>{allowed ? 'Acceso autorizado' : 'Sin acceso'}</span></div>
+      <div className="qr-validity-row"><span><strong>Vigencia</strong>{area.fechaInicio && area.fechaFin ? `${formatDate(area.fechaInicio)} – ${formatDate(area.fechaFin)}` : 'Sin fechas definidas'}</span>{area.ubicacion && <span><strong>Ubicación</strong>{area.ubicacion}</span>}<span className={`qr-validity-message ${validity.kind}`}><strong>Estado actual</strong>{allowed ? validity.message : accessMessage(area, validity)}</span></div>
       {area.comentarioDecision && !allowed && <p className="qr-access-reason">{area.comentarioDecision}</p>}
     </div>
   </article>
@@ -242,17 +242,17 @@ function getValidity(area) {
   const today = startOfDay(new Date())
   const start = parseDate(area.fechaInicio)
   const end = parseDate(area.fechaFin)
-  if (today < start) return { kind: 'future', message: `Inicia en ${daysBetween(today, start)} dia(s)` }
-  if (today > end) return { kind: 'expired', message: `Vencio hace ${daysBetween(end, today)} dia(s)` }
+  if (today < start) return { kind: 'future', message: `Inicia en ${daysBetween(today, start)} día(s)` }
+  if (today > end) return { kind: 'expired', message: `Venció hace ${daysBetween(end, today)} día(s)` }
   const remaining = daysBetween(today, end)
-  return { kind: 'active', message: remaining === 0 ? 'Vence hoy' : `${remaining} dia(s) restante(s)` }
+  return { kind: 'active', message: remaining === 0 ? 'Vence hoy' : `${remaining} día(s) restante(s)` }
 }
 
 function accessMessage(area, validity) {
   if (validity.kind === 'expired' || validity.kind === 'future') return validity.message
   if (area.codigoAcceso === 'RECHAZADA') return 'Acceso rechazado'
-  if (area.codigoAcceso === 'PENDIENTE') return 'Pendiente de aprobacion'
-  if (area.codigoAcceso === 'SOLICITUD_NO_HABILITADA') return 'Solicitud aun no habilitada'
+  if (area.codigoAcceso === 'PENDIENTE') return 'Pendiente de aprobación'
+  if (area.codigoAcceso === 'SOLICITUD_NO_HABILITADA') return 'Solicitud aún no habilitada'
   return area.estadoAcceso || 'Acceso no autorizado'
 }
 

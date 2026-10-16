@@ -38,10 +38,10 @@ public sealed class SmtpCredentialEmailSender(
             Body = $"""
                 Hola {nombreProveedor},
 
-                Se creo su cuenta para ingresar al portal de proveedores.
+                Se creó su cuenta para ingresar al portal de proveedores.
 
                 Usuario: {idUsuario}
-                Contrasena temporal: {contrasenaTemporal}
+                Contraseña temporal: {contrasenaTemporal}
                 Acceso: {urlAplicacion.TrimEnd('/')}/login
 
                 Por seguridad, no comparta estas credenciales.

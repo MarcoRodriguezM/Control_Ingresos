@@ -18,11 +18,11 @@ public sealed class EmpleadosRepository(IConfiguration configuration) : IEmplead
     private const string ProcedimientoQrConsultar = "dbo.usp_Empleado_Qr_Consultar";
 
     private readonly string _controlIngresosConnectionString = configuration.GetConnectionString("ControlIngresos")
-        ?? throw new InvalidOperationException("No se configuro ConnectionStrings:ControlIngresos.");
+        ?? throw new InvalidOperationException("No se configuró ConnectionStrings:ControlIngresos.");
 
     private readonly string _empleadosConnectionString =
         configuration.GetConnectionString("ConsultaEmpleadosHtis")
-        ?? throw new InvalidOperationException("No se configuro ConnectionStrings:ConsultaEmpleadosHtis.");
+        ?? throw new InvalidOperationException("No se configuró ConnectionStrings:ConsultaEmpleadosHtis.");
 
     public async Task<IReadOnlyCollection<Empleado>> ListarAsync(CancellationToken cancellationToken)
     {
@@ -72,15 +72,11 @@ public sealed class EmpleadosRepository(IConfiguration configuration) : IEmplead
         }
         catch (SqlException exception)
         {
-            throw new HtisUnavailableException(
-                "No fue posible consultar los empleados en HTIS. Intenta nuevamente en unos minutos.",
-                exception);
+            throw;
         }
         catch (TimeoutException exception)
         {
-            throw new HtisUnavailableException(
-                "La consulta de empleados en HTIS tardó demasiado. Intenta nuevamente.",
-                exception);
+            throw;
         }
     }
 
@@ -188,7 +184,7 @@ public sealed class EmpleadosRepository(IConfiguration configuration) : IEmplead
         var consultaSql = result is null or DBNull ? null : Convert.ToString(result, CultureInfo.InvariantCulture);
 
         if (string.IsNullOrWhiteSpace(consultaSql))
-            throw new InvalidOperationException($"El procedimiento {procedimiento} no devolvio una consulta SQL.");
+            throw new InvalidOperationException($"El procedimiento {procedimiento} no devolvió una consulta SQL.");
 
         return consultaSql;
     }
@@ -298,7 +294,7 @@ public sealed class EmpleadosRepository(IConfiguration configuration) : IEmplead
             SqlBytes sqlBytes => sqlBytes.Value,
             string base64 => Convert.FromBase64String(base64),
             _ => throw new InvalidOperationException(
-                $"El formato de fotografia '{value.GetType().Name}' no es compatible.")
+                $"El formato de fotografía '{value.GetType().Name}' no es compatible.")
         };
     }
 

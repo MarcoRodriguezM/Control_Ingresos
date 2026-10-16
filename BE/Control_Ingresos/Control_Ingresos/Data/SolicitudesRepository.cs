@@ -8,7 +8,7 @@ namespace Control_Ingresos.Data;
 public sealed class SolicitudesRepository(IConfiguration configuration) : ISolicitudesRepository
 {
     private readonly string _connectionString = configuration.GetConnectionString("ControlIngresos")
-        ?? throw new InvalidOperationException("No se configuro ConnectionStrings:ControlIngresos.");
+        ?? throw new InvalidOperationException("No se configuró ConnectionStrings:ControlIngresos.");
 
     public async Task<SesionUsuario?> AutenticarAsync(
         LoginRequest request,
@@ -160,7 +160,7 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
         try
         {
             var idUsuario = Convert.ToString(await command.ExecuteScalarAsync(cancellationToken))
-                ?? throw new InvalidOperationException("No se recibio el identificador del usuario creado.");
+                ?? throw new InvalidOperationException("No se recibió el identificador del usuario creado.");
             if (request.EsSeguridad)
             {
                 await using var roleCommand = StoredProcedure(connection, "dbo.usp_Usuario_Rol_Asignar", transaction);
@@ -416,7 +416,7 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
-            throw new InvalidOperationException("No se recibio la cuenta creada para el proveedor.");
+            throw new InvalidOperationException("No se recibió la cuenta creada para el proveedor.");
 
         return new ProveedorUsuarioCreado(reader.GetInt64(0), reader.GetString(1));
     }

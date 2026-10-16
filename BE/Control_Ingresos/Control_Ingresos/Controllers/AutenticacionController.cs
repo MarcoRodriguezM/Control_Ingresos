@@ -37,7 +37,7 @@ public sealed class AutenticacionController(
             return Unauthorized(new ProblemDetails
             {
                 Title = "Credenciales incorrectas",
-                Detail = "El usuario, correo o contrasena no son validos."
+                Detail = "El usuario, correo o contraseña no son válidos."
             });
 
         var claims = new List<Claim>

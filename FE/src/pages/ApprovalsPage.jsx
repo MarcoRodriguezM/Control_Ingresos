@@ -59,7 +59,7 @@ export function ApprovalsPage({ items, loading, onDecide, onDecideMany, onViewDe
       const result = await onDecide(item.idSolicitudPersonaArea, decision.codigoEstado, trimmedComment)
       setSaving(false)
       if (!result?.success) {
-        setDecisionError(result?.message || 'No se pudo guardar la decision.')
+        setDecisionError(result?.message || 'No se pudo guardar la decisión.')
         return
       }
       setDecision(null)
@@ -90,14 +90,14 @@ export function ApprovalsPage({ items, loading, onDecide, onDecideMany, onViewDe
     {resultSummary && <BatchResultModal summary={resultSummary} onClose={() => setResultSummary(null)} />}
 
     <div className="filters">
-      <div className="search-box"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar persona, solicitud o area" /></div>
+      <div className="search-box"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar persona, solicitud o área" /></div>
       <select className="filter-select" value={status} onChange={(event) => setStatus(event.target.value)}><option value="">Todos los estados</option><option value="PENDIENTE">Pendientes</option><option value="APROBADA">Aprobadas</option><option value="RECHAZADA">Rechazadas</option></select>
     </div>
 
     <div className="bulk-actions">{selectedItems.length > 0 && <span>{selectedItems.length} acceso{selectedItems.length === 1 ? '' : 's'} seleccionado{selectedItems.length === 1 ? '' : 's'}</span>}<div><button type="button" className="approve-action" disabled={selectedItems.length === 0} onClick={() => beginDecision(selectedItems, 'APROBADA')}>Aprobar seleccionadas</button><button type="button" className="delete-action" disabled={selectedItems.length === 0} onClick={() => beginDecision(selectedItems, 'RECHAZADA')}>Rechazar seleccionadas</button></div></div>
 
     <article className="panel requests-panel">
-      <div className="table-wrap"><table className="approvals-table"><thead><tr>{hasPending && <th className="selection-cell"><input type="checkbox" className="selection-checkbox" checked={allVisibleSelected} onChange={toggleVisibleSelection} aria-label="Seleccionar todos los accesos pendientes visibles" /></th>}<th>Detalle</th><th>Persona</th><th>Solicitud / actividad</th><th>Area</th><th>Vigencia</th><th>Estado</th>{hasPending && <th>Acciones</th>}</tr></thead>
+      <div className="table-wrap"><table className="approvals-table"><thead><tr>{hasPending && <th className="selection-cell"><input type="checkbox" className="selection-checkbox" checked={allVisibleSelected} onChange={toggleVisibleSelection} aria-label="Seleccionar todos los accesos pendientes visibles" /></th>}<th>Detalle</th><th>Persona</th><th>Solicitud / actividad</th><th>Área</th><th>Vigencia</th><th>Estado</th>{hasPending && <th>Acciones</th>}</tr></thead>
         <tbody>
           {loading && <tr><td colSpan={hasPending ? 8 : 6} className="empty-table">Cargando aprobaciones…</td></tr>}
           {!loading && filtered.length === 0 && <tr><td colSpan={hasPending ? 8 : 6} className="empty-table">No hay aprobaciones para este filtro.</td></tr>}
@@ -105,8 +105,8 @@ export function ApprovalsPage({ items, loading, onDecide, onDecideMany, onViewDe
             {hasPending && <td className="selection-cell">{item.codigoEstado === 'PENDIENTE' && <input type="checkbox" className="selection-checkbox" checked={selectedIds.includes(item.idSolicitudPersonaArea)} onChange={() => toggleSelection(item.idSolicitudPersonaArea)} aria-label={`Seleccionar ${item.persona || 'acceso'}`} />}</td>}
             <td className="detail-cell"><button type="button" className="secondary-button detail-button" onClick={() => onViewDetail(item.idSolicitudPersonaArea)}><Icon name="file" />Ver detalle</button></td>
             <td><div className="approval-person"><span><strong>{item.persona || 'Sin nombre'}</strong><small>{item.empresa || item.numeroDocumento || 'Sin empresa'}</small></span></div></td>
-            <td><strong>{item.numeroSolicitud || 'Sin numero'}</strong><span className="cell-sub">{item.actividad || 'Sin actividad'}</span></td>
-            <td>{item.area || '—'}<span className="cell-sub">{item.ubicacion || 'Sin ubicacion'}</span></td>
+            <td><strong>{item.numeroSolicitud || 'Sin número'}</strong><span className="cell-sub">{item.actividad || 'Sin actividad'}</span></td>
+            <td>{item.area || '—'}<span className="cell-sub">{item.ubicacion || 'Sin ubicación'}</span></td>
             <td>{formatDate(item.fechaInicio)}<span className="cell-sub">hasta {formatDate(item.fechaFin)}</span></td>
             <td><span className={`access-status ${accessStatusClass(item.codigoEstado)}`}>{item.estado || 'Sin estado'}</span>{item.fechaDecision && <span className="cell-sub">{formatDateTime(item.fechaDecision)}</span>}</td>
             {hasPending && <td>{item.codigoEstado === 'PENDIENTE' && <div className="row-actions"><button type="button" className="approve-action" onClick={() => beginDecision([item], 'APROBADA')}>Aprobar</button><button type="button" className="delete-action" onClick={() => beginDecision([item], 'RECHAZADA')}>Rechazar</button></div>}</td>}
@@ -122,8 +122,8 @@ function DecisionModal({ decision, comment, saving, error, onCommentChange, onCa
   return <div className="approval-modal-backdrop" role="presentation" onMouseDown={() => !saving && onCancel()}>
     <section className={`approval-modal ${isApproval ? 'approve' : 'reject'}`} role="dialog" aria-modal="true" aria-labelledby="approval-modal-title" onMouseDown={(event) => event.stopPropagation()}>
       <h2 id="approval-modal-title" className="approval-modal-title">{isApproval ? 'Aprobar acceso' : 'Rechazar acceso'}</h2>
-      <div className={`decision-copy ${decision.items.length > 1 ? 'multiple' : ''}`}>{decision.items.map((item) => <div className="decision-person" key={item.idSolicitudPersonaArea}><h3>{item.persona || 'Sin nombre'}</h3><p>{item.area || 'Sin area'} · {item.numeroSolicitud || 'Sin solicitud'}</p></div>)}</div>
-      <div className="decision-form"><label htmlFor="approval-comment">Comentario {!isApproval && <span className="required">*</span>}</label><textarea id="approval-comment" value={comment} onChange={(event) => onCommentChange(event.target.value)} maxLength="1000" placeholder={isApproval ? 'Comentario opcional' : 'Indica el motivo del rechazo'} autoFocus />{error && <p className="decision-error" role="alert">{error}</p>}<div className="action-row"><button type="button" className="secondary-button" disabled={saving} onClick={onCancel}>Cancelar</button><button type="button" className={`primary-button ${isApproval ? 'teal' : 'danger-button'}`} disabled={saving} onClick={onConfirm}>{saving ? 'Guardando…' : isApproval ? 'Confirmar aprobacion' : 'Confirmar rechazo'}</button></div></div>
+      <div className={`decision-copy ${decision.items.length > 1 ? 'multiple' : ''}`}>{decision.items.map((item) => <div className="decision-person" key={item.idSolicitudPersonaArea}><h3>{item.persona || 'Sin nombre'}</h3><p>{item.area || 'Sin área'} · {item.numeroSolicitud || 'Sin solicitud'}</p></div>)}</div>
+      <div className="decision-form"><label htmlFor="approval-comment">Comentario {!isApproval && <span className="required">*</span>}</label><textarea id="approval-comment" value={comment} onChange={(event) => onCommentChange(event.target.value)} maxLength="1000" placeholder={isApproval ? 'Comentario opcional' : 'Indica el motivo del rechazo'} autoFocus />{error && <p className="decision-error" role="alert">{error}</p>}<div className="action-row"><button type="button" className="secondary-button" disabled={saving} onClick={onCancel}>Cancelar</button><button type="button" className={`primary-button ${isApproval ? 'teal' : 'danger-button'}`} disabled={saving} onClick={onConfirm}>{saving ? 'Guardando…' : isApproval ? 'Confirmar aprobación' : 'Confirmar rechazo'}</button></div></div>
     </section>
   </div>
 }
@@ -133,13 +133,13 @@ function BatchResultModal({ summary, onClose }) {
   const actionLabel = isApproval ? 'Aprobaciones realizadas' : 'Rechazos realizados'
   return <div className="approval-modal-backdrop" role="presentation" onMouseDown={onClose}>
     <section className={`approval-modal bulk-result-modal ${isApproval ? 'approve' : 'reject'}`} role="dialog" aria-modal="true" aria-labelledby="batch-result-title" onMouseDown={(event) => event.stopPropagation()}>
-      <h2 id="batch-result-title" className="approval-modal-title">Resultado de {isApproval ? 'aprobacion' : 'rechazo'}</h2>
-      <div className="bulk-result-copy">{summary.successes.length > 0 && <ResultGroup label={actionLabel} items={summary.successes} />}{summary.failures.length > 0 && <ResultGroup label="No procesadas" items={summary.failures.map((failure) => failure.item ? { ...failure.item, message: failure.message } : { persona: 'Acceso', area: 'Sin informacion', message: failure.message })} failed />}</div>
+      <h2 id="batch-result-title" className="approval-modal-title">Resultado de {isApproval ? 'aprobación' : 'rechazo'}</h2>
+      <div className="bulk-result-copy">{summary.successes.length > 0 && <ResultGroup label={actionLabel} items={summary.successes} />}{summary.failures.length > 0 && <ResultGroup label="No procesadas" items={summary.failures.map((failure) => failure.item ? { ...failure.item, message: failure.message } : { persona: 'Acceso', area: 'Sin información', message: failure.message })} failed />}</div>
       <div className="action-row bulk-result-actions"><button type="button" className="secondary-button" onClick={onClose}>Cerrar</button></div>
     </section>
   </div>
 }
 
 function ResultGroup({ label, items, failed }) {
-  return <section className={`bulk-result-group ${failed ? 'failed' : 'successful'}`}><strong>{label} ({items.length})</strong><div className="decision-copy multiple bulk-result-list">{items.map((item, index) => <div className="decision-person" key={item.idSolicitudPersonaArea ?? index}><h3>{item.persona || 'Sin nombre'}</h3><p>{item.area || 'Sin area'}</p>{item.message && <small>{item.message}</small>}</div>)}</div></section>
+  return <section className={`bulk-result-group ${failed ? 'failed' : 'successful'}`}><strong>{label} ({items.length})</strong><div className="decision-copy multiple bulk-result-list">{items.map((item, index) => <div className="decision-person" key={item.idSolicitudPersonaArea ?? index}><h3>{item.persona || 'Sin nombre'}</h3><p>{item.area || 'Sin área'}</p>{item.message && <small>{item.message}</small>}</div>)}</div></section>
 }

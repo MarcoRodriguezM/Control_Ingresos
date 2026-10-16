@@ -92,7 +92,7 @@ export function PersonFormPage({ session, providers = [], providerMode = false, 
       setPhotograph(null)
       setPhotographPreview('')
       setPhotographWasCompressed(false)
-      onError(error.message || 'No fue posible procesar la fotografia seleccionada.')
+      onError(error.message || 'No fue posible procesar la fotografía seleccionada.')
     } finally {
       setProcessingPhotograph(false)
     }
@@ -103,7 +103,7 @@ export function PersonFormPage({ session, providers = [], providerMode = false, 
     onError('')
 
     if (!form.numeroDocumento.trim() || !form.nombreCompleto.trim()) {
-      onError('El numero de documento y el nombre completo son obligatorios.')
+      onError('El número de documento y el nombre completo son obligatorios.')
       return
     }
 
@@ -139,54 +139,54 @@ export function PersonFormPage({ session, providers = [], providerMode = false, 
 
   return <>
     <div className="page-heading">
-      <div><p className="eyebrow">{providerMode ? 'Portal del proveedor' : 'Personas'}</p><h1>Registrar nueva persona</h1><p>Ingresa los datos de identificacion, contacto y empresa de la persona.</p></div>
+      <div><p className="eyebrow">{providerMode ? 'Portal del proveedor' : 'Personas'}</p><h1>Registrar nueva persona</h1><p>Ingresa los datos de identificación, contacto y empresa de la persona.</p></div>
     </div>
     <form className="panel form-panel" onSubmit={submit}>
-      <div className="section-heading"><h2>Informacion personal</h2><p>Los campos marcados con * son obligatorios.</p></div>
+      <div className="section-heading"><h2>Información personal</h2><p>Los campos marcados con * son obligatorios.</p></div>
       <div className="form-grid">
         <Field label="Tipo de documento">
           <Select name="idTipoDocumento" value={form.idTipoDocumento} onChange={change} items={catalogs.documentTypes} loading={loading} />
         </Field>
-        <Field label="Numero de documento" required>
-          <input name="numeroDocumento" maxLength="60" value={form.numeroDocumento} onChange={change} placeholder="Numero de identidad, pasaporte u otro" required />
+        <Field label="Número de documento" required>
+          <input name="numeroDocumento" maxLength="60" value={form.numeroDocumento} onChange={change} placeholder="Número de identidad, pasaporte u otro" required />
         </Field>
         <Field label="Nombre completo" required full>
           <input name="nombreCompleto" maxLength="200" value={form.nombreCompleto} onChange={change} placeholder="Nombres y apellidos" required />
         </Field>
-        <Field label="Telefono">
+        <Field label="Teléfono">
           <input type="tel" name="telefono" maxLength="30" value={form.telefono} onChange={change} placeholder="Ej. +504 9999-9999" />
         </Field>
-        <Field label="Correo electronico">
+        <Field label="Correo electrónico">
           <input type="email" name="correo" maxLength="254" value={form.correo} onChange={change} placeholder="persona@empresa.com" />
         </Field>
-        <Field label="Cargo o funcion">
-          <input name="cargoFuncion" maxLength="150" value={form.cargoFuncion} onChange={change} placeholder="Ej. Tecnico electricista" />
+        <Field label="Cargo o función">
+          <input name="cargoFuncion" maxLength="150" value={form.cargoFuncion} onChange={change} placeholder="Ej. Técnico electricista" />
         </Field>
         <Field label="Estado">
           <Select name="idEstadoGeneral" value={form.idEstadoGeneral} onChange={change} items={catalogs.statuses} loading={loading} />
         </Field>
       </div>
 
-      <div className="section-heading person-form-section"><h2>Empresa e informacion adicional</h2><p>{providerMode ? 'Indica la empresa a la que pertenece la persona.' : 'Selecciona un proveedor registrado o escribe el nombre de la empresa.'}</p></div>
+      <div className="section-heading person-form-section"><h2>Empresa e información adicional</h2><p>{providerMode ? 'Indica la empresa a la que pertenece la persona.' : 'Selecciona un proveedor registrado o escribe el nombre de la empresa.'}</p></div>
       <div className="form-grid">
         {!providerMode && <Field label="Proveedor">
           <Select name="idProveedor" value={form.idProveedor} onChange={change} items={providers} emptyLabel="Sin proveedor registrado" />
         </Field>}
         <Field label="Empresa" required={providerMode} full={providerMode}>
           <input name="empresaTexto" maxLength="200" value={form.empresaTexto} onChange={change} placeholder={providerMode ? 'Cargando empresa asignada…' : 'Nombre de la empresa'} required={providerMode} readOnly={providerMode} />
-          {providerMode && <small className="field-help">Razon social vinculada automaticamente con tu cuenta.</small>}
+          {providerMode && <small className="field-help">Razón social vinculada automáticamente con tu cuenta.</small>}
         </Field>
-        <Field label="Fotografia" full>
+        <Field label="Fotografía" full>
           <div className="photograph-picker">
             <div className={`photograph-preview ${photographPreview ? 'has-image' : ''}`}>
               {photographPreview
-                ? <img src={photographPreview} alt="Vista previa de la fotografia seleccionada" />
+                ? <img src={photographPreview} alt="Vista previa de la fotografía seleccionada" />
                 : <Icon name="user" />}
             </div>
             <div className="photograph-picker-copy">
               <label className="photograph-button" htmlFor="person-photograph">
                 <Icon name="file" />
-                {processingPhotograph ? 'Optimizando…' : photograph ? 'Cambiar fotografia' : 'Seleccionar fotografia'}
+                {processingPhotograph ? 'Optimizando…' : photograph ? 'Cambiar fotografía' : 'Seleccionar fotografía'}
               </label>
               <input
                 id="person-photograph"
@@ -199,12 +199,12 @@ export function PersonFormPage({ session, providers = [], providerMode = false, 
               <span>{processingPhotograph
                 ? 'Reduciendo la imagen para que pueda subirse…'
                 : photograph
-                  ? `${photograph.name} · ${formatFileSize(photograph.size)}${photographWasCompressed ? ' · optimizada automaticamente' : ''}`
-                  : 'JPG, PNG o WebP. Las imagenes mayores de 5 MB se optimizan automaticamente.'}</span>
+                  ? `${photograph.name} · ${formatFileSize(photograph.size)}${photographWasCompressed ? ' · optimizada automáticamente' : ''}`
+                  : 'JPG, PNG o WebP. Las imágenes mayores de 5 MB se optimizan automáticamente.'}</span>
             </div>
           </div>
         </Field>
-        <Field label="Informacion adicional" full>
+        <Field label="Información adicional" full>
           <textarea name="informacionAdicional" maxLength="1000" value={form.informacionAdicional} onChange={change} placeholder="Observaciones relevantes sobre la persona" />
         </Field>
       </div>
@@ -221,7 +221,7 @@ function Field({ label, required, full, children }) {
   return <div className={`field ${full ? 'full' : ''}`}><label>{label} {required && <span className="required">*</span>}</label>{children}</div>
 }
 
-function Select({ items = [], loading, emptyLabel = 'Selecciona una opcion', ...props }) {
+function Select({ items = [], loading, emptyLabel = 'Selecciona una opción', ...props }) {
   return <select {...props}><option value="">{loading ? 'Cargando…' : emptyLabel}</option>{items.map((item) => <option key={item.id} value={item.id}>{item.nombre ?? item.codigo}</option>)}</select>
 }
 

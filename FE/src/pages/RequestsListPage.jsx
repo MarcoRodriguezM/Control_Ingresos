@@ -16,11 +16,11 @@ export function RequestsListPage({ items, loading, onNew, onEdit, onDelete }) {
 
   return <>
     <div className="page-heading requests-heading">
-      <div><p className="eyebrow">Gestion</p><h1>Listado Solicitudes</h1><p>Crea, consulta y da seguimiento a las solicitudes de ingreso.</p></div>
+      <div><p className="eyebrow">Gestión</p><h1>Listado Solicitudes</h1><p>Crea, consulta y da seguimiento a las solicitudes de ingreso.</p></div>
       <button type="button" className="primary-button" onClick={onNew}><span className="plus-sign">+</span>Nueva solicitud</button>
     </div>
     <div className="filters">
-      <div className="search-box"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por numero, actividad o solicitante" /></div>
+      <div className="search-box"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por número, actividad o solicitante" /></div>
       <select className="filter-select" value={status} onChange={(event) => setStatus(event.target.value)}><option value="">Estado: Todos</option>{statuses.map((item) => <option key={item}>{item}</option>)}</select>
     </div>
     <article className="panel requests-panel">

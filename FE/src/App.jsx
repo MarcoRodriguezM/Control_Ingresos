@@ -71,7 +71,7 @@ function App() {
     try {
       await controlIngresosApi.cerrarSesion()
     } catch {
-      // La sesion local siempre debe cerrarse, incluso si la API no esta disponible.
+      // La sesión local siempre debe cerrarse, incluso si la API no está disponible.
     } finally {
       localStorage.removeItem(sessionKey)
       setSession(null)
@@ -193,7 +193,7 @@ function ProviderApp({ session, onLogout }) {
     try {
       setProviderPeople(await controlIngresosApi.listarPersonasProveedor())
     } catch {
-      // La persona ya fue creada; el listado se actualizara en la siguiente carga.
+      // La persona ya fue creada; el listado se actualizará en la siguiente carga.
     }
     if (requestId) navigate(`/portal-proveedor/solicitudes/${requestId}`)
     else openPortal()
@@ -222,7 +222,7 @@ function ProviderApp({ session, onLogout }) {
       setProviderRequest(detail)
       setProviderRequests(requests)
       await showSuccessAlert(detail.cantidadPersonas >= detail.cantidadEstimada
-        ? 'Se completo el registro de personas y la solicitud avanzo al siguiente estado.'
+        ? 'Se completó el registro de personas y la solicitud avanzó al siguiente estado.'
         : 'La persona fue agregada correctamente a la solicitud.')
       return { success: true }
     } catch (requestError) {
@@ -247,8 +247,8 @@ function ProviderApp({ session, onLogout }) {
 
   return <div className="app-shell">
     <AlertModal message={error} onClose={() => setError('')} />
-    {menuOpen && <button className="sidebar-backdrop" onClick={() => setMenuOpen(false)} aria-label="Cerrar menu" />}
-    <aside className={`sidebar ${menuOpen ? 'open' : ''}`} aria-label="Navegacion del proveedor">
+    {menuOpen && <button className="sidebar-backdrop" onClick={() => setMenuOpen(false)} aria-label="Cerrar menú" />}
+    <aside className={`sidebar ${menuOpen ? 'open' : ''}`} aria-label="Navegación del proveedor">
       <div className="sidebar-brand"><img className="sidebar-brand-logo" src={auraLogo} alt="Aura Minerals" /></div>
       <p className="side-label">Portal del proveedor</p>
       <nav className="main-nav">
@@ -258,13 +258,13 @@ function ProviderApp({ session, onLogout }) {
         <Nav icon="check" label="Seguimiento" active={isTrackingRoute} onClick={openTracking} />
       </nav>
       <div className="sidebar-footer">
-        <button type="button" className="nav-item" onClick={onLogout}><Icon name="logout" /><span>Cerrar sesion</span></button>
+        <button type="button" className="nav-item" onClick={onLogout}><Icon name="logout" /><span>Cerrar sesión</span></button>
       </div>
     </aside>
 
     <main className="main">
       <header className="topbar">
-        <button className="icon-button menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label="Abrir menu"><Icon name="menu" /></button>
+        <button className="icon-button menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label="Abrir menú"><Icon name="menu" /></button>
         <div className="breadcrumb"><span>Proveedor</span><strong>{breadcrumb}</strong></div>
         <div className="top-actions">
           <div className="top-profile"><div><strong>{session.nombreCompleto ?? session.idUsuario}</strong><span>Proveedor</span></div><div className="avatar">{initials(session.nombreCompleto)}</div></div>
@@ -299,21 +299,21 @@ function GuardApp({ session, onLogout }) {
 
   return <div className="app-shell">
     <AlertModal message={error} onClose={() => setError('')} />
-    {menuOpen && <button className="sidebar-backdrop" onClick={() => setMenuOpen(false)} aria-label="Cerrar menu" />}
-    <aside className={`sidebar ${menuOpen ? 'open' : ''}`} aria-label="Navegacion principal">
+    {menuOpen && <button className="sidebar-backdrop" onClick={() => setMenuOpen(false)} aria-label="Cerrar menú" />}
+    <aside className={`sidebar ${menuOpen ? 'open' : ''}`} aria-label="Navegación principal">
       <div className="sidebar-brand"><img className="sidebar-brand-logo" src={auraLogo} alt="Aura Minerals" /></div>
       <p className="side-label">Control de ingresos</p>
       <nav className="main-nav">
         <Nav icon="qr" label="Escanear QR" active={location.pathname === '/escanear-qr'} onClick={openScanner} />
       </nav>
       <div className="sidebar-footer">
-        <button type="button" className="nav-item" onClick={onLogout}><Icon name="logout" /><span>Cerrar sesion</span></button>
+        <button type="button" className="nav-item" onClick={onLogout}><Icon name="logout" /><span>Cerrar sesión</span></button>
       </div>
     </aside>
 
     <main className="main">
       <header className="topbar">
-        <button className="icon-button menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label="Abrir menu"><Icon name="menu" /></button>
+        <button className="icon-button menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label="Abrir menú"><Icon name="menu" /></button>
         <div className="breadcrumb"><span>Control de ingreso</span><strong>Escanear QR</strong></div>
         <div className="top-actions">
           <div className="top-profile"><div><strong>{session.nombreCompleto ?? session.idUsuario}</strong><span>Guardia</span></div><div className="avatar">{initials(session.nombreCompleto)}</div></div>
@@ -879,7 +879,7 @@ function AuthenticatedApp({ session, onLogout }) {
       await controlIngresosApi.actualizarFotografiaPersona(idPersona, photograph)
       const detail = await controlIngresosApi.obtenerPersonaAccesos(idPersona)
       setPersonaSeleccionada(detail)
-      await showSuccessAlert('La fotografia fue actualizada correctamente.')
+      await showSuccessAlert('La fotografía fue actualizada correctamente.')
       return { success: true }
     } catch (requestError) {
       setError(requestError.message)
@@ -929,13 +929,13 @@ function AuthenticatedApp({ session, onLogout }) {
   }
 
   async function completeActivity(idActividad) {
-    const comentarios = window.prompt('Comentario de finalizacion (opcional):')
+    const comentarios = window.prompt('Comentario de finalización (opcional):')
     if (comentarios === null) return
     setError('')
     try {
       await controlIngresosApi.completarActividad(idActividad, comentarios.trim() || null)
       setActividades(await controlIngresosApi.listarMisActividades())
-      showSuccessAlert('La actividad fue enviada para aprobacion.')
+      showSuccessAlert('La actividad fue enviada para aprobación.')
     } catch (requestError) {
       setError(requestError.message)
     }
@@ -948,7 +948,7 @@ function AuthenticatedApp({ session, onLogout }) {
       try {
         setUsuarios(await controlIngresosApi.listarUsuarios())
       } catch {
-        // La creacion ya fue confirmada por el servidor. El listado se recargara
+        // La creación ya fue confirmada por el servidor. El listado se recargará
         // al volver a entrar para que un fallo de refresco no simule un fallo al crear.
       }
       await showSuccessAlert('El usuario fue creado correctamente.')
@@ -969,12 +969,12 @@ function AuthenticatedApp({ session, onLogout }) {
         refreshedOptions = await controlIngresosApi.obtenerDatosFormularioSolicitud()
         setOptions(refreshedOptions)
       } catch {
-        // El proveedor ya fue creado; el catalogo se actualizara al recargar la aplicacion.
+        // El proveedor ya fue creado; el catálogo se actualizará al recargar la aplicación.
       }
 
       const message = created.credencialesEnviadas
         ? `El proveedor #${created.id} y el usuario ${created.idUsuario} fueron creados. Las credenciales se enviaron a su correo.`
-        : `El proveedor #${created.id} y el usuario ${created.idUsuario} fueron creados, pero el correo no pudo enviarse. Contrasena temporal: ${created.contrasenaTemporal}`
+        : `El proveedor #${created.id} y el usuario ${created.idUsuario} fueron creados, pero el correo no pudo enviarse. Contraseña temporal: ${created.contrasenaTemporal}`
       await showSuccessAlert(message)
       if (refreshedOptions) {
         setEditingId(null)
@@ -1094,9 +1094,9 @@ function AuthenticatedApp({ session, onLogout }) {
       }
       if (shouldSend) {
         await controlIngresosApi.enviarSolicitud(requestId)
-        showSuccessAlert(activeEditingId ? 'La solicitud fue actualizada y enviada correctamente.' : `Se creo y envio ${created.numero ?? `la solicitud #${created.id}`}.`)
+        showSuccessAlert(activeEditingId ? 'La solicitud fue actualizada y enviada correctamente.' : `Se creó y envió ${created.numero ?? `la solicitud #${created.id}`}.`)
       } else {
-        showSuccessAlert(activeEditingId ? 'La solicitud fue actualizada correctamente.' : `Se creo ${created.numero ?? `la solicitud #${created.id}`} como borrador.`)
+        showSuccessAlert(activeEditingId ? 'La solicitud fue actualizada correctamente.' : `Se creó ${created.numero ?? `la solicitud #${created.id}`} como borrador.`)
       }
       setSolicitudes(await controlIngresosApi.listarSolicitudes())
       setForm(withDefaults(initialForm(), options, session.idUsuario))
@@ -1129,8 +1129,8 @@ function AuthenticatedApp({ session, onLogout }) {
   return (
     <div className="app-shell">
       <AlertModal message={error} onClose={() => setError('')} />
-      {menuOpen && <button className="sidebar-backdrop" onClick={() => setMenuOpen(false)} aria-label="Cerrar menu" />}
-      <aside className={`sidebar ${menuOpen ? 'open' : ''}`} aria-label="Navegacion principal">
+      {menuOpen && <button className="sidebar-backdrop" onClick={() => setMenuOpen(false)} aria-label="Cerrar menú" />}
+      <aside className={`sidebar ${menuOpen ? 'open' : ''}`} aria-label="Navegación principal">
         <div className="sidebar-brand"><img className="sidebar-brand-logo" src={auraLogo} alt="Aura Minerals" /></div>
         <p className="side-label">Control de ingresos</p>
         <nav className="main-nav">
@@ -1145,13 +1145,13 @@ function AuthenticatedApp({ session, onLogout }) {
           {isAdministrator && <Nav icon="settings" label="Usuarios" count={usuarios.length || undefined} active={isUsersRoute} onClick={() => { navigate('/usuarios'); setMenuOpen(false); setError('') }} />}
         </nav>
         <div className="sidebar-footer">
-          <button type="button" className="nav-item" onClick={onLogout}><Icon name="logout" /><span>Cerrar sesion</span></button>
+          <button type="button" className="nav-item" onClick={onLogout}><Icon name="logout" /><span>Cerrar sesión</span></button>
         </div>
       </aside>
 
       <main className="main">
         <header className="topbar">
-          <button className="icon-button menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label="Abrir menu"><Icon name="menu" /></button>
+          <button className="icon-button menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label="Abrir menú"><Icon name="menu" /></button>
           <div className="breadcrumb">
             <Link to="/dashboard" onClick={() => { setError(''); setMenuOpen(false) }}>Inicio</Link>
             <strong>{approvalDetailRoute ? 'Detalle de solicitud' : isDashboardRoute ? 'Dashboard' : isProfileRoute ? 'Mi perfil' : isNewUserRoute ? 'Crear usuario' : userEditRoute ? 'Editar usuario' : userDetailRoute ? 'Detalle del usuario' : isUsersRoute ? 'Usuarios' : isActivitiesRoute ? 'Mis actividades' : isApprovalsRoute ? 'Mis aprobaciones' : isQrScannerRoute ? 'Escanear QR' : isPublicEmployeeCredentialRoute ? 'Credencial del empleado' : personQrRoute ? 'QR de la persona' : employeeQrRoute ? 'QR del empleado' : isNewPersonRoute ? 'Nueva persona' : isNewProviderRoute ? 'Nuevo proveedor' : isPersonsRoute ? 'Personas y accesos' : isEmployeesRoute ? 'Empleados' : editRoute ? 'Editar solicitud' : location.pathname === '/solicitudes/nueva' ? 'Nueva solicitud' : 'Solicitudes'}</strong>
@@ -1230,7 +1230,7 @@ function validateStep(step, form, typeCode, peopleEntryMode, requestPeople = [],
   if (step === 1 && form.fechaFin < form.fechaInicio) return 'La fecha final no puede ser anterior a la fecha inicial.'
   const estimatedPeople = Number(form.cantidadEstimada)
   const totalPeople = requestPeople.length + existingPeople.length
-  if (step === 1 && (!Number.isInteger(estimatedPeople) || estimatedPeople < 1)) return 'La cantidad estimada de personas debe ser un numero entero mayor que cero.'
+  if (step === 1 && (!Number.isInteger(estimatedPeople) || estimatedPeople < 1)) return 'La cantidad estimada de personas debe ser un número entero mayor que cero.'
   if (step === 1 && totalPeople > estimatedPeople) return `La cantidad estimada no puede ser menor que las ${totalPeople} personas ya agregadas.`
   if (step === 2 && typeCode !== 'EMPLEADO' && (!form.contactoProveedor.trim() || !form.correoProveedor.trim())) return typeCode === 'NUEVO_EMPLEADO' ? 'Completa el nombre y el correo del nuevo empleado.' : 'Completa el contacto y el correo del proveedor.'
   if (step === 2 && typeCode !== 'EMPLEADO' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.correoProveedor.trim())) return 'Ingresa un correo electrónico válido.'

@@ -140,7 +140,7 @@ export function EmployeeQrPage({ codigoEmpleado, employee, photographUrl, loadin
       pdf.setTextColor(30, 52, 111)
       pdf.setFont('helvetica', 'normal')
       pdf.setFontSize(10.2)
-      pdf.text('En caso de emergencia llamar a:', pageWidth / 2, 48.8, { align: 'center' })
+      pdf.text('Contacto de Emergencia:', pageWidth / 2, 48.8, { align: 'center' })
       pdf.setFont('helvetica', 'bold')
       pdf.text('+504 96936663', pageWidth / 2, 53.2, { align: 'center' })
 

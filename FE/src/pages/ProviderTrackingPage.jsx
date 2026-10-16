@@ -45,25 +45,25 @@ export function ProviderTrackingPage({ items = [], loading, onOpen }) {
       <label className="search-box"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar solicitud, persona o documento" /></label>
       <select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Filtrar por estado">
         <option value="">Todos los estados</option>
-        <option value="PENDIENTE_AREAS">Pendiente de areas</option>
-        <option value="PENDIENTE">Pendiente de aprobacion</option>
+        <option value="PENDIENTE_AREAS">Pendiente de áreas</option>
+        <option value="PENDIENTE">Pendiente de aprobación</option>
         <option value="APROBADA">Aprobada</option>
         <option value="RECHAZADA">Rechazada</option>
       </select>
     </div>
 
     {loading && <div className="panel loading-state">Cargando seguimiento...</div>}
-    {!loading && items.length === 0 && <div className="panel provider-empty-state"><span><Icon name="check" /></span><h2>No hay solicitudes en seguimiento</h2><p>Las solicitudes enviadas a tu empresa apareceran aqui.</p></div>}
+    {!loading && items.length === 0 && <div className="panel provider-empty-state"><span><Icon name="check" /></span><h2>No hay solicitudes en seguimiento</h2><p>Las solicitudes enviadas a tu empresa aparecerán aquí.</p></div>}
     {!loading && items.length > 0 && filtered.length === 0 && <div className="panel provider-empty-state"><span><Icon name="search" /></span><h2>Sin resultados</h2><p>No encontramos solicitudes o personas con los filtros seleccionados.</p></div>}
 
     {!loading && filtered.length > 0 && <section className="provider-tracking-list">
       {filtered.map((request) => <article className="panel provider-tracking-card" key={request.idSolicitud}>
         <header>
-          <div><span>{request.numeroSolicitud || `Solicitud #${request.idSolicitud}`}</span><h2>{request.nombreActividad || 'Solicitud de ingreso'}</h2><p><Icon name="calendar" /> {formatDate(request.fechaInicio)} - {formatDate(request.fechaFin)} <Icon name="location" /> {request.ubicacion || 'Sin ubicacion'}</p></div>
+          <div><span>{request.numeroSolicitud || `Solicitud #${request.idSolicitud}`}</span><h2>{request.nombreActividad || 'Solicitud de ingreso'}</h2><p><Icon name="calendar" /> {formatDate(request.fechaInicio)} - {formatDate(request.fechaFin)} <Icon name="location" /> {request.ubicacion || 'Sin ubicación'}</p></div>
           <div className="provider-tracking-request-state"><span>{request.estado || request.codigoEstado}</span><button type="button" onClick={() => onOpen(request.idSolicitud)}>Ver detalle <Icon name="arrow" /></button></div>
         </header>
         {(request.personas ?? []).length === 0
-          ? <div className="provider-tracking-empty">Esta solicitud aun no tiene personas registradas.</div>
+          ? <div className="provider-tracking-empty">Esta solicitud aún no tiene personas registradas.</div>
           : <div className="provider-tracking-people">
             {request.personas.map((person) => <div className="provider-tracking-person" key={person.idSolicitudPersona}>
               <span className="provider-person-avatar">{initials(person.nombreCompleto)}</span>

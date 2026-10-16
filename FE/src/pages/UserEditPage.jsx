@@ -103,31 +103,31 @@ export function UserEditPage({ idUsuario, areas = [], onUpdate, onCancel, onErro
 
   return <>
     <div className="page-heading">
-      <div><p className="eyebrow">Administracion</p><h1>Editar usuario</h1><p>Actualiza los datos, el area principal y los permisos de la cuenta.</p></div>
+      <div><p className="eyebrow">Administración</p><h1>Editar usuario</h1><p>Actualiza los datos, el área principal y los permisos de la cuenta.</p></div>
     </div>
 
     <form className="panel form-panel user-create-form" onSubmit={submit}>
-      <div className="section-heading"><h2>Informacion de la cuenta</h2><p>El identificador y la contrasena no se modifican desde esta pantalla.</p></div>
+      <div className="section-heading"><h2>Información de la cuenta</h2><p>El identificador y la contraseña no se modifican desde esta pantalla.</p></div>
       <div className="form-grid">
         <Field label="Identificador de usuario"><input value={idUsuario} disabled /></Field>
         <Field label="Nombre completo" required><input name="nombreCompleto" maxLength="200" value={form.nombreCompleto} onChange={change} required /></Field>
-        <Field label="Correo electronico"><input type="email" name="correo" maxLength="254" value={form.correo} onChange={change} /></Field>
-        <Field label="Telefono"><input type="tel" name="telefono" maxLength="30" value={form.telefono} onChange={change} /></Field>
+        <Field label="Correo electrónico"><input type="email" name="correo" maxLength="254" value={form.correo} onChange={change} /></Field>
+        <Field label="Teléfono"><input type="tel" name="telefono" maxLength="30" value={form.telefono} onChange={change} /></Field>
         <Field label="Puesto"><input name="puesto" maxLength="150" value={form.puesto} onChange={change} /></Field>
-        <Field label="Area principal" required={areaRequired}>
+        <Field label="Área principal" required={areaRequired}>
           <Select name="idArea" value={form.idArea} onChange={change} items={areas} required={areaRequired} />
-          {areaRequired && <small className="field-help">El area es obligatoria para solicitantes y aprobadores.</small>}
+          {areaRequired && <small className="field-help">El área es obligatoria para solicitantes y aprobadores.</small>}
         </Field>
       </div>
 
-      <div className="section-heading user-permissions-heading"><h2>Permisos y estado</h2><p>Los cambios se aplicaran al guardar.</p></div>
+      <div className="section-heading user-permissions-heading"><h2>Permisos y estado</h2><p>Los cambios se aplicarán al guardar.</p></div>
       <div className="user-permissions">
-        <Check name="puedeSolicitar" checked={form.puedeSolicitar} onChange={change} label="Puede crear solicitudes" description="Permite registrar solicitudes de ingreso para el area seleccionada." />
-        <Check name="esAprobador" checked={form.esAprobador} onChange={change} label="Aprobador del area" description="Permite revisar y decidir accesos del area seleccionada." />
+        <Check name="puedeSolicitar" checked={form.puedeSolicitar} onChange={change} label="Puede crear solicitudes" description="Permite registrar solicitudes de ingreso para el área seleccionada." />
+        <Check name="esAprobador" checked={form.esAprobador} onChange={change} label="Aprobador del área" description="Permite revisar y decidir accesos del área seleccionada." />
         <Check name="esSeguridad" checked={form.esSeguridad} onChange={change} label="Personal de seguridad" description="Asigna o retira el rol de seguridad." />
-        <Check name="esGuardia" checked={form.esGuardia} onChange={change} label="Guardia de acceso" description="Restringe la cuenta al escaner QR y la consulta de resultados." />
+        <Check name="esGuardia" checked={form.esGuardia} onChange={change} label="Guardia de acceso" description="Restringe la cuenta al escáner QR y la consulta de resultados." />
         <Check name="esProveedor" checked={form.esProveedor} onChange={change} label="Usuario proveedor" description="Asigna el acceso exclusivo al portal de proveedores." />
-        <Check name="activo" checked={form.activo} onChange={change} label="Usuario activo" description="Permite que la cuenta continue iniciando sesion." />
+        <Check name="activo" checked={form.activo} onChange={change} label="Usuario activo" description="Permite que la cuenta continúe iniciando sesión." />
       </div>
 
       {form.esProveedor && <p className="provider-account-help">El correo de esta cuenta debe coincidir con el correo principal registrado para el proveedor.</p>}
@@ -142,7 +142,7 @@ function Field({ label, required, children }) {
 }
 
 function Select({ items = [], ...props }) {
-  return <select {...props}><option value="">Sin area asignada</option>{items.map((item) => <option key={item.id} value={item.id}>{item.nombre ?? item.codigo}</option>)}</select>
+  return <select {...props}><option value="">Sin área asignada</option>{items.map((item) => <option key={item.id} value={item.id}>{item.nombre ?? item.codigo}</option>)}</select>
 }
 
 function Check({ name, checked, onChange, label, description }) {

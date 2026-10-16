@@ -91,11 +91,6 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-await DatabaseProcedureInstaller.EnsureInstalledAsync(
-    builder.Configuration,
-    app.Logger,
-    app.Lifetime.ApplicationStopping);
-
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
@@ -131,7 +126,7 @@ app.Use(async (context, next) =>
         await context.Response.WriteAsJsonAsync(new ProblemDetails
         {
             Title = "Acceso restringido",
-            Detail = "El rol Guardia solo puede escanear codigos QR y consultar sus resultados.",
+            Detail = "El rol Guardia solo puede escanear códigos QR y consultar sus resultados.",
             Status = StatusCodes.Status403Forbidden
         });
         return;

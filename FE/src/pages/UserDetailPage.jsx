@@ -21,14 +21,14 @@ export function UserDetailPage({ idUsuario, onBack, onEdit, onError }) {
     return () => { active = false }
   }, [idUsuario, onError])
 
-  if (loading) return <div className="panel profile-placeholder">Cargando informacion del usuario…</div>
+  if (loading) return <div className="panel profile-placeholder">Cargando información del usuario…</div>
   if (!user) return <div className="panel profile-placeholder"><button type="button" className="secondary-button" onClick={onBack}><Icon name="back" />Volver al listado</button></div>
 
   const roles = user.roles?.split(',').map((role) => role.trim()).filter(Boolean) ?? []
 
   return <>
     <div className="page-heading user-detail-heading">
-      <div><p className="eyebrow">Administracion</p><h1>Detalle del usuario</h1><p>Informacion de la cuenta, permisos y areas asignadas.</p></div>
+      <div><p className="eyebrow">Administración</p><h1>Detalle del usuario</h1><p>Información de la cuenta, permisos y áreas asignadas.</p></div>
       <div className="action-row"><button type="button" className="secondary-button" onClick={onBack}><Icon name="back" />Volver a usuarios</button><button type="button" className="primary-button" onClick={onEdit}><Icon name="settings" />Editar usuario</button></div>
     </div>
 
@@ -47,33 +47,33 @@ export function UserDetailPage({ idUsuario, onBack, onEdit, onError }) {
         <dl className="profile-details">
           <Detail label="Identificador" value={user.idUsuario} />
           <Detail label="Nombre completo" value={user.nombreCompleto} />
-          <Detail label="Correo electronico" value={user.correo} />
-          <Detail label="Telefono" value={user.telefono} />
+          <Detail label="Correo electrónico" value={user.correo} />
+          <Detail label="Teléfono" value={user.telefono} />
           <Detail label="Puesto" value={user.puesto} />
           <Detail label="Estado" value={user.estado} />
         </dl>
       </section>
 
       <section className="panel profile-section">
-        <div className="profile-section-head"><Icon name="tasks" /><h2>Auditoria</h2></div>
+        <div className="profile-section-head"><Icon name="tasks" /><h2>Auditoría</h2></div>
         <dl className="profile-details">
-          <Detail label="Fecha de creacion" value={formatDateTime(user.fechaCreacion)} />
+          <Detail label="Fecha de creación" value={formatDateTime(user.fechaCreacion)} />
           <Detail label="Creado por" value={user.usuarioCreacion} />
-          <Detail label="Ultima modificacion" value={formatDateTime(user.fechaModificacion)} />
+          <Detail label="Última modificación" value={formatDateTime(user.fechaModificacion)} />
           <Detail label="Modificado por" value={user.usuarioModificacion} />
         </dl>
       </section>
     </div>
 
     <section className="panel profile-section user-areas-section">
-      <div className="profile-section-head"><Icon name="settings" /><h2>Areas y permisos</h2></div>
+      <div className="profile-section-head"><Icon name="settings" /><h2>Áreas y permisos</h2></div>
       {user.areas?.length === 0
-        ? <p className="profile-empty">Este usuario no tiene areas asignadas.</p>
+        ? <p className="profile-empty">Este usuario no tiene áreas asignadas.</p>
         : <div className="profile-area-list">{user.areas.map((area) => <div className="profile-area" key={area.idArea}>
-          <div className="user-area-title"><strong>{area.nombre || `Area #${area.idArea}`}</strong><span className={`access-status ${area.activo ? 'approved' : 'rejected'}`}>{area.activo ? 'Activa' : 'Inactiva'}</span></div>
-          <span className="cell-sub">{area.codigo || 'Sin codigo'} · {formatDate(area.fechaInicio)} – {formatDate(area.fechaFin)}</span>
+          <div className="user-area-title"><strong>{area.nombre || `Área #${area.idArea}`}</strong><span className={`access-status ${area.activo ? 'approved' : 'rejected'}`}>{area.activo ? 'Activa' : 'Inactiva'}</span></div>
+          <span className="cell-sub">{area.codigo || 'Sin código'} · {formatDate(area.fechaInicio)} – {formatDate(area.fechaFin)}</span>
           <div className="profile-area-badges">
-            {area.esAreaPrincipal && <span>Area principal</span>}
+            {area.esAreaPrincipal && <span>Área principal</span>}
             {area.puedeSolicitar && <span>Puede solicitar</span>}
             {area.esAprobador && <span>{area.esAprobadorPrincipal ? 'Aprobador principal' : 'Aprobador'}</span>}
           </div>

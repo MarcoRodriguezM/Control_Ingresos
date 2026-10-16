@@ -46,9 +46,9 @@ export function PersonAccessPage({ items, selected, loading, mobileDetailOpen = 
     try {
       const optimized = await preparePhotograph(file)
       const result = await onPhotographChange(selected.idPersona, optimized)
-      if (!result?.success) setPhotographError(result?.message || 'No fue posible actualizar la fotografia.')
+      if (!result?.success) setPhotographError(result?.message || 'No fue posible actualizar la fotografía.')
     } catch (error) {
-      setPhotographError(error.message || 'No fue posible procesar la fotografia.')
+      setPhotographError(error.message || 'No fue posible procesar la fotografía.')
     } finally {
       input.value = ''
       setUpdatingPhotograph(false)
@@ -57,7 +57,7 @@ export function PersonAccessPage({ items, selected, loading, mobileDetailOpen = 
 
   return <div className={`directory-page person-directory ${mobileDetailOpen ? 'mobile-detail-active' : ''}`}>
     <div className="page-heading requests-heading">
-      <div><p className="eyebrow">Control de acceso</p><h1>Persona con sus accesos</h1><p>Consulta la informacion personal, solicitudes, areas autorizadas y estado de aprobacion.</p></div>
+      <div><p className="eyebrow">Control de acceso</p><h1>Persona con sus accesos</h1><p>Consulta la información personal, solicitudes, áreas autorizadas y estado de aprobación.</p></div>
       <button type="button" className="primary-button" onClick={onNew}><Icon name="users" />Nueva persona</button>
     </div>
     <div className="people-layout">
@@ -76,15 +76,15 @@ export function PersonAccessPage({ items, selected, loading, mobileDetailOpen = 
 
       <section className="panel person-detail-panel">
         {mobileDetailOpen && <button type="button" className="secondary-button mobile-detail-back" onClick={onBack}><Icon name="back" />Volver al listado</button>}
-        {loading && !selected && <div className="person-placeholder">Cargando informacion…</div>}
+        {loading && !selected && <div className="person-placeholder">Cargando información…</div>}
         {!loading && !selected && <div className="person-placeholder">Selecciona una persona para consultar sus accesos.</div>}
         {selected && <>
-          <div className="person-profile person-profile-with-action"><div className="person-photo-control"><PersonAvatar person={selected} large /><label className="person-photo-button" title={selected.fotografiaUrl ? 'Cambiar fotografia' : 'Agregar fotografia'}><Icon name="file" /><input type="file" accept="image/jpeg,image/png,image/webp" onChange={changePhotograph} disabled={updatingPhotograph} /></label></div><div><div className="profile-title"><h2>{selected.nombreCompleto}</h2><span className="status-badge success">{selected.estado || 'Sin estado'}</span></div><p>{selected.cargoFuncion || 'Cargo no indicado'} · {selected.empresa || 'Empresa no indicada'}</p><span className={`person-photo-help ${photographError ? 'error' : ''}`}>{photographError || (updatingPhotograph ? 'Procesando fotografia…' : selected.fotografiaUrl ? 'Haz clic en el icono para cambiar la foto' : 'Haz clic en el icono para agregar una foto')}</span></div><button type="button" className="primary-button person-qr-button" onClick={() => onQr(selected.idPersona)}><Icon name="qr" />Ver QR</button></div>
-          <div className="person-data-grid"><InfoValue label="Documento" value={selected.numeroDocumento} /><InfoValue label="Telefono" value={selected.telefono} /><InfoValue label="Correo" value={selected.correo} /><InfoValue label="Accesos vigentes" value={String(activeAccesses)} /></div>
+          <div className="person-profile person-profile-with-action"><div className="person-photo-control"><PersonAvatar person={selected} large /><label className="person-photo-button" title={selected.fotografiaUrl ? 'Cambiar fotografía' : 'Agregar fotografía'}><Icon name="file" /><input type="file" accept="image/jpeg,image/png,image/webp" onChange={changePhotograph} disabled={updatingPhotograph} /></label></div><div><div className="profile-title"><h2>{selected.nombreCompleto}</h2><span className="status-badge success">{selected.estado || 'Sin estado'}</span></div><p>{selected.cargoFuncion || 'Cargo no indicado'} · {selected.empresa || 'Empresa no indicada'}</p><span className={`person-photo-help ${photographError ? 'error' : ''}`}>{photographError || (updatingPhotograph ? 'Procesando fotografía…' : selected.fotografiaUrl ? 'Haz clic en el ícono para cambiar la foto' : 'Haz clic en el ícono para agregar una foto')}</span></div><button type="button" className="primary-button person-qr-button" onClick={() => onQr(selected.idPersona)}><Icon name="qr" />Ver QR</button></div>
+          <div className="person-data-grid"><InfoValue label="Documento" value={selected.numeroDocumento} /><InfoValue label="Teléfono" value={selected.telefono} /><InfoValue label="Correo" value={selected.correo} /><InfoValue label="Accesos vigentes" value={String(activeAccesses)} /></div>
           <div className="access-heading"><div><h3>Accesos asignados</h3><p>El estado se calcula con la vigencia actual de cada solicitud.</p></div><span>{activeAccesses} vigentes · {assignedAccesses} asignados</span></div>
           <div className="access-list">
-            {selected.accesos?.length === 0 && <div className="access-empty"><Icon name="shield" /><strong>Sin accesos asignados</strong><span>La persona todavia no esta vinculada a un area.</span></div>}
-            {selected.accesos?.map((access) => <article className="access-card" key={access.idSolicitudPersonaArea}><div className="access-icon"><Icon name="shield" /></div><div className="access-main"><div className="access-title"><h4>{access.area || 'Area sin nombre'}</h4><span className={`access-status ${accessStatusClass(access.codigoEstadoAcceso)}`}>{access.estadoAcceso || 'Sin estado'}</span></div><p>{access.actividad || 'Actividad no indicada'} · {access.numeroSolicitud || 'Sin numero'}</p><div className="access-meta"><span><strong>Ubicacion</strong>{access.ubicacion || '—'}</span><span><strong>Vigencia</strong>{formatDate(access.fechaInicio)} – {formatDate(access.fechaFin)}</span>{access.fechaDecision && <span><strong>Decision</strong>{formatDateTime(access.fechaDecision)}</span>}</div>{access.comentarioDecision && <div className="access-comment">{access.comentarioDecision}</div>}</div></article>)}
+            {selected.accesos?.length === 0 && <div className="access-empty"><Icon name="shield" /><strong>Sin accesos asignados</strong><span>La persona todavía no está vinculada a un área.</span></div>}
+            {selected.accesos?.map((access) => <article className="access-card" key={access.idSolicitudPersonaArea}><div className="access-icon"><Icon name="shield" /></div><div className="access-main"><div className="access-title"><h4>{access.area || 'Área sin nombre'}</h4><span className={`access-status ${accessStatusClass(access.codigoEstadoAcceso)}`}>{access.estadoAcceso || 'Sin estado'}</span></div><p>{access.actividad || 'Actividad no indicada'} · {access.numeroSolicitud || 'Sin número'}</p><div className="access-meta"><span><strong>Ubicación</strong>{access.ubicacion || '—'}</span><span><strong>Vigencia</strong>{formatDate(access.fechaInicio)} – {formatDate(access.fechaFin)}</span>{access.fechaDecision && <span><strong>Decisión</strong>{formatDateTime(access.fechaDecision)}</span>}</div>{access.comentarioDecision && <div className="access-comment">{access.comentarioDecision}</div>}</div></article>)}
           </div>
         </>}
       </section>
@@ -105,7 +105,7 @@ function PersonAvatar({ person, large = false }) {
     <span>{initials(person.nombreCompleto)}</span>
     {showPhotograph && <img
       src={photographUrl}
-      alt={`Fotografia de ${person.nombreCompleto || 'la persona'}`}
+      alt={`Fotografía de ${person.nombreCompleto || 'la persona'}`}
       onError={() => setFailedUrl(photographUrl)}
     />}
   </div>

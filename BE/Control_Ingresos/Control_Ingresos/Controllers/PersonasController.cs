@@ -164,7 +164,7 @@ public sealed class PersonasController(
         {
             return Problem(
                 statusCode: StatusCodes.Status400BadRequest,
-                title: "Fotografia no valida",
+                title: "Fotografía no válida",
                 detail: exception.Message);
         }
     }
@@ -192,7 +192,7 @@ public sealed class PersonasController(
         {
             return Problem(
                 statusCode: StatusCodes.Status400BadRequest,
-                title: "Fotografia no valida",
+                title: "Fotografía no válida",
                 detail: exception.Message);
         }
 
@@ -225,15 +225,15 @@ public sealed class PersonasController(
         CancellationToken cancellationToken)
     {
         if (archivo is null || archivo.Length == 0)
-            throw new InvalidDataException("Selecciona una fotografia para continuar.");
+            throw new InvalidDataException("Selecciona una fotografía para continuar.");
 
         if (archivo.Length > MaximoFotografiaBytes)
-            throw new InvalidDataException("La fotografia no puede superar los 5 MB.");
+            throw new InvalidDataException("La fotografía no puede superar los 5 MB.");
 
         await using var origen = archivo.OpenReadStream();
         var extension = await DetectarExtensionImagenAsync(origen, cancellationToken);
         if (extension is null)
-            throw new InvalidDataException("La fotografia debe estar en formato JPG, PNG o WebP.");
+            throw new InvalidDataException("La fotografía debe estar en formato JPG, PNG o WebP.");
 
         origen.Position = 0;
 

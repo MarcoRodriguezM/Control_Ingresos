@@ -12,12 +12,12 @@ export function ProviderRequestsPage({ items = [], loading, onOpen }) {
     </div>
 
     {loading && <div className="panel loading-state">Cargando solicitudes…</div>}
-    {!loading && items.length === 0 && <div className="panel provider-empty-state"><span><Icon name="file" /></span><h2>No tienes solicitudes asignadas</h2><p>Cuando un solicitante envie una solicitud a tu empresa aparecera en este espacio.</p></div>}
+    {!loading && items.length === 0 && <div className="panel provider-empty-state"><span><Icon name="file" /></span><h2>No tienes solicitudes asignadas</h2><p>Cuando un solicitante envíe una solicitud a tu empresa aparecerá en este espacio.</p></div>}
 
     {!loading && items.length > 0 && <section className="panel provider-request-table-panel">
       <div className="table-wrap">
         <table className="provider-request-table">
-          <thead><tr><th>Solicitud</th><th>Vigencia</th><th>Personas</th><th>Estado</th><th aria-label="Accion" /></tr></thead>
+          <thead><tr><th>Solicitud</th><th>Vigencia</th><th>Personas</th><th>Estado</th><th aria-label="Acción" /></tr></thead>
           <tbody>{items.map((item) => {
             const editable = item.codigoEstado === 'PENDIENTE_PROVEEDOR'
             const progress = Math.min((item.cantidadPersonas / Math.max(item.cantidadEstimada, 1)) * 100, 100)
@@ -50,18 +50,18 @@ export function ProviderRequestDetailPage({ request, people = [], loading, savin
     }
   }
 
-  if (loading || !request) return <div className="panel loading-state">Cargando informacion de la solicitud…</div>
+  if (loading || !request) return <div className="panel loading-state">Cargando información de la solicitud…</div>
 
   return <div className="provider-request-detail-page">
     <button type="button" className="back-link" onClick={onBack}><Icon name="back" /> Volver a solicitudes</button>
     <section className="provider-request-detail-hero">
-      <div><p className="eyebrow">{request.numeroSolicitud || `Solicitud #${request.idSolicitud}`}</p><h1>{request.nombreActividad}</h1><p>{request.descripcionActividad || 'Sin descripcion adicional.'}</p></div>
+      <div><p className="eyebrow">{request.numeroSolicitud || `Solicitud #${request.idSolicitud}`}</p><h1>{request.nombreActividad}</h1><p>{request.descripcionActividad || 'Sin descripción adicional.'}</p></div>
       <div className="provider-detail-state"><span className={`provider-request-status ${editable ? 'pending' : 'complete'}`}>{request.estado}</span><strong>{request.cantidadPersonas} / {request.cantidadEstimada}</strong><small>personas registradas</small></div>
     </section>
 
     <section className="panel provider-request-summary">
       <Info label="Vigencia" value={`${formatDate(request.fechaInicio)} – ${formatDate(request.fechaFin)}`} />
-      <Info label="Ubicacion" value={request.ubicacion} />
+      <Info label="Ubicación" value={request.ubicacion} />
       <Info label="Solicitante" value={request.usuarioSolicitante} />
       <Info label="Contacto" value={request.contactoProveedor} />
       <Info label="Correo" value={request.correoProveedor} />
@@ -69,19 +69,19 @@ export function ProviderRequestDetailPage({ request, people = [], loading, savin
     </section>
 
     {editable && <section className="panel provider-person-assignment">
-      <div className="provider-card-heading"><span className="provider-card-icon"><Icon name="users" /></span><div><h2>Agregar personas a la solicitud</h2><p>Faltan {remaining} persona(s). Tu responsabilidad es unicamente registrar las personas.</p></div></div>
+      <div className="provider-card-heading"><span className="provider-card-icon"><Icon name="users" /></span><div><h2>Agregar personas a la solicitud</h2><p>Faltan {remaining} persona(s). Tu responsabilidad es únicamente registrar las personas.</p></div></div>
       <div className="provider-person-toolbar">
         <div className="field"><label>Persona del proveedor</label><select value={personId} onChange={(event) => setPersonId(event.target.value)}><option value="">Selecciona una persona</option>{availablePeople.map((person) => <option value={person.idPersona} key={person.idPersona}>{person.nombreCompleto} · {person.numeroDocumento || 'Sin documento'}</option>)}</select></div>
         <button type="button" className="secondary-button" onClick={onNewPerson}><Icon name="users" /> Registrar nueva</button>
       </div>
-      <div className="provider-entry-note"><Icon name="users" /><div><strong>Las areas seran asignadas por el solicitante</strong><p>Despues de completar la cantidad requerida, la solicitud quedara pendiente de asignacion de areas.</p></div></div>
-      <div className="provider-assignment-actions"><span>Sin asignacion de areas</span><button type="button" className="primary-button" disabled={saving || !personId || remaining === 0} onClick={addPerson}>{saving ? 'Agregando…' : 'Agregar a la solicitud'} <Icon name="arrow" /></button></div>
+      <div className="provider-entry-note"><Icon name="users" /><div><strong>Las áreas serán asignadas por el solicitante</strong><p>Después de completar la cantidad requerida, la solicitud quedará pendiente de asignación de áreas.</p></div></div>
+      <div className="provider-assignment-actions"><span>Sin asignación de áreas</span><button type="button" className="primary-button" disabled={saving || !personId || remaining === 0} onClick={addPerson}>{saving ? 'Agregando…' : 'Agregar a la solicitud'} <Icon name="arrow" /></button></div>
     </section>}
 
     <section className="panel provider-assigned-people">
       <div className="provider-card-heading"><span className="provider-card-icon"><Icon name="check" /></span><div><h2>Personas registradas</h2><p>Personas que ya forman parte de esta solicitud.</p></div></div>
       {(request.personas ?? []).length === 0
-        ? <div className="provider-inline-empty">Aun no se han agregado personas.</div>
+        ? <div className="provider-inline-empty">Aún no se han agregado personas.</div>
         : <div className="provider-assigned-list">{request.personas.map((person) => <article key={person.idSolicitudPersona}><span className="provider-person-avatar">{initials(person.nombreCompleto)}</span><div><strong>{person.nombreCompleto}</strong><small>{person.numeroDocumento || 'Sin documento'}</small></div><span className={`provider-person-result ${personStatusClass(person.codigoEstadoAprobacion)}`}>{person.estadoAprobacion || 'Pendiente'}</span></article>)}</div>}
     </section>
   </div>

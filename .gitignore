@@ -18,6 +18,9 @@ dist/
 BE/Control_Ingresos/Control_Ingresos/appsettings.json
 BE/Control_Ingresos/Control_Ingresos/appsettings.Development.json
 
+# SQL administrado fuera del repositorio
+*.sql
+
 # Fotografías cargadas en ejecución
 BE/Control_Ingresos/Control_Ingresos/wwwroot/uploads/personas/*
 !BE/Control_Ingresos/Control_Ingresos/wwwroot/uploads/personas/.gitkeep

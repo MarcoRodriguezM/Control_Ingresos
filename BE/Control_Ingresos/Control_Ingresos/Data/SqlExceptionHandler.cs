@@ -25,10 +25,10 @@ public sealed class SqlExceptionHandler(
             ProblemDetails = new ProblemDetails
             {
                 Status = httpContext.Response.StatusCode,
-                Title = esReglaNegocio ? "No se pudo guardar la informacion" : "Base de datos no disponible",
+                Title = esReglaNegocio ? "No se pudo guardar la información" : "Base de datos no disponible",
                 Detail = esReglaNegocio || environment.IsDevelopment()
                     ? sqlException.Message
-                    : "No fue posible completar la operacion en SQL Server."
+                    : "No fue posible completar la operación en SQL Server."
             },
             Exception = exception
         });
