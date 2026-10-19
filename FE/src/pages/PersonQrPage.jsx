@@ -22,7 +22,7 @@ export function PersonQrPage({ idPersona, onBack, onError }) {
           controlIngresosApi.obtenerPersonaAccesos(idPersona),
           controlIngresosApi.obtenerQrPersona(idPersona),
         ])
-        const url = `${window.location.origin}/escanear-qr?codigo=${encodeURIComponent(qr.codigoQr)}`
+        const url = `${window.location.origin}/credencial/persona?codigo=${encodeURIComponent(qr.codigoQr)}`
         const image = await QRCode.toDataURL(url, {
           width: 420,
           margin: 2,
@@ -67,13 +67,17 @@ export function PersonQrPage({ idPersona, onBack, onError }) {
       const company = persona.empresa || 'Sin empresa'
       const personInitials = initials(name)
 
+      pdf.setFillColor(244, 247, 248)
+      pdf.rect(0, 0, pageWidth, pageHeight, 'F')
       pdf.setFillColor(255, 255, 255)
-      pdf.roundedRect(0.6, 0.6, pageWidth - 1.2, pageHeight - 1.2, 3, 3, 'F')
+      pdf.setDrawColor(216, 226, 233)
+      pdf.setLineWidth(0.35)
+      pdf.roundedRect(0.7, 0.7, pageWidth - 1.4, pageHeight - 1.4, 3, 3, 'FD')
       pdf.setFillColor(45, 61, 112)
-      pdf.roundedRect(0.6, 0.6, pageWidth - 1.2, 11.5, 3, 3, 'F')
-      pdf.rect(0.6, 8.5, pageWidth - 1.2, 4, 'F')
+      pdf.roundedRect(0.7, 0.7, pageWidth - 1.4, 11.5, 3, 3, 'F')
+      pdf.rect(0.7, 8.5, pageWidth - 1.4, 4, 'F')
       pdf.setFillColor(244, 97, 77)
-      pdf.rect(0.6, 11.4, pageWidth - 1.2, 1.2, 'F')
+      pdf.rect(0.7, 11.4, pageWidth - 1.4, 1.15, 'F')
 
       pdf.setTextColor(255, 255, 255)
       pdf.setFont('helvetica', 'bold')
@@ -83,10 +87,14 @@ export function PersonQrPage({ idPersona, onBack, onError }) {
       pdf.setFontSize(5)
       pdf.text('IDENTIFICACIÓN DIGITAL', pageWidth - 6, 7.2, { align: 'right' })
 
-      const photoX = 5.5
-      const photoY = 16.5
-      const photoWidth = 17.5
-      const photoHeight = 22
+      pdf.setFillColor(249, 251, 252)
+      pdf.setDrawColor(226, 233, 238)
+      pdf.roundedRect(4.2, 15.2, pageWidth - 8.4, 29.5, 2.4, 2.4, 'FD')
+
+      const photoX = 6
+      const photoY = 17
+      const photoWidth = 18
+      const photoHeight = 25.5
       pdf.setFillColor(223, 247, 243)
       pdf.roundedRect(photoX, photoY, photoWidth, photoHeight, 2.5, 2.5, 'F')
       if (photograph) {
@@ -101,42 +109,49 @@ export function PersonQrPage({ idPersona, onBack, onError }) {
         pdf.text(personInitials, photoX + photoWidth / 2, photoY + photoHeight / 2 + 2, { align: 'center' })
       }
 
-      const detailX = 27
-      const detailWidth = 29
+      pdf.setDrawColor(220, 229, 236)
+      pdf.setLineWidth(0.3)
+      pdf.line(26, 17.5, 26, 41.8)
+
+      const detailX = 29
+      const detailWidth = 27
       pdf.setTextColor(23, 40, 58)
-      pdf.setFontSize(7.2)
+      pdf.setFontSize(7.4)
       const nameLines = limitLines(pdf.splitTextToSize(name, detailWidth), 2)
-      pdf.text(nameLines, detailX, 19)
+      pdf.text(nameLines, detailX, 19.5)
       pdf.setFont('helvetica', 'normal')
       pdf.setTextColor(102, 121, 138)
-      pdf.setFontSize(4.8)
-      pdf.text('DOCUMENTO', detailX, 27)
+      pdf.setFontSize(4.4)
+      pdf.text('DOCUMENTO', detailX, 28)
       pdf.setTextColor(23, 40, 58)
       pdf.setFont('helvetica', 'bold')
-      pdf.setFontSize(5.8)
-      pdf.text(fitText(pdf, documentNumber, detailWidth), detailX, 30.2)
+      pdf.setFontSize(5.6)
+      pdf.text(fitText(pdf, documentNumber, detailWidth), detailX, 31.1)
       pdf.setFont('helvetica', 'normal')
       pdf.setTextColor(102, 121, 138)
-      pdf.setFontSize(4.8)
-      pdf.text('EMPRESA', detailX, 35)
+      pdf.setFontSize(4.4)
+      pdf.text('EMPRESA', detailX, 36.5)
       pdf.setTextColor(23, 40, 58)
       pdf.setFont('helvetica', 'bold')
       pdf.setFontSize(5.2)
-      pdf.text(limitLines(pdf.splitTextToSize(company, detailWidth), 2), detailX, 38.1)
+      pdf.text(limitLines(pdf.splitTextToSize(company, detailWidth), 2), detailX, 39.6)
 
       pdf.setFillColor(255, 255, 255)
-      pdf.setDrawColor(220, 229, 236)
-      const qrShellSize = 22
-      const qrShellX = pageWidth - qrShellSize - 4.5
-      const qrShellY = 16
-      pdf.roundedRect(qrShellX, qrShellY, qrShellSize, qrShellSize, 2, 2, 'FD')
-      pdf.addImage(qrImage, 'PNG', qrShellX + 1.3, qrShellY + 1.3, qrShellSize - 2.6, qrShellSize - 2.6)
+      pdf.setDrawColor(207, 220, 229)
+      pdf.setLineWidth(0.4)
+      const qrShellSize = 23.5
+      const qrShellX = pageWidth - qrShellSize - 6
+      const qrShellY = 17.2
+      pdf.roundedRect(qrShellX, qrShellY, qrShellSize, qrShellSize, 2.2, 2.2, 'FD')
+      pdf.addImage(qrImage, 'PNG', qrShellX + 1.45, qrShellY + 1.45, qrShellSize - 2.9, qrShellSize - 2.9)
 
-      pdf.setDrawColor(220, 229, 236)
-      pdf.line(5.5, 42, 56.5, 42)
-      pdf.setFont('helvetica', 'bold')
-      pdf.setTextColor(40, 103, 232)
-      pdf.text('CREDENCIAL VERIFICABLE', 5.5, 49)
+      pdf.setDrawColor(45, 61, 112)
+      pdf.setLineWidth(0.9)
+      pdf.line(5, 49.7, pageWidth * 0.52, 49.7)
+      pdf.setDrawColor(9, 154, 137)
+      pdf.line(pageWidth * 0.52, 49.7, pageWidth * 0.76, 49.7)
+      pdf.setDrawColor(244, 97, 77)
+      pdf.line(pageWidth * 0.76, 49.7, pageWidth - 5, 49.7)
 
       const safeDocument = documentNumber.replace(/[^a-z0-9_-]+/gi, '-').replace(/^-|-$/g, '')
       pdf.save(`carnet-${safeDocument || persona.idPersona}.pdf`)

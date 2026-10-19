@@ -15,6 +15,7 @@ import {
   PersonQrPage,
   ProfilePage,
   PublicEmployeeCredentialPage,
+  PublicPersonCredentialPage,
   ProviderFormPage,
   ProviderPortalPage,
   ProviderRequestDetailPage,
@@ -83,6 +84,7 @@ function App() {
     return <Routes>
       <Route path="/login" element={<LoginPage onLogin={login} />} />
       <Route path="/credencial/empleado" element={<PublicEmployeeCredentialPage onLogin={() => navigate('/login')} />} />
+      <Route path="/credencial/persona" element={<PublicPersonCredentialPage onLogin={() => navigate('/login')} />} />
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   }
@@ -347,6 +349,7 @@ function AuthenticatedApp({ session, onLogout }) {
   const isEmployeesRoute = location.pathname.startsWith('/empleados')
   const isQrScannerRoute = location.pathname === '/escanear-qr'
   const isPublicEmployeeCredentialRoute = location.pathname === '/credencial/empleado'
+  const isPublicPersonCredentialRoute = location.pathname === '/credencial/persona'
   const isRequestsRoute = location.pathname.startsWith('/solicitudes')
   const isApprovalsRoute = location.pathname.startsWith('/aprobaciones')
   const isActivitiesRoute = location.pathname === '/mis-actividades'
@@ -1154,7 +1157,7 @@ function AuthenticatedApp({ session, onLogout }) {
           <button className="icon-button menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label="Abrir menú"><Icon name="menu" /></button>
           <div className="breadcrumb">
             <Link to="/dashboard" onClick={() => { setError(''); setMenuOpen(false) }}>Inicio</Link>
-            <strong>{approvalDetailRoute ? 'Detalle de solicitud' : isDashboardRoute ? 'Dashboard' : isProfileRoute ? 'Mi perfil' : isNewUserRoute ? 'Crear usuario' : userEditRoute ? 'Editar usuario' : userDetailRoute ? 'Detalle del usuario' : isUsersRoute ? 'Usuarios' : isActivitiesRoute ? 'Mis actividades' : isApprovalsRoute ? 'Mis aprobaciones' : isQrScannerRoute ? 'Escanear QR' : isPublicEmployeeCredentialRoute ? 'Credencial del empleado' : personQrRoute ? 'QR de la persona' : employeeQrRoute ? 'QR del empleado' : isNewPersonRoute ? 'Nueva persona' : isNewProviderRoute ? 'Nuevo proveedor' : isPersonsRoute ? 'Personas y accesos' : isEmployeesRoute ? 'Empleados' : editRoute ? 'Editar solicitud' : location.pathname === '/solicitudes/nueva' ? 'Nueva solicitud' : 'Solicitudes'}</strong>
+            <strong>{approvalDetailRoute ? 'Detalle de solicitud' : isDashboardRoute ? 'Dashboard' : isProfileRoute ? 'Mi perfil' : isNewUserRoute ? 'Crear usuario' : userEditRoute ? 'Editar usuario' : userDetailRoute ? 'Detalle del usuario' : isUsersRoute ? 'Usuarios' : isActivitiesRoute ? 'Mis actividades' : isApprovalsRoute ? 'Mis aprobaciones' : isQrScannerRoute ? 'Escanear QR' : isPublicEmployeeCredentialRoute ? 'Credencial del empleado' : isPublicPersonCredentialRoute ? 'Credencial de la persona' : personQrRoute ? 'QR de la persona' : employeeQrRoute ? 'QR del empleado' : isNewPersonRoute ? 'Nueva persona' : isNewProviderRoute ? 'Nuevo proveedor' : isPersonsRoute ? 'Personas y accesos' : isEmployeesRoute ? 'Empleados' : editRoute ? 'Editar solicitud' : location.pathname === '/solicitudes/nueva' ? 'Nueva solicitud' : 'Solicitudes'}</strong>
           </div>
           <div className="top-actions">
             {/* <button className="ghost-button"><Icon name="help" />Ayuda</button> */}
@@ -1183,6 +1186,7 @@ function AuthenticatedApp({ session, onLogout }) {
             <Route path="/empleados/:codigoEmpleado?" element={<EmployeeListPage items={empleados} statuses={employeeStatuses} selected={selectedEmployee} loading={employeesLoading} photographUrl={employeePhotograph?.codigoEmpleado === selectedEmployee?.codigoEmpleado ? employeePhotograph?.url ?? '' : ''} photographLoading={employeePhotographLoading} singular={employeeSingular} singularLoading={employeeSingularLoading} singularError={employeeSingularError} mobileDetailOpen={Boolean(employeeRoute)} onSelect={selectEmployee} onBack={() => location.state?.directory === 'empleados' ? navigate(-1) : navigate('/empleados')} onQr={(codigoEmpleado) => navigate(`/empleados/${encodeURIComponent(codigoEmpleado)}/qr`)} />} />
             <Route path="/escanear-qr" element={<QrScannerPage onError={setError} />} />
             <Route path="/credencial/empleado" element={<PublicEmployeeCredentialPage authenticated />} />
+            <Route path="/credencial/persona" element={<PublicPersonCredentialPage authenticated />} />
             <Route path="/aprobaciones" element={canApprove ? <ApprovalsPage items={aprobaciones} loading={approvalsLoading} onDecide={decideApproval} onDecideMany={decideApprovals} onViewDetail={openApprovalDetail} /> : <Navigate to="/solicitudes" replace />} />
             <Route path="/aprobaciones/:idSolicitudPersonaArea/detalle" element={canApprove ? <RequestApprovalDetailPage request={approvalDetail} options={options} approvalItems={aprobaciones} loading={approvalDetailLoading || !approvalDetail} onBack={() => navigate('/aprobaciones')} onDecide={decideApproval} /> : <Navigate to="/solicitudes" replace />} />
             <Route path="/login" element={<Navigate to="/dashboard" replace />} />
