@@ -144,6 +144,12 @@ export const controlIngresosApi = {
   obtenerFotografiaPublicaPersona: (codigoQr) => requestBlob(`/api/publico/personas/qr/${encodeURIComponent(codigoQr)}/fotografia`, false),
   listarAprobaciones: () => request('/api/aprobaciones'),
   listarMisActividades: () => request('/api/actividades/mias'),
+  listarActividades: () => request('/api/actividades'),
+  obtenerFlujosActividades: () => request('/api/actividad-flujos'),
+  guardarFlujoActividades: (idArea, flujo) => request(`/api/actividad-flujos/${idArea}`, {
+    method: 'PUT',
+    body: JSON.stringify(flujo),
+  }),
   decidirAprobacion: (idSolicitudPersonaArea, decision) => request(`/api/aprobaciones/${idSolicitudPersonaArea}/decision`, {
     method: 'PUT',
     body: JSON.stringify(decision),
@@ -151,6 +157,10 @@ export const controlIngresosApi = {
   completarActividad: (idActividad, comentarios) => request(`/api/actividades/${idActividad}/completar`, {
     method: 'PUT',
     body: JSON.stringify({ comentarios }),
+  }),
+  decidirActividad: (idActividad, decision) => request(`/api/actividades/${idActividad}/decision`, {
+    method: 'PUT',
+    body: JSON.stringify(decision),
   }),
   listarSolicitudes: () => request('/api/solicitudes'),
   obtenerDatosFormularioSolicitud: () => request('/api/solicitudes/formulario-datos'),

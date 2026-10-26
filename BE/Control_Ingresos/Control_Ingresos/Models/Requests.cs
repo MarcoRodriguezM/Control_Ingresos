@@ -130,7 +130,12 @@ public sealed record ActividadResumen(
     DateTime? FechaInicio,
     DateTime? FechaFinalizacion,
     string? Comentarios,
-    bool RequiereTicketExterno);
+    bool RequiereTicketExterno,
+    long? IdSolicitudPersona,
+    string? Persona,
+    string? NumeroDocumento,
+    int? IdAreaAcceso,
+    string? AreaAcceso);
 
 public sealed record ActividadAdministracionResumen(
     long IdActividad,
@@ -152,7 +157,12 @@ public sealed record ActividadAdministracionResumen(
     bool RequiereTicketExterno,
     string? IdUsuarioAprobador,
     DateTime? FechaDecision,
-    string? ComentarioDecision);
+    string? ComentarioDecision,
+    long? IdSolicitudPersona,
+    string? Persona,
+    string? NumeroDocumento,
+    int? IdAreaAcceso,
+    string? AreaAcceso);
 
 public sealed record CrearActividadRequest(
     long? IdSolicitud,
@@ -169,6 +179,35 @@ public sealed record CompletarActividadRequest(
 public sealed record DecidirActividadRequest(
     [Required, MaxLength(30)] string CodigoEstado,
     [MaxLength(1000)] string? ComentarioDecision);
+
+public sealed record ActividadFlujoPaso(
+    long IdConfigReqArea,
+    int Orden,
+    int IdRequerimiento,
+    string? Codigo,
+    string? NombreActividad,
+    int IdAreaResponsable,
+    string? AreaResponsable,
+    bool RequiereTicketExterno,
+    int VigenciaMeses);
+
+public sealed record ActividadFlujoArea(
+    int IdArea,
+    string? Codigo,
+    string? Nombre,
+    IReadOnlyCollection<ActividadFlujoPaso> Pasos);
+
+public sealed record ActividadFlujoConfiguracion(
+    IReadOnlyCollection<ActividadFlujoArea> Areas);
+
+public sealed record GuardarActividadFlujoPasoRequest(
+    [Required, MaxLength(150)] string NombreActividad,
+    int IdAreaResponsable,
+    bool RequiereTicketExterno,
+    [Range(1, 1200)] int VigenciaMeses = 24);
+
+public sealed record GuardarActividadFlujoRequest(
+    [Required] IReadOnlyCollection<GuardarActividadFlujoPasoRequest> Pasos);
 
 public sealed record SolicitudDetalle(
     long IdSolicitud,
@@ -293,7 +332,8 @@ public sealed record AprobacionResumen(
     string? Estado,
     DateTime? FechaDecision,
     string? ComentarioDecision,
-    string? CodigoEmpleadoHtis);
+    string? CodigoEmpleadoHtis,
+    bool ActividadesPendientes = false);
 
 public sealed record DecidirAprobacionRequest(
     [Required, MaxLength(30)] string CodigoEstado,
