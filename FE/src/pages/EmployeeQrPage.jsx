@@ -143,6 +143,8 @@ export function EmployeeQrPage({ codigoEmpleado, employee, photographUrl, loadin
       pdf.text('Contacto de Emergencia:', pageWidth / 2, 48.8, { align: 'center' })
       pdf.setFont('helvetica', 'bold')
       pdf.text('+504 96936663', pageWidth / 2, 53.2, { align: 'center' })
+      pdf.setFontSize(8.2)
+      pdf.text('Frecuencia Radio #1', pageWidth / 2, 56.8, { align: 'center' })
 
       drawWaveLayer(pdf, pageWidth, pageHeight, [244, 91, 76], (ratio) => 60 + (1.6 * Math.sin(ratio * Math.PI)) - (5.3 * ratio * ratio))
       drawWaveLayer(pdf, pageWidth, pageHeight, [0, 178, 173], (ratio) => 64.3 + (1.2 * Math.sin(ratio * Math.PI)) - (4.9 * ratio * ratio))
