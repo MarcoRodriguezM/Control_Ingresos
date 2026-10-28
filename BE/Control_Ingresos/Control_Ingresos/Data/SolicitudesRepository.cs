@@ -5,7 +5,9 @@ using Microsoft.Data.SqlClient;
 
 namespace Control_Ingresos.Data;
 
-public sealed class SolicitudesRepository(IConfiguration configuration) : ISolicitudesRepository
+public sealed class SolicitudesRepository(
+    IConfiguration configuration,
+    IActivityWorkflowRepository activityWorkflows) : ISolicitudesRepository
 {
     private readonly string _connectionString = configuration.GetConnectionString("ControlIngresos")
         ?? throw new InvalidOperationException("No se configuró ConnectionStrings:ControlIngresos.");
@@ -335,6 +337,13 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
         Add(command, "@AreasJson", SqlDbType.NVarChar, JsonSerializer.Serialize(areas), -1);
         Add(command, "@Usuario", SqlDbType.VarChar, usuario, 50);
         await command.ExecuteNonQueryAsync(cancellationToken);
+
+        await activityWorkflows.SincronizarActividadesAsync(
+            idSolicitud,
+            idSolicitudPersona,
+            areas,
+            usuario,
+            cancellationToken);
     }
 
     public async Task<IReadOnlyCollection<CatalogoItem>> ListarCatalogoAsync(
@@ -561,7 +570,21 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
             }
         }
 
-        return persona with { Accesos = accesos };
+        var bloqueados = await activityWorkflows.ObtenerAccesosBloqueadosAsync(
+            accesos.Select(acceso => acceso.IdSolicitudPersonaArea).ToArray(),
+            cancellationToken);
+
+        var accesosActualizados = accesos
+            .Select(acceso => bloqueados.Contains(acceso.IdSolicitudPersonaArea)
+                ? acceso with
+                {
+                    EstadoAcceso = "Actividades pendientes",
+                    CodigoEstadoAcceso = "ACTIVIDADES_PENDIENTES"
+                }
+                : acceso)
+            .ToArray();
+
+        return persona with { Accesos = accesosActualizados };
     }
 
     public async Task<string?> ObtenerCodigoQrPersonaAsync(
@@ -623,7 +646,19 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
             }
         }
 
-        return persona with { Areas = areas };
+        var bloqueadas = await activityWorkflows.ObtenerAreasQrBloqueadasAsync(persona.IdPersona, cancellationToken);
+        var areasActualizadas = areas
+            .Select(area => bloqueadas.Contains(ActivityWorkflowRepository.AreaKey(area.IdArea, area.NumeroSolicitud))
+                ? area with
+                {
+                    CodigoAcceso = "ACTIVIDADES_PENDIENTES",
+                    EstadoAcceso = "Actividades pendientes",
+                    TieneAcceso = false
+                }
+                : area)
+            .ToArray();
+
+        return persona with { Areas = areasActualizadas };
     }
 
     public async Task<IReadOnlyCollection<AprobacionResumen>> ListarAprobacionesAsync(
@@ -661,14 +696,31 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
                 GetNullableString(reader, 16),
                 GetNullable<DateTime>(reader, 17),
                 GetNullableString(reader, 18),
-                GetNullableString(reader, 19)));
+                GetNullableString(reader, 19),
+                false));
         }
 
-        return items;
+        var bloqueados = await activityWorkflows.ObtenerAccesosBloqueadosAsync(
+            items.Where(item => string.Equals(item.CodigoEstado, "PENDIENTE", StringComparison.OrdinalIgnoreCase))
+                .Select(item => item.IdSolicitudPersonaArea)
+                .ToArray(),
+            cancellationToken);
+        return items.Select(item => bloqueados.Contains(item.IdSolicitudPersonaArea)
+            ? item with { ActividadesPendientes = true }
+            : item).ToArray();
     }
 
     public async Task<long> DecidirAprobacionAsync(long idSolicitudPersonaArea, string idUsuarioAprobador, DecidirAprobacionRequest request, CancellationToken cancellationToken)
     {
+        if (string.Equals(request.CodigoEstado, "APROBADA", StringComparison.OrdinalIgnoreCase))
+        {
+            var bloqueados = await activityWorkflows.ObtenerAccesosBloqueadosAsync(
+                [idSolicitudPersonaArea],
+                cancellationToken);
+            if (bloqueados.Contains(idSolicitudPersonaArea))
+                throw new InvalidOperationException("No se puede aprobar el acceso al area porque la persona todavia tiene actividades pendientes.");
+        }
+
         await using var connection = await OpenConnectionAsync(cancellationToken);
         await using var command = StoredProcedure(connection, "dbo.usp_Aprobacion_Area_Decidir");
 
@@ -740,14 +792,27 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
                 created = new(reader.GetInt64(0), reader.GetString(1));
             }
 
+            var integrantesCreados = new List<(long IdSolicitudPersona, AgregarPersonaSolicitudRequest Persona)>();
             foreach (var person in request.Personas ?? [])
             {
                 await using var personCommand = StoredProcedure(connection, "dbo.usp_Solicitud_Integrante_Agregar", transaction);
                 AddPersonaSolicitudParameters(personCommand, created.Id, person);
-                await personCommand.ExecuteScalarAsync(cancellationToken);
+                var idSolicitudPersona = Convert.ToInt64(await personCommand.ExecuteScalarAsync(cancellationToken));
+                integrantesCreados.Add((idSolicitudPersona, person));
             }
 
             await transaction.CommitAsync(cancellationToken);
+
+            foreach (var integrante in integrantesCreados)
+            {
+                await activityWorkflows.SincronizarActividadesAsync(
+                    created.Id,
+                    integrante.IdSolicitudPersona,
+                    integrante.Persona.Areas ?? [],
+                    integrante.Persona.Usuario,
+                    cancellationToken);
+            }
+
             return created;
         }
         catch
@@ -797,8 +862,17 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
 
         AddPersonaSolicitudParameters(command, idSolicitud, request);
 
-        return Convert.ToInt64(
+        var idSolicitudPersona = Convert.ToInt64(
             await command.ExecuteScalarAsync(cancellationToken));
+
+        await activityWorkflows.SincronizarActividadesAsync(
+            idSolicitud,
+            idSolicitudPersona,
+            request.Areas ?? [],
+            request.Usuario,
+            cancellationToken);
+
+        return idSolicitudPersona;
     }
 
     public async Task<long> AgregarEmpleadoAsync(
@@ -919,7 +993,48 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
     public async Task<IReadOnlyCollection<ActividadResumen>> ListarMisActividadesAsync(string idUsuarioResponsable, CancellationToken cancellationToken)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
-        await using var command = StoredProcedure(connection, "dbo.usp_Actividad_Mis_Listar");
+        const string sql = """
+            SELECT a.IdActividad,
+                   a.IdSolicitud,
+                   s.NumeroSolicitud,
+                   a.NombreActividad,
+                   ar.Nombre AS AreaResponsable,
+                   ea.Codigo AS CodigoEstado,
+                   ea.Nombre AS Estado,
+                   CONVERT(BIT, ISNULL(ea.EsEstadoFinal, 0)) AS EsEstadoFinal,
+                   a.FechaLimite,
+                   a.FechaInicio,
+                   a.FechaFinalizacion,
+                   a.Comentarios,
+                   CONVERT(BIT, ISNULL(a.RequiereTicketExterno, 0)) AS RequiereTicketExterno,
+                   a.IdSolicitudPersona,
+                   p.NombreCompleto AS Persona,
+                   p.NumeroDocumento,
+                   acceso.IdAreaAcceso,
+                   acceso.AreaAcceso
+            FROM dbo.Actividad AS a
+            LEFT JOIN dbo.Solicitud_Ingreso AS s ON s.IdSolicitud = a.IdSolicitud
+            LEFT JOIN dbo.Solicitud_Persona AS sp ON sp.IdSolicitudPersona = a.IdSolicitudPersona
+            LEFT JOIN dbo.Persona AS p ON p.IdPersona = sp.IdPersona
+            LEFT JOIN dbo.Cat_Area AS ar ON ar.IdArea = a.IdAreaResponsable
+            LEFT JOIN dbo.Cat_Estado_Actividad AS ea ON ea.IdEstadoActividad = a.IdEstadoActividad
+            OUTER APPLY
+            (
+                SELECT TOP (1) cra.IdAreaAcceso, areaAcceso.Nombre AS AreaAcceso
+                FROM dbo.Config_Requerimiento_Area AS cra
+                LEFT JOIN dbo.Cat_Area AS areaAcceso ON areaAcceso.IdArea = cra.IdAreaAcceso
+                WHERE cra.IdRequerimiento = a.IdRequerimiento
+                  AND cra.IdAreaResponsable = a.IdAreaResponsable
+                ORDER BY cra.IdConfigReqArea DESC
+            ) AS acceso
+            WHERE a.IdUsuarioResponsable = @IdUsuarioResponsable
+              AND (a.IdSolicitud IS NULL OR s.FechaFin IS NULL OR s.FechaFin >= CONVERT(DATE, SYSDATETIME()))
+            ORDER BY CASE WHEN ISNULL(ea.EsEstadoFinal, 0) = 0 THEN 0 ELSE 1 END,
+                     CASE WHEN a.FechaLimite IS NULL THEN 1 ELSE 0 END,
+                     a.FechaLimite,
+                     a.IdActividad DESC;
+            """;
+        await using var command = new SqlCommand(sql, connection);
         Add(command, "@IdUsuarioResponsable", SqlDbType.VarChar, idUsuarioResponsable, 50);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var items = new List<ActividadResumen>();
@@ -937,14 +1052,66 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
                 GetNullable<DateTime>(reader, 9),
                 GetNullable<DateTime>(reader, 10),
                 GetNullableString(reader, 11),
-                reader.GetBoolean(12)));
+                reader.GetBoolean(12),
+                GetNullable<long>(reader, 13),
+                GetNullableString(reader, 14),
+                GetNullableString(reader, 15),
+                GetNullable<int>(reader, 16),
+                GetNullableString(reader, 17)));
         return items;
     }
 
     public async Task<IReadOnlyCollection<ActividadAdministracionResumen>> ListarActividadesAsync(CancellationToken cancellationToken)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
-        await using var command = StoredProcedure(connection, "dbo.usp_Actividad_Administracion_Listar");
+        const string sql = """
+            SELECT a.IdActividad,
+                   a.IdSolicitud,
+                   s.NumeroSolicitud,
+                   a.NombreActividad,
+                   a.IdAreaResponsable,
+                   ar.Nombre AS AreaResponsable,
+                   a.IdUsuarioResponsable,
+                   u.NombreCompleto AS UsuarioResponsable,
+                   a.IdEstadoActividad,
+                   ea.Codigo AS CodigoEstado,
+                   ea.Nombre AS Estado,
+                   CONVERT(BIT, ISNULL(ea.EsEstadoFinal, 0)) AS EsEstadoFinal,
+                   a.FechaLimite,
+                   a.FechaInicio,
+                   a.FechaFinalizacion,
+                   a.Comentarios,
+                   CONVERT(BIT, ISNULL(a.RequiereTicketExterno, 0)) AS RequiereTicketExterno,
+                   a.IdUsuarioAprobador,
+                   a.FechaDecision,
+                   a.ComentarioDecision,
+                   a.IdSolicitudPersona,
+                   p.NombreCompleto AS Persona,
+                   p.NumeroDocumento
+                   , acceso.IdAreaAcceso
+                   , acceso.AreaAcceso
+            FROM dbo.Actividad AS a
+            LEFT JOIN dbo.Solicitud_Ingreso AS s ON s.IdSolicitud = a.IdSolicitud
+            LEFT JOIN dbo.Solicitud_Persona AS sp ON sp.IdSolicitudPersona = a.IdSolicitudPersona
+            LEFT JOIN dbo.Persona AS p ON p.IdPersona = sp.IdPersona
+            LEFT JOIN dbo.Cat_Area AS ar ON ar.IdArea = a.IdAreaResponsable
+            LEFT JOIN dbo.Usuario AS u ON u.IdUsuario = a.IdUsuarioResponsable
+            LEFT JOIN dbo.Cat_Estado_Actividad AS ea ON ea.IdEstadoActividad = a.IdEstadoActividad
+            OUTER APPLY
+            (
+                SELECT TOP (1) cra.IdAreaAcceso, areaAcceso.Nombre AS AreaAcceso
+                FROM dbo.Config_Requerimiento_Area AS cra
+                LEFT JOIN dbo.Cat_Area AS areaAcceso ON areaAcceso.IdArea = cra.IdAreaAcceso
+                WHERE cra.IdRequerimiento = a.IdRequerimiento
+                  AND cra.IdAreaResponsable = a.IdAreaResponsable
+                ORDER BY cra.IdConfigReqArea DESC
+            ) AS acceso
+            WHERE a.IdSolicitud IS NULL OR s.FechaFin IS NULL OR s.FechaFin >= CONVERT(DATE, SYSDATETIME())
+            ORDER BY CASE WHEN ea.Codigo = 'PENDIENTE_APROBACION' THEN 0 WHEN ISNULL(ea.EsEstadoFinal, 0) = 0 THEN 1 ELSE 2 END,
+                     a.FechaLimite,
+                     a.IdActividad DESC;
+            """;
+        await using var command = new SqlCommand(sql, connection);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var items = new List<ActividadAdministracionResumen>();
         while (await reader.ReadAsync(cancellationToken))
@@ -968,7 +1135,12 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
                 reader.GetBoolean(16),
                 GetNullableString(reader, 17),
                 GetNullable<DateTime>(reader, 18),
-                GetNullableString(reader, 19)));
+                GetNullableString(reader, 19),
+                GetNullable<long>(reader, 20),
+                GetNullableString(reader, 21),
+                GetNullableString(reader, 22),
+                GetNullable<int>(reader, 23),
+                GetNullableString(reader, 24)));
         return items;
     }
 
@@ -989,8 +1161,50 @@ public sealed class SolicitudesRepository(IConfiguration configuration) : ISolic
 
     public async Task<long> CompletarActividadAsync(long idActividad, string idUsuarioResponsable, CompletarActividadRequest request, CancellationToken cancellationToken)
     {
+        await activityWorkflows.ValidarActividadDesbloqueadaAsync(
+            idActividad,
+            idUsuarioResponsable,
+            cancellationToken);
+
         await using var connection = await OpenConnectionAsync(cancellationToken);
-        await using var command = StoredProcedure(connection, "dbo.usp_Actividad_Completar");
+        const string sql = """
+            DECLARE @IdAprobada SMALLINT =
+            (
+                SELECT TOP (1) IdEstadoActividad
+                FROM dbo.Cat_Estado_Actividad
+                WHERE Codigo = 'APROBADA'
+            );
+
+            IF @IdAprobada IS NULL
+                THROW 50223, 'No existe el estado APROBADA para las actividades.', 1;
+
+            UPDATE actividad
+               SET IdEstadoActividad = @IdAprobada,
+                   FechaInicio = COALESCE(actividad.FechaInicio, SYSDATETIME()),
+                   FechaFinalizacion = SYSDATETIME(),
+                   Comentarios = CASE
+                       WHEN NULLIF(LTRIM(RTRIM(@Comentarios)), '') IS NULL THEN actividad.Comentarios
+                       WHEN NULLIF(LTRIM(RTRIM(actividad.Comentarios)), '') IS NULL THEN @Comentarios
+                       ELSE CONCAT(actividad.Comentarios, CHAR(13), CHAR(10), @Comentarios)
+                   END,
+                   IdUsuarioAprobador = @IdUsuarioResponsable,
+                   FechaDecision = SYSDATETIME(),
+                   ComentarioDecision = 'Aprobada automaticamente al registrar su realizacion.',
+                   FechaModificacion = SYSDATETIME(),
+                   UsuarioModificacion = @IdUsuarioResponsable
+            FROM dbo.Actividad AS actividad
+            LEFT JOIN dbo.Cat_Estado_Actividad AS estadoActual
+                ON estadoActual.IdEstadoActividad = actividad.IdEstadoActividad
+            WHERE actividad.IdActividad = @IdActividad
+              AND actividad.IdUsuarioResponsable = @IdUsuarioResponsable
+              AND ISNULL(estadoActual.Codigo, '') <> 'APROBADA';
+
+            IF @@ROWCOUNT = 0
+                THROW 50210, 'La actividad no existe, ya fue aprobada o no esta asignada al usuario actual.', 1;
+
+            SELECT @IdActividad;
+            """;
+        await using var command = new SqlCommand(sql, connection);
         Add(command, "@IdActividad", SqlDbType.BigInt, idActividad);
         Add(command, "@IdUsuarioResponsable", SqlDbType.VarChar, idUsuarioResponsable, 50);
         Add(command, "@Comentarios", SqlDbType.NVarChar, request.Comentarios, 1000);

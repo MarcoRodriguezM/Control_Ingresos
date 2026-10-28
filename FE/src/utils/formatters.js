@@ -18,3 +18,11 @@ export const accessStatusClass = (codigoEstado = '') => ({
   SOLICITUD_NO_HABILITADA: 'neutral',
   PENDIENTE_AREAS: 'pending',
 }[codigoEstado.trim().toUpperCase()] ?? 'neutral')
+
+export const activityStatusLabel = (codigoEstado = '', fallback = '') => ({
+  PENDIENTE: 'Pendiente',
+  EN_PROGRESO: 'En progreso',
+  PENDIENTE_APROBACION: 'Pendiente de aprobacion',
+  APROBADA: 'Aprobada',
+  RECHAZADA: 'Rechazada',
+}[codigoEstado.trim().toUpperCase()] ?? fallback ?? 'Pendiente')

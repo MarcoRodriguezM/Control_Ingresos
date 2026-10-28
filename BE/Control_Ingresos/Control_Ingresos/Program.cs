@@ -19,6 +19,7 @@ builder.Services.AddOpenApi();
 builder.Services.AddScoped<ISolicitudesRepository, SolicitudesRepository>();
 builder.Services.AddScoped<IEmpleadosRepository, EmpleadosRepository>();
 builder.Services.AddScoped<IEmpleadoSingularRepository, EmpleadoSingularRepository>();
+builder.Services.AddScoped<IActivityWorkflowRepository, ActivityWorkflowRepository>();
 builder.Services.AddSingleton<ApplicationSession>();
 builder.Services.AddSingleton<ICredentialEmailSender, SmtpCredentialEmailSender>();
 

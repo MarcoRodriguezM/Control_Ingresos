@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Icon } from '../components/Icon'
 import { accessStatusClass, formatDate } from '../utils/formatters'
 
-export function RequestFormPage({ form, options, people, employees = [], employeesLoading = false, employeesError = '', requestPeople, existingPeople, peopleEntryMode, loading, saving, editingId, step, selected, canSend, onPeopleEntryModeChange, onPeopleChange, onChange, onStepChange, onNext, onBack, onCancel, onSubmit }) {
+export function RequestFormPage({ form, options, activityFlows = [], people, employees = [], employeesLoading = false, employeesError = '', requestPeople, existingPeople, peopleEntryMode, loading, saving, editingId, step, selected, canSend, onPeopleEntryModeChange, onPeopleChange, onChange, onStepChange, onNext, onBack, onCancel, onSubmit }) {
   const typeCode = normalizeTypeCode(selected.tipo)
   return <>
     <div className="page-heading"><div><p className="eyebrow">{editingId ? 'Editar solicitud' : 'Nueva solicitud'}</p><h1>{editingId ? 'Actualizar solicitud de ingreso' : 'Registrar solicitud de ingreso'}</h1><p>Completa los datos e indica quién registrará a las personas que ingresarán.</p></div></div>
@@ -10,7 +10,7 @@ export function RequestFormPage({ form, options, people, employees = [], employe
     <div className="panel form-panel">
       {step === 1 && <StepOne form={form} options={options} selectedType={selected.tipo} loading={loading} change={onChange} />}
       {step === 2 && <StepTwo form={form} options={options} selectedType={selected.tipo} loading={loading} change={onChange} />}
-      {step === 3 && <PeopleStep typeCode={typeCode} mode={peopleEntryMode} provider={selected.proveedor} estimatedCount={form.cantidadEstimada} people={people} employees={employees} employeesLoading={employeesLoading} employeesError={employeesError} selectedPeople={requestPeople} existingPeople={existingPeople} areas={options?.areas ?? []} onModeChange={onPeopleEntryModeChange} onChange={onPeopleChange} />}
+      {step === 3 && <PeopleStep typeCode={typeCode} mode={peopleEntryMode} provider={selected.proveedor} estimatedCount={form.cantidadEstimada} people={people} employees={employees} employeesLoading={employeesLoading} employeesError={employeesError} selectedPeople={requestPeople} existingPeople={existingPeople} areas={options?.areas ?? []} activityFlows={activityFlows} onModeChange={onPeopleEntryModeChange} onChange={onPeopleChange} />}
       {step === 4 && <Review form={form} selected={selected} people={people} employees={employees} selectedPeople={requestPeople} existingPeople={existingPeople} peopleEntryMode={peopleEntryMode} />}
       <div className="form-footer">
         <button type="button" className="ghost-button" onClick={onCancel}>Cancelar</button>
@@ -53,7 +53,7 @@ function StepTwo({ form, options, selectedType, loading, change }) {
   return <><SectionHeading title="Contacto y ubicación" text={isEmployee ? 'Indica el área, la ubicación y el usuario responsable de la solicitud.' : 'Indica quién coordina el ingreso y dónde se realizará.'} /><div className="form-grid">{!isEmployee && <><Field label={contactLabel} required><input name="contactoProveedor" maxLength="200" value={form.contactoProveedor} onChange={change} placeholder={isNewEmployee ? 'Nombre completo del nuevo empleado' : 'Nombre del contacto'} /></Field><Field label={emailLabel} required><input type="email" name="correoProveedor" maxLength="254" value={form.correoProveedor} onChange={change} placeholder={isNewEmployee ? 'nuevo.empleado@empresa.com' : 'contacto@empresa.com'} /></Field></>}<Field label="Área solicitante" required><Select name="idAreaSolicitante" value={form.idAreaSolicitante} onChange={change} items={options?.areas} loading={loading} /></Field><Field label="Ubicación / instalación" required><Select name="idUbicacion" value={form.idUbicacion} onChange={change} items={options?.ubicaciones} loading={loading} /></Field><Field label="Usuario solicitante" required full><Select name="idUsuarioSolicitante" value={form.idUsuarioSolicitante} onChange={change} items={options?.usuarios} loading={loading} disabled /><small className="field-help">Se asigna automáticamente desde la sesión iniciada.</small></Field><Field label="Observaciones" full><textarea name="observaciones" maxLength="1000" value={form.observaciones} onChange={change} placeholder="Indicaciones para el ingreso" /></Field></div></>
 }
 
-function PeopleStep({ typeCode, mode, provider, estimatedCount, people, employees, employeesLoading, employeesError, selectedPeople, existingPeople, areas, onModeChange, onChange }) {
+function PeopleStep({ typeCode, mode, provider, estimatedCount, people, employees, employeesLoading, employeesError, selectedPeople, existingPeople, areas, activityFlows, onModeChange, onChange }) {
   const [selectedValue, setSelectedValue] = useState('')
   const usesHtis = typeCode === 'EMPLEADO'
   const isNewEmployee = typeCode === 'NUEVO_EMPLEADO'
@@ -70,15 +70,36 @@ function PeopleStep({ typeCode, mode, provider, estimatedCount, people, employee
   function addEntry() {
     if (!selectedValue || limitReached) return
     onChange([...selectedPeople, usesHtis
-      ? { idPersona: null, codigoEmpleadoHtis: selectedValue, areas: [] }
-      : { idPersona: Number(selectedValue), codigoEmpleadoHtis: null, areas: [] }])
+      ? { idPersona: null, codigoEmpleadoHtis: selectedValue, areas: [], requerimientos: [] }
+      : { idPersona: Number(selectedValue), codigoEmpleadoHtis: null, areas: [], requerimientos: [] }])
     setSelectedValue('')
   }
 
   function toggleArea(entryKey, idArea) {
-    onChange(selectedPeople.map((entry) => requestEntryKey(entry, usesHtis) !== entryKey ? entry : {
-      ...entry,
-      areas: entry.areas.includes(idArea) ? entry.areas.filter((id) => id !== idArea) : [...entry.areas, idArea],
+    const activityIds = activitiesForArea(activityFlows, idArea).map((step) => step.idRequerimiento)
+    onChange(selectedPeople.map((entry) => {
+      if (requestEntryKey(entry, usesHtis) !== entryKey) return entry
+      const removing = entry.areas.includes(idArea)
+      return {
+        ...entry,
+        areas: removing ? entry.areas.filter((id) => id !== idArea) : [...entry.areas, idArea],
+        requerimientos: removing
+          ? (entry.requerimientos ?? []).filter((id) => !activityIds.includes(id))
+          : entry.requerimientos ?? [],
+      }
+    }))
+  }
+
+  function toggleActivity(entryKey, idRequerimiento) {
+    onChange(selectedPeople.map((entry) => {
+      if (requestEntryKey(entry, usesHtis) !== entryKey) return entry
+      const selected = entry.requerimientos ?? []
+      return {
+        ...entry,
+        requerimientos: selected.includes(idRequerimiento)
+          ? selected.filter((id) => id !== idRequerimiento)
+          : [...selected, idRequerimiento],
+      }
     }))
   }
 
@@ -116,6 +137,22 @@ function PeopleStep({ typeCode, mode, provider, estimatedCount, people, employee
             <div className="request-person-head"><div><strong>{source?.nombreCompleto || entry.codigoEmpleadoHtis || `Persona #${entry.idPersona}`}</strong><span>{usesHtis ? source?.codigoEmpleado || entry.codigoEmpleadoHtis : source?.numeroDocumento || source?.empresa || 'Sin información adicional'}</span></div><button type="button" className="remove-person-button" onClick={() => onChange(selectedPeople.filter((item) => requestEntryKey(item, usesHtis) !== key))}>Quitar</button></div>
             <div className="request-area-options"><p>Áreas autorizadas <span className="required">*</span></p>{areas.map((area) => <label key={area.id}><input type="checkbox" checked={entry.areas.includes(Number(area.id))} onChange={() => toggleArea(key, Number(area.id))} /><span>{area.nombre ?? area.codigo}</span></label>)}</div>
             {entry.areas.length === 0 && <small className="request-person-warning">Selecciona al menos un área.</small>}
+            {entry.areas.length > 0 && <div className="request-activity-selection">
+              <div className="request-activity-selection-heading"><strong>Actividades previas al ingreso</strong><span>Selecciona las que deberá realizar esta persona.</span></div>
+              {entry.areas.map((idArea) => {
+                const area = areas.find((item) => Number(item.id) === Number(idArea))
+                const activities = activitiesForArea(activityFlows, idArea)
+                return <section className="request-area-activities" key={idArea}>
+                  <div className="request-area-activities-title"><Icon name="shield" /><div><strong>{area?.nombre ?? area?.codigo ?? `Área #${idArea}`}</strong><span>{activities.length ? `${activities.length} actividad(es) configurada(s)` : 'Sin actividades configuradas'}</span></div></div>
+                  {activities.length > 0 && <div className="request-activity-options">{activities.map((activity, index) => <label key={activity.idConfigReqArea}>
+                    <input type="checkbox" checked={(entry.requerimientos ?? []).includes(activity.idRequerimiento)} onChange={() => toggleActivity(key, activity.idRequerimiento)} />
+                    <span className="request-activity-order">{index + 1}</span>
+                    <span><strong>{activity.nombreActividad}</strong><small>Responsable: {activity.areaResponsable || 'Área no indicada'}</small></span>
+                  </label>)}</div>}
+                  {activities.length > 0 && !activities.some((activity) => (entry.requerimientos ?? []).includes(activity.idRequerimiento)) && <small className="request-person-warning">Selecciona al menos una actividad para esta área.</small>}
+                </section>
+              })}
+            </div>}
             {entry.error && <small className="request-person-error">{entry.error}</small>}
           </article>
         })}
@@ -153,6 +190,10 @@ function sourceItemKey(item, usesHtis) {
   return usesHtis
     ? String(item.codigoEmpleado ?? '').trim().toLocaleLowerCase('es')
     : String(item.idPersona ?? '')
+}
+
+function activitiesForArea(activityFlows, idArea) {
+  return activityFlows.find((area) => Number(area.idArea) === Number(idArea))?.pasos ?? []
 }
 
 function editingIdMessage(existingPeople) {
