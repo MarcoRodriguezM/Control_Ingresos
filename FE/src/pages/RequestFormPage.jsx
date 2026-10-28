@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Icon } from '../components/Icon'
 import { accessStatusClass, formatDate } from '../utils/formatters'
+import { activityAppliesToType } from '../utils/activityTypes'
 
 export function RequestFormPage({ form, options, activityFlows = [], people, employees = [], employeesLoading = false, employeesError = '', requestPeople, existingPeople, peopleEntryMode, loading, saving, editingId, step, selected, canSend, onPeopleEntryModeChange, onPeopleChange, onChange, onStepChange, onNext, onBack, onCancel, onSubmit }) {
   const typeCode = normalizeTypeCode(selected.tipo)
@@ -141,13 +142,13 @@ function PeopleStep({ typeCode, mode, provider, estimatedCount, people, employee
               <div className="request-activity-selection-heading"><strong>Actividades previas al ingreso</strong><span>Selecciona las que deberá realizar esta persona.</span></div>
               {entry.areas.map((idArea) => {
                 const area = areas.find((item) => Number(item.id) === Number(idArea))
-                const activities = activitiesForArea(activityFlows, idArea)
+                const activities = activitiesForArea(activityFlows, idArea).filter((activity) => activityAppliesToType(activity, typeCode))
                 return <section className="request-area-activities" key={idArea}>
                   <div className="request-area-activities-title"><Icon name="shield" /><div><strong>{area?.nombre ?? area?.codigo ?? `Área #${idArea}`}</strong><span>{activities.length ? `${activities.length} actividad(es) configurada(s)` : 'Sin actividades configuradas'}</span></div></div>
                   {activities.length > 0 && <div className="request-activity-options">{activities.map((activity, index) => <label key={activity.idConfigReqArea}>
                     <input type="checkbox" checked={(entry.requerimientos ?? []).includes(activity.idRequerimiento)} onChange={() => toggleActivity(key, activity.idRequerimiento)} />
                     <span className="request-activity-order">{index + 1}</span>
-                    <span><strong>{activity.nombreActividad}</strong><small>Responsable: {activity.areaResponsable || 'Área no indicada'}</small></span>
+                    <span><strong>{activity.nombreActividad}</strong><small>Responsable: {activity.areaResponsable || 'Area no indicada'}{activity.requiereTicketExterno ? ' · Requiere ticket' : ''}</small></span>
                   </label>)}</div>}
                   {activities.length > 0 && !activities.some((activity) => (entry.requerimientos ?? []).includes(activity.idRequerimiento)) && <small className="request-person-warning">Selecciona al menos una actividad para esta área.</small>}
                 </section>

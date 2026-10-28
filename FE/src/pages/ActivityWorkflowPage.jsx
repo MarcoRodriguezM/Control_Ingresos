@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Icon } from '../components/Icon'
 import { controlIngresosApi } from '../services/api'
+import { ACTIVITY_ENTRY_TYPES } from '../utils/activityTypes'
 
 const emptyStep = (areaId = '') => ({
   key: `${Date.now()}-${Math.random()}`,
   nombreActividad: '',
   idAreaResponsable: areaId ? String(areaId) : '',
   requiereTicketExterno: false,
+  tiposIngreso: [],
   vigenciaMeses: 24,
 })
 
@@ -56,6 +58,11 @@ export function ActivityWorkflowPage({ onError }) {
     setSteps((current) => current.map((step, stepIndex) => stepIndex === index ? { ...step, [field]: value } : step))
   }
 
+  function toggleEntryType(index, code) {
+    const current = steps[index].tiposIngreso ?? []
+    updateStep(index, 'tiposIngreso', current.includes(code) ? current.filter((item) => item !== code) : [...current, code])
+  }
+
   function removeStep(index) {
     setSaved(false)
     setSteps((current) => current.filter((_, stepIndex) => stepIndex !== index))
@@ -89,6 +96,7 @@ export function ActivityWorkflowPage({ onError }) {
           idAreaResponsable: Number(step.idAreaResponsable),
           requiereTicketExterno: Boolean(step.requiereTicketExterno),
           vigenciaMeses: Number(step.vigenciaMeses),
+          tiposIngreso: step.tiposIngreso,
         })),
       })
       const result = await controlIngresosApi.obtenerFlujosActividades()
@@ -142,6 +150,7 @@ export function ActivityWorkflowPage({ onError }) {
                 <label><span>Area responsable</span><select value={step.idAreaResponsable} onChange={(event) => updateStep(index, 'idAreaResponsable', event.target.value)}><option value="">Selecciona un area</option>{areas.map((area) => <option key={area.idArea} value={area.idArea}>{area.nombre || area.codigo}</option>)}</select></label>
                 <label><span>Vigencia (meses)</span><input type="number" min="1" max="1200" value={step.vigenciaMeses} onChange={(event) => updateStep(index, 'vigenciaMeses', event.target.value)} /><small>Durante este tiempo no tendra que repetirla.</small></label>
                 <label className="workflow-ticket"><input type="checkbox" checked={Boolean(step.requiereTicketExterno)} onChange={(event) => updateStep(index, 'requiereTicketExterno', event.target.checked)} /><span>Requiere comprobante o ticket externo</span></label>
+                <fieldset className="workflow-entry-types"><legend>Tipos de ingreso</legend><label><input type="checkbox" checked={step.tiposIngreso.length === 0} onChange={() => updateStep(index, 'tiposIngreso', [])} />Todos</label>{ACTIVITY_ENTRY_TYPES.map((type) => <label key={type.code}><input type="checkbox" checked={step.tiposIngreso.includes(type.code)} onChange={() => toggleEntryType(index, type.code)} />{type.label}</label>)}<small>Todos aplica tambien a futuros tipos de ingreso.</small></fieldset>
               </div>
               <div className="workflow-step-actions">
                 <button type="button" onClick={() => moveStep(index, -1)} disabled={index === 0} aria-label="Mover actividad hacia arriba">↑</button>
@@ -163,5 +172,6 @@ function mapSteps(steps) {
     nombreActividad: step.nombreActividad ?? '',
     idAreaResponsable: String(step.idAreaResponsable ?? ''),
     vigenciaMeses: Number(step.vigenciaMeses) || 24,
+    tiposIngreso: step.tiposIngreso ?? [],
   }))
 }

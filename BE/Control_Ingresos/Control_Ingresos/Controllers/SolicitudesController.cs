@@ -46,6 +46,33 @@ public sealed class SolicitudesController(
         return Ok(await CompletarEmpleadosHtisAsync(solicitud, cancellationToken));
     }
 
+    [HttpGet("{id:long}/tickets")]
+    [Authorize(Roles = "Solicitante,Administrador")]
+    [ProducesResponseType<IReadOnlyCollection<TicketSolicitudResumen>>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyCollection<TicketSolicitudResumen>>> ListarTickets(long id, CancellationToken cancellationToken)
+    {
+        var usuario = CurrentUserId();
+        if (usuario is null) return Unauthorized();
+        var solicitud = await repository.ObtenerSolicitudAsync(id, cancellationToken);
+        if (solicitud is null) return NotFound();
+        if (solicitud.IdUsuarioSolicitante != usuario) return Forbid();
+        return Ok(await repository.ListarTicketsSolicitudAsync(id, usuario, cancellationToken));
+    }
+
+    [HttpGet("{id:long}/seguimiento")]
+    [ProducesResponseType<SeguimientoSolicitud>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<SeguimientoSolicitud>> ObtenerSeguimiento(long id, CancellationToken cancellationToken)
+    {
+        var usuario = CurrentUserId();
+        if (usuario is null) return Unauthorized();
+        var accesoTotal = User.IsInRole("Administrador") || User.IsInRole("Aprobador");
+        var seguimiento = await repository.ObtenerSeguimientoSolicitudAsync(id, usuario, accesoTotal, cancellationToken);
+        return seguimiento is null ? NotFound() : Ok(seguimiento with
+        {
+            Solicitud = await CompletarEmpleadosHtisAsync(seguimiento.Solicitud, cancellationToken)
+        });
+    }
+
     [HttpPost]
     [Authorize(Roles = "Solicitante,Administrador")]
     [ProducesResponseType<IdCreadoResponse>(StatusCodes.Status201Created)]
@@ -268,12 +295,14 @@ public sealed class SolicitudesController(
 
     [HttpPost("personas-areas/{idSolicitudPersonaArea:long}/reenviar-aprobacion")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<IActionResult> ReenviarAprobacion(long idSolicitudPersonaArea, CancellationToken cancellationToken)
+    public async Task<IActionResult> ReenviarAprobacion(long idSolicitudPersonaArea, ReenviarAprobacionRequest request, CancellationToken cancellationToken)
     {
         var idUsuarioSolicitante = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrWhiteSpace(idUsuarioSolicitante)) return Unauthorized();
 
-        await repository.ReenviarAprobacionAsync(idSolicitudPersonaArea, idUsuarioSolicitante, cancellationToken);
+        if (string.IsNullOrWhiteSpace(request.Justificacion))
+            return BadRequest(new ProblemDetails { Detail = "La justificacion es obligatoria." });
+        await repository.ReenviarAprobacionAsync(idSolicitudPersonaArea, idUsuarioSolicitante, request.Justificacion.Trim(), cancellationToken);
         return NoContent();
     }
 

@@ -48,6 +48,17 @@ public sealed class ActividadesController(ISolicitudesRepository repository) : C
         return Ok(new IdCreadoResponse(id));
     }
 
+    [Authorize(Roles = "Solicitante,Administrador")]
+    [HttpPost("{idActividad:long}/ticket")]
+    [ProducesResponseType<ActividadTicketResumen>(StatusCodes.Status201Created)]
+    public async Task<ActionResult<ActividadTicketResumen>> CrearTicket(long idActividad, CrearActividadTicketRequest request, CancellationToken cancellationToken)
+    {
+        var idUsuario = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(idUsuario)) return Unauthorized();
+        var ticket = await repository.CrearTicketActividadAsync(idActividad, idUsuario, request, cancellationToken);
+        return Created($"/api/actividades/{idActividad}/ticket", ticket);
+    }
+
     [Authorize(Roles = "Aprobador,Administrador")]
     [HttpPut("{idActividad:long}/decision")]
     [ProducesResponseType<IdCreadoResponse>(StatusCodes.Status200OK)]

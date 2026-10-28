@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Icon } from '../components/Icon'
 import { formatDate } from '../utils/formatters'
 
-export function RequestsListPage({ items, loading, onNew, onEdit, onDelete }) {
+export function RequestsListPage({ items, loading, canOpenAll, onNew, onOpen, onEdit, onTickets, onDelete }) {
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState('')
   const [deletion, setDeletion] = useState(null)
@@ -38,7 +38,7 @@ export function RequestsListPage({ items, loading, onNew, onEdit, onDelete }) {
         <tbody>
           {loading && <tr><td colSpan="7" className="empty-table">Cargando solicitudes…</td></tr>}
           {!loading && filtered.length === 0 && <tr><td colSpan="7" className="empty-table">No se encontraron solicitudes.</td></tr>}
-          {filtered.map((item) => <tr key={item.idSolicitud}><td><strong>{item.numeroSolicitud}</strong><span className="cell-sub">{item.nombreActividad}</span></td><td>{item.tipoIngreso ?? '—'}</td><td>{formatDate(item.fechaInicio)}</td><td>{formatDate(item.fechaFin)}</td><td>{item.cantidadPersonas}</td><td><span className="status-badge">{item.estado ?? 'Sin estado'}</span></td><td><div className="row-actions"><button type="button" onClick={() => onEdit(item.idSolicitud)}>Editar</button><button type="button" className="delete-action" onClick={() => setDeletion(item)}>Eliminar</button></div></td></tr>)}
+          {filtered.map((item) => <tr key={item.idSolicitud}><td>{item.esPropia || canOpenAll ? <button type="button" className="request-number-link" onClick={() => onOpen(item.idSolicitud)}>{item.numeroSolicitud}</button> : <strong>{item.numeroSolicitud}</strong>}<span className="cell-sub">{item.nombreActividad}</span></td><td>{item.tipoIngreso ?? '—'}</td><td>{formatDate(item.fechaInicio)}</td><td>{formatDate(item.fechaFin)}</td><td>{item.cantidadPersonas}</td><td><span className="status-badge">{item.estado ?? 'Sin estado'}</span></td><td><div className="row-actions">{(item.esPropia || canOpenAll) && <button type="button" onClick={() => onOpen(item.idSolicitud)}>Ver detalle</button>}{item.esPropia && <button type="button" onClick={() => onEdit(item.idSolicitud)}>Editar</button>}{item.esPropia && item.ticketsPendientes > 0 && <button type="button" onClick={() => onTickets(item.idSolicitud)}>Tickets ({item.ticketsPendientes})</button>}<button type="button" className="delete-action" onClick={() => setDeletion(item)}>Eliminar</button></div></td></tr>)}
         </tbody>
       </table></div>
     </article>

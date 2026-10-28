@@ -71,11 +71,12 @@ export function MyActivitiesPage({ items, loading, onRequest, onComplete }) {
           <div className="activity-row-main">
             <div className="activity-title"><h2>{item.nombreActividad || `Actividad #${item.idActividad}`}</h2><span className={`access-status ${isOverdue(item) ? 'rejected' : item.esEstadoFinal ? 'approved' : 'pending'}`}>{isOverdue(item) ? 'Vencida' : activityStatusLabel(item.codigoEstado, item.esEstadoFinal ? 'Finalizada' : 'Pendiente')}</span></div>
             <p>{item.areaResponsable || 'Area no indicada'}{item.numeroSolicitud ? ` · ${item.numeroSolicitud}` : ''}</p>
-            <div className="activity-meta"><span><strong>Fecha limite</strong>{formatDateTime(item.fechaLimite)}</span><span><strong>Inicio</strong>{formatDateTime(item.fechaInicio)}</span><span><strong>Finalizacion</strong>{formatDateTime(item.fechaFinalizacion)}</span>{item.requiereTicketExterno && <span className="activity-ticket">Requiere ticket externo</span>}</div>
+            <div className="activity-meta"><span><strong>Fecha limite</strong>{formatDateTime(item.fechaLimite)}</span><span><strong>Inicio</strong>{formatDateTime(item.fechaInicio)}</span><span><strong>Finalizacion</strong>{formatDateTime(item.fechaFinalizacion)}</span>{item.requiereTicketExterno && <span className="activity-ticket">{item.ticket ? `Ticket ${item.ticket.numeroTicket}` : 'Ticket requerido'}</span>}</div>
+            {item.ticket ? <p className="activity-ticket-detail">{item.ticket.plataforma}: <strong>{item.ticket.numeroTicket}</strong>{item.ticket.urlTicket?.startsWith('https://') && <> · <a href={item.ticket.urlTicket} target="_blank" rel="noopener noreferrer">Abrir ticket</a></>}</p> : item.requiereTicketExterno && <p className="activity-ticket-detail">El solicitante debe registrar el ticket en su solicitud.</p>}
             {item.comentarios && <p className="activity-comment">{item.comentarios}</p>}
           </div>
           <div className="activity-row-actions">
-            {!item.esEstadoFinal && <button type="button" className="primary-button teal activity-complete" onClick={() => beginCompletion(item)}>{item.codigoEstado === 'PENDIENTE_APROBACION' ? 'Finalizar actividad' : 'Registrar como realizada'}</button>}
+            {!item.esEstadoFinal && <button type="button" className="primary-button teal activity-complete" disabled={item.requiereTicketExterno && !item.ticket} onClick={() => beginCompletion(item)}>{item.codigoEstado === 'PENDIENTE_APROBACION' ? 'Finalizar actividad' : 'Registrar como realizada'}</button>}
             {item.idSolicitud && <button type="button" className="secondary-button activity-open" onClick={() => onRequest(item.idSolicitud, item.idSolicitudPersona)}>Abrir solicitud <Icon name="arrow" /></button>}
           </div>
         </article>)}

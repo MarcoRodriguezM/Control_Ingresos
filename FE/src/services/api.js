@@ -158,6 +158,11 @@ export const controlIngresosApi = {
     method: 'PUT',
     body: JSON.stringify({ comentarios }),
   }),
+  crearTicketActividad: (idActividad, ticket) => request(`/api/actividades/${idActividad}/ticket`, {
+    method: 'POST',
+    body: JSON.stringify(ticket),
+  }),
+  listarTicketsSolicitud: (idSolicitud) => request(`/api/solicitudes/${idSolicitud}/tickets`),
   decidirActividad: (idActividad, decision) => request(`/api/actividades/${idActividad}/decision`, {
     method: 'PUT',
     body: JSON.stringify(decision),
@@ -165,6 +170,11 @@ export const controlIngresosApi = {
   listarSolicitudes: () => request('/api/solicitudes'),
   obtenerDatosFormularioSolicitud: () => request('/api/solicitudes/formulario-datos'),
   obtenerSolicitud: (id) => request(`/api/solicitudes/${id}`),
+  obtenerSeguimientoSolicitud: (id) => request(`/api/solicitudes/${id}/seguimiento`),
+  reenviarAprobacionArea: (idSolicitudPersonaArea, justificacion) => request(`/api/solicitudes/personas-areas/${idSolicitudPersonaArea}/reenviar-aprobacion`, {
+    method: 'POST',
+    body: JSON.stringify({ justificacion }),
+  }),
   crearSolicitud: (solicitud) => request('/api/solicitudes', {
     method: 'POST',
     body: JSON.stringify(solicitud),

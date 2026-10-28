@@ -1,5 +1,7 @@
 export { RequestFormPage } from './RequestFormPage'
 export { RequestApprovalDetailPage } from './RequestApprovalDetailPage'
+export { RequestTicketsPage } from './RequestTicketsPage'
+export { RequestTrackingPage } from './RequestTrackingPage'
 export { RequestsListPage } from './RequestsListPage'
 export { PersonAccessPage } from './PersonAccessPage'
 export { EmployeeListPage } from './EmployeeListPage'

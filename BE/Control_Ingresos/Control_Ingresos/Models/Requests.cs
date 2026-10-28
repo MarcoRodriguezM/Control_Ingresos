@@ -115,7 +115,66 @@ public sealed record SolicitudResumen(
     DateOnly? FechaFin,
     string? NombreActividad,
     string? UsuarioSolicitante,
-    int CantidadPersonas);
+    int CantidadPersonas,
+    bool EsPropia = false,
+    int TicketsPendientes = 0);
+
+public sealed record SeguimientoArea(
+    long IdSolicitudPersonaArea,
+    long IdSolicitudPersona,
+    string? Persona,
+    string? NumeroDocumento,
+    string? Area,
+    string? CodigoEstado,
+    string? Estado,
+    string? ComentarioDecision,
+    DateTime? FechaDecision,
+    string? UsuarioDecision);
+
+public sealed record SeguimientoActividad(
+    long IdActividad,
+    long? IdSolicitudPersona,
+    string? Persona,
+    string? AreaResponsable,
+    string? NombreActividad,
+    string? CodigoEstado,
+    string? Estado,
+    bool RequiereTicket,
+    string? NumeroTicket,
+    DateTime? FechaFinalizacion,
+    string? UsuarioDecision,
+    string? ComentarioDecision,
+    DateTime? FechaDecision,
+    bool EsEstadoFinal,
+    bool TicketPendiente);
+
+public sealed record SeguimientoReenvio(
+    long IdSolicitudPersonaArea,
+    string? Justificacion,
+    string? Usuario,
+    DateTime? Fecha);
+
+public sealed record SeguimientoDecision(
+    long IdSolicitudPersonaArea,
+    string? Persona,
+    string? Area,
+    string? CodigoEstado,
+    string? Comentario,
+    DateTime? Fecha,
+    string? UsuarioDecision);
+
+public sealed record SeguimientoSolicitud(
+    SolicitudDetalle Solicitud,
+    string Estado,
+    string CodigoEstado,
+    int TicketsPendientes,
+    IReadOnlyCollection<SeguimientoArea> Areas,
+    IReadOnlyCollection<SeguimientoActividad> Actividades,
+    IReadOnlyCollection<SeguimientoDecision> Decisiones,
+    IReadOnlyCollection<SeguimientoReenvio> Reenvios);
+
+public sealed record ReenviarAprobacionRequest(
+    [Required, MaxLength(1000)] string Justificacion);
 
 public sealed record ActividadResumen(
     long IdActividad,
@@ -131,6 +190,7 @@ public sealed record ActividadResumen(
     DateTime? FechaFinalizacion,
     string? Comentarios,
     bool RequiereTicketExterno,
+    ActividadTicketResumen? Ticket,
     long? IdSolicitudPersona,
     string? Persona,
     string? NumeroDocumento,
@@ -162,7 +222,8 @@ public sealed record ActividadAdministracionResumen(
     string? Persona,
     string? NumeroDocumento,
     int? IdAreaAcceso,
-    string? AreaAcceso);
+    string? AreaAcceso,
+    ActividadTicketResumen? Ticket = null);
 
 public sealed record CrearActividadRequest(
     long? IdSolicitud,
@@ -175,6 +236,30 @@ public sealed record CrearActividadRequest(
 
 public sealed record CompletarActividadRequest(
     [MaxLength(1000)] string? Comentarios);
+
+public sealed record CrearActividadTicketRequest(
+    [Required, MaxLength(100)] string Plataforma,
+    [Required, MaxLength(80)] string NumeroTicket,
+    [MaxLength(500)] string? UrlTicket);
+
+public sealed record ActividadTicketResumen(
+    long IdActividadTicket,
+    string? Plataforma,
+    string? NumeroTicket,
+    string? UrlTicket,
+    DateTime? FechaRegistro);
+
+public sealed record TicketSolicitudResumen(
+    long IdActividad,
+    long IdSolicitud,
+    DateTime? FechaFin,
+    string? NumeroSolicitud,
+    string? NombreActividad,
+    string? Persona,
+    string? AreaResponsable,
+    bool EsEstadoFinal,
+    ActividadTicketResumen? Ticket,
+    long? IdSolicitudPersona);
 
 public sealed record DecidirActividadRequest(
     [Required, MaxLength(30)] string CodigoEstado,
@@ -189,7 +274,8 @@ public sealed record ActividadFlujoPaso(
     int IdAreaResponsable,
     string? AreaResponsable,
     bool RequiereTicketExterno,
-    int VigenciaMeses);
+    int VigenciaMeses,
+    IReadOnlyCollection<string> TiposIngreso);
 
 public sealed record ActividadFlujoArea(
     int IdArea,
@@ -204,7 +290,8 @@ public sealed record GuardarActividadFlujoPasoRequest(
     [Required, MaxLength(150)] string NombreActividad,
     int IdAreaResponsable,
     bool RequiereTicketExterno,
-    [Range(1, 1200)] int VigenciaMeses = 24);
+    [Range(1, 1200)] int VigenciaMeses = 24,
+    IReadOnlyCollection<string>? TiposIngreso = null);
 
 public sealed record GuardarActividadFlujoRequest(
     [Required] IReadOnlyCollection<GuardarActividadFlujoPasoRequest> Pasos);

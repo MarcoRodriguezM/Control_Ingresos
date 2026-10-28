@@ -29,7 +29,13 @@ public sealed class ActivityWorkflowRepository(IConfiguration configuration) : I
                    cra.IdAreaResponsable,
                    responsable.Nombre,
                    CONVERT(BIT, ISNULL(cra.RequiereTicketExterno, ISNULL(r.RequiereTicketExterno, 0))),
-                   r.Descripcion
+                   r.Descripcion,
+                   (SELECT STRING_AGG(tipo.Codigo, ',')
+                    FROM dbo.Config_Requerimiento_Tipo_Ingreso AS filtro
+                    INNER JOIN dbo.Cat_Tipo_Ingreso AS tipo ON tipo.IdTipoIngreso = filtro.IdTipoIngreso
+                    LEFT JOIN dbo.Cat_Estado_General AS estadoFiltro ON estadoFiltro.IdEstadoGeneral = filtro.IdEstadoGeneral
+                    WHERE filtro.IdRequerimiento = r.IdRequerimiento
+                      AND ISNULL(estadoFiltro.EsActivo, 1) = 1)
             FROM dbo.Config_Requerimiento_Area AS cra
             INNER JOIN dbo.Cat_Requerimiento AS r ON r.IdRequerimiento = cra.IdRequerimiento
             INNER JOIN dbo.Cat_Area AS responsable ON responsable.IdArea = cra.IdAreaResponsable
@@ -68,7 +74,8 @@ public sealed class ActivityWorkflowRepository(IConfiguration configuration) : I
                     reader.GetInt32(5),
                     GetNullableString(reader, 6),
                     reader.GetBoolean(7),
-                    ObtenerVigenciaMeses(GetNullableString(reader, 8))));
+                    ObtenerVigenciaMeses(GetNullableString(reader, 8)),
+                    (GetNullableString(reader, 9) ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)));
             }
         }
 
@@ -97,6 +104,10 @@ public sealed class ActivityWorkflowRepository(IConfiguration configuration) : I
             throw new InvalidOperationException("Cada actividad debe tener un area responsable.");
         if (pasos.Any(paso => paso.VigenciaMeses is < 1 or > 1200))
             throw new InvalidOperationException("La vigencia de cada actividad debe estar entre 1 y 1200 meses.");
+        if (pasos.Any(paso => paso.TiposIngreso is { Count: > 0 } &&
+            paso.TiposIngreso.Any(tipo => string.IsNullOrWhiteSpace(tipo) ||
+                !TiposIngresoValidos.Contains(tipo.Trim(), StringComparer.OrdinalIgnoreCase))))
+            throw new InvalidOperationException("Uno de los tipos de ingreso de la actividad no es valido.");
         if (pasos.GroupBy(paso => paso.NombreActividad, StringComparer.OrdinalIgnoreCase).Any(group => group.Count() > 1))
             throw new InvalidOperationException("Una actividad no puede repetirse dentro del mismo flujo.");
 
@@ -128,6 +139,7 @@ public sealed class ActivityWorkflowRepository(IConfiguration configuration) : I
 
             var nextRequirementId = await ObtenerSiguienteIdAsync(connection, transaction, "Cat_Requerimiento", "IdRequerimiento", cancellationToken);
             var nextConfigId = await ObtenerSiguienteIdAsync(connection, transaction, "Config_Requerimiento_Area", "IdConfigReqArea", cancellationToken);
+            var nextTypeConfigId = await ObtenerSiguienteIdAsync(connection, transaction, "Config_Requerimiento_Tipo_Ingreso", "IdConfigReqTipoIngreso", cancellationToken);
 
             foreach (var paso in pasos)
             {
@@ -141,6 +153,8 @@ public sealed class ActivityWorkflowRepository(IConfiguration configuration) : I
                     nextRequirementId,
                     cancellationToken);
                 if (idRequerimiento == nextRequirementId) nextRequirementId++;
+                nextTypeConfigId += await GuardarTiposIngresoAsync(connection, transaction, idRequerimiento, paso.TiposIngreso,
+                    ids.Activo, ids.Inactivo, usuario, nextTypeConfigId, cancellationToken);
 
                 const string insertConfigSql = """
                     INSERT dbo.Config_Requerimiento_Area
@@ -225,6 +239,24 @@ public sealed class ActivityWorkflowRepository(IConfiguration configuration) : I
                 WHERE cra.IdAreaAcceso IN (SELECT TRY_CONVERT(INT, value) FROM STRING_SPLIT(@Areas, ','))
                   AND ISNULL(estadoConfig.EsActivo, 1) = 1
                   AND ISNULL(estadoReq.EsActivo, 1) = 1
+                  AND (
+                      NOT EXISTS
+                      (
+                          SELECT 1 FROM dbo.Config_Requerimiento_Tipo_Ingreso AS filtro
+                          LEFT JOIN dbo.Cat_Estado_General AS estadoFiltro ON estadoFiltro.IdEstadoGeneral = filtro.IdEstadoGeneral
+                          WHERE filtro.IdRequerimiento = r.IdRequerimiento AND ISNULL(estadoFiltro.EsActivo, 1) = 1
+                      )
+                      OR EXISTS
+                      (
+                          SELECT 1 FROM dbo.Config_Requerimiento_Tipo_Ingreso AS filtro
+                          INNER JOIN dbo.Cat_Tipo_Ingreso AS tipoFiltro ON tipoFiltro.IdTipoIngreso = filtro.IdTipoIngreso
+                          LEFT JOIN dbo.Cat_Tipo_Ingreso AS tipoSolicitud ON tipoSolicitud.IdTipoIngreso = s.IdTipoIngreso
+                          LEFT JOIN dbo.Cat_Estado_General AS estadoFiltro ON estadoFiltro.IdEstadoGeneral = filtro.IdEstadoGeneral
+                          WHERE filtro.IdRequerimiento = r.IdRequerimiento
+                            AND ISNULL(estadoFiltro.EsActivo, 1) = 1
+                            AND tipoFiltro.Codigo = CASE WHEN tipoSolicitud.Codigo = 'NUEVO_EMPLEADO' THEN 'EMPLEADO' ELSE tipoSolicitud.Codigo END
+                      )
+                  )
                 ORDER BY cra.IdAreaAcceso, cra.IdConfigReqArea;
                 """;
             var configuredSteps = new List<ConfiguredStep>();
@@ -342,6 +374,7 @@ public sealed class ActivityWorkflowRepository(IConfiguration configuration) : I
         const string sql = """
             SELECT COUNT(*)
             FROM dbo.Actividad AS actual
+            LEFT JOIN dbo.Solicitud_Ingreso AS solicitud ON solicitud.IdSolicitud = actual.IdSolicitud
             INNER JOIN dbo.Config_Requerimiento_Area AS configActual
                 ON configActual.IdRequerimiento = actual.IdRequerimiento
                AND configActual.IdAreaResponsable = actual.IdAreaResponsable
@@ -363,6 +396,17 @@ public sealed class ActivityWorkflowRepository(IConfiguration configuration) : I
               AND actual.IdUsuarioResponsable = @IdUsuarioResponsable
               AND ISNULL(estadoConfig.EsActivo, 1) = 1
               AND ISNULL(estadoPreviaConfig.EsActivo, 1) = 1
+              AND (
+                  NOT EXISTS (SELECT 1 FROM dbo.Config_Requerimiento_Tipo_Ingreso AS filtro
+                      LEFT JOIN dbo.Cat_Estado_General AS ef ON ef.IdEstadoGeneral = filtro.IdEstadoGeneral
+                      WHERE filtro.IdRequerimiento = previa.IdRequerimiento AND ISNULL(ef.EsActivo, 1) = 1)
+                  OR EXISTS (SELECT 1 FROM dbo.Config_Requerimiento_Tipo_Ingreso AS filtro
+                      INNER JOIN dbo.Cat_Tipo_Ingreso AS tipoFiltro ON tipoFiltro.IdTipoIngreso = filtro.IdTipoIngreso
+                      INNER JOIN dbo.Cat_Tipo_Ingreso AS tipoSolicitud ON tipoSolicitud.IdTipoIngreso = solicitud.IdTipoIngreso
+                      LEFT JOIN dbo.Cat_Estado_General AS ef ON ef.IdEstadoGeneral = filtro.IdEstadoGeneral
+                      WHERE filtro.IdRequerimiento = previa.IdRequerimiento AND ISNULL(ef.EsActivo, 1) = 1
+                        AND tipoFiltro.Codigo = CASE WHEN tipoSolicitud.Codigo = 'NUEVO_EMPLEADO' THEN 'EMPLEADO' ELSE tipoSolicitud.Codigo END)
+              )
               AND ISNULL(estadoPrevia.Codigo, '') <> 'APROBADA';
             """;
         await using var command = new SqlCommand(sql, connection);
@@ -383,6 +427,8 @@ public sealed class ActivityWorkflowRepository(IConfiguration configuration) : I
         const string sql = """
             SELECT DISTINCT spa.IdSolicitudPersonaArea
             FROM dbo.Solicitud_Persona_Area AS spa
+            INNER JOIN dbo.Solicitud_Persona AS sp ON sp.IdSolicitudPersona = spa.IdSolicitudPersona
+            INNER JOIN dbo.Solicitud_Ingreso AS solicitud ON solicitud.IdSolicitud = sp.IdSolicitud
             INNER JOIN dbo.Solicitud_Persona_Requerimiento AS seleccion
                 ON seleccion.IdSolicitudPersona = spa.IdSolicitudPersona
                AND ISNULL(seleccion.Seleccionado, 1) = 1
@@ -392,6 +438,17 @@ public sealed class ActivityWorkflowRepository(IConfiguration configuration) : I
             LEFT JOIN dbo.Cat_Estado_General AS estadoConfig ON estadoConfig.IdEstadoGeneral = cra.IdEstadoGeneral
             WHERE spa.IdSolicitudPersonaArea IN (SELECT TRY_CONVERT(BIGINT, value) FROM STRING_SPLIT(@Ids, ','))
               AND ISNULL(estadoConfig.EsActivo, 1) = 1
+              AND (
+                  NOT EXISTS (SELECT 1 FROM dbo.Config_Requerimiento_Tipo_Ingreso AS filtro
+                      LEFT JOIN dbo.Cat_Estado_General AS ef ON ef.IdEstadoGeneral = filtro.IdEstadoGeneral
+                      WHERE filtro.IdRequerimiento = cra.IdRequerimiento AND ISNULL(ef.EsActivo, 1) = 1)
+                  OR EXISTS (SELECT 1 FROM dbo.Config_Requerimiento_Tipo_Ingreso AS filtro
+                      INNER JOIN dbo.Cat_Tipo_Ingreso AS tipoFiltro ON tipoFiltro.IdTipoIngreso = filtro.IdTipoIngreso
+                      INNER JOIN dbo.Cat_Tipo_Ingreso AS tipoSolicitud ON tipoSolicitud.IdTipoIngreso = solicitud.IdTipoIngreso
+                      LEFT JOIN dbo.Cat_Estado_General AS ef ON ef.IdEstadoGeneral = filtro.IdEstadoGeneral
+                      WHERE filtro.IdRequerimiento = cra.IdRequerimiento AND ISNULL(ef.EsActivo, 1) = 1
+                        AND tipoFiltro.Codigo = CASE WHEN tipoSolicitud.Codigo = 'NUEVO_EMPLEADO' THEN 'EMPLEADO' ELSE tipoSolicitud.Codigo END)
+              )
               AND NOT EXISTS
               (
                   SELECT 1
@@ -428,6 +485,17 @@ public sealed class ActivityWorkflowRepository(IConfiguration configuration) : I
             LEFT JOIN dbo.Cat_Estado_General AS estadoConfig ON estadoConfig.IdEstadoGeneral = cra.IdEstadoGeneral
             WHERE sp.IdPersona = @IdPersona
               AND ISNULL(estadoConfig.EsActivo, 1) = 1
+              AND (
+                  NOT EXISTS (SELECT 1 FROM dbo.Config_Requerimiento_Tipo_Ingreso AS filtro
+                      LEFT JOIN dbo.Cat_Estado_General AS ef ON ef.IdEstadoGeneral = filtro.IdEstadoGeneral
+                      WHERE filtro.IdRequerimiento = cra.IdRequerimiento AND ISNULL(ef.EsActivo, 1) = 1)
+                  OR EXISTS (SELECT 1 FROM dbo.Config_Requerimiento_Tipo_Ingreso AS filtro
+                      INNER JOIN dbo.Cat_Tipo_Ingreso AS tipoFiltro ON tipoFiltro.IdTipoIngreso = filtro.IdTipoIngreso
+                      INNER JOIN dbo.Cat_Tipo_Ingreso AS tipoSolicitud ON tipoSolicitud.IdTipoIngreso = s.IdTipoIngreso
+                      LEFT JOIN dbo.Cat_Estado_General AS ef ON ef.IdEstadoGeneral = filtro.IdEstadoGeneral
+                      WHERE filtro.IdRequerimiento = cra.IdRequerimiento AND ISNULL(ef.EsActivo, 1) = 1
+                        AND tipoFiltro.Codigo = CASE WHEN tipoSolicitud.Codigo = 'NUEVO_EMPLEADO' THEN 'EMPLEADO' ELSE tipoSolicitud.Codigo END)
+              )
               AND NOT EXISTS
               (
                   SELECT 1
@@ -571,6 +639,56 @@ public sealed class ActivityWorkflowRepository(IConfiguration configuration) : I
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
     }
 
+    private static async Task<int> GuardarTiposIngresoAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        int idRequerimiento,
+        IReadOnlyCollection<string>? tiposIngreso,
+        short idEstadoActivo,
+        short idEstadoInactivo,
+        string usuario,
+        int nextId,
+        CancellationToken cancellationToken)
+    {
+        const string deactivateSql = """
+            UPDATE dbo.Config_Requerimiento_Tipo_Ingreso
+               SET IdEstadoGeneral = @Inactivo, FechaModificacion = SYSDATETIME(), UsuarioModificacion = @Usuario
+            WHERE IdRequerimiento = @IdRequerimiento AND ISNULL(IdEstadoGeneral, @Activo) = @Activo;
+            """;
+        await using (var deactivate = new SqlCommand(deactivateSql, connection, transaction))
+        {
+            deactivate.Parameters.Add("@Inactivo", SqlDbType.SmallInt).Value = idEstadoInactivo;
+            deactivate.Parameters.Add("@Activo", SqlDbType.SmallInt).Value = idEstadoActivo;
+            deactivate.Parameters.Add("@Usuario", SqlDbType.VarChar, 50).Value = usuario;
+            deactivate.Parameters.Add("@IdRequerimiento", SqlDbType.Int).Value = idRequerimiento;
+            await deactivate.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        var codes = tiposIngreso?.Select(tipo => tipo.Trim().ToUpperInvariant()).Distinct().ToArray() ?? [];
+        if (codes.Length == 0 || codes.Length == TiposIngresoValidos.Length) return 0;
+
+        const string insertSql = """
+            INSERT dbo.Config_Requerimiento_Tipo_Ingreso
+            (IdConfigReqTipoIngreso, IdRequerimiento, IdTipoIngreso, IdTipoAplicacion,
+             IdEstadoGeneral, FechaCreacion, UsuarioCreacion)
+            SELECT @IdConfig, @IdRequerimiento, tipo.IdTipoIngreso, NULL,
+                   @Activo, SYSDATETIME(), @Usuario
+            FROM dbo.Cat_Tipo_Ingreso AS tipo WHERE tipo.Codigo = @Codigo;
+            """;
+        for (var index = 0; index < codes.Length; index++)
+        {
+            await using var insert = new SqlCommand(insertSql, connection, transaction);
+            insert.Parameters.Add("@IdConfig", SqlDbType.BigInt).Value = nextId + index;
+            insert.Parameters.Add("@IdRequerimiento", SqlDbType.Int).Value = idRequerimiento;
+            insert.Parameters.Add("@Activo", SqlDbType.SmallInt).Value = idEstadoActivo;
+            insert.Parameters.Add("@Usuario", SqlDbType.VarChar, 50).Value = usuario;
+            insert.Parameters.Add("@Codigo", SqlDbType.VarChar, 30).Value = codes[index];
+            if (await insert.ExecuteNonQueryAsync(cancellationToken) != 1)
+                throw new InvalidOperationException($"El tipo de ingreso {codes[index]} no existe en el catalogo.");
+        }
+        return codes.Length;
+    }
+
     private static async Task<short> ObtenerEstadoActividadPendienteAsync(
         SqlConnection connection,
         SqlTransaction transaction,
@@ -688,6 +806,7 @@ public sealed class ActivityWorkflowRepository(IConfiguration configuration) : I
         reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
 
     private const string VigenciaPrefix = "VIGENCIA_MESES=";
+    private static readonly string[] TiposIngresoValidos = ["EMPLEADO", "VISITA", "PRACTICANTE", "SERV_PROF"];
 
     private static int ObtenerVigenciaMeses(string? descripcion)
     {

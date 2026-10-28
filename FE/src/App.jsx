@@ -25,6 +25,8 @@ import {
   ProviderTrackingPage,
   QrScannerPage,
   RequestApprovalDetailPage,
+  RequestTicketsPage,
+  RequestTrackingPage,
   RequestFormPage,
   RequestsListPage,
   UserDetailPage,
@@ -35,6 +37,7 @@ import {
 import { controlIngresosApi } from './services/api'
 import { confirmSendDraft, showSuccessAlert } from './utils/alerts'
 import { initials } from './utils/formatters'
+import { activityAppliesToType } from './utils/activityTypes'
 import './App.css'
 
 const today = () => new Date().toLocaleDateString('en-CA')
@@ -339,6 +342,7 @@ function AuthenticatedApp({ session, onLogout }) {
   const isAdministrator = hasRole(session, 'Administrador')
   const canApprove = isAdministrator || hasRole(session, 'Aprobador')
   const editRoute = matchPath('/solicitudes/:id/editar', location.pathname)
+  const trackingRoute = location.pathname === '/solicitudes/nueva' ? null : matchPath('/solicitudes/:id', location.pathname)
   const personQrRoute = matchPath('/personas/:idPersona/qr', location.pathname)
   const personRoute = matchPath('/personas/:idPersona', location.pathname)
   const employeeQrRoute = matchPath('/empleados/:codigoEmpleado/qr', location.pathname)
@@ -769,7 +773,7 @@ function AuthenticatedApp({ session, onLogout }) {
   const estimatedPeople = Number(form.cantidadEstimada) || 0
   const allExistingPeopleHaveAreas = existingRequestPeople.every((person) => (person.areas ?? []).length > 0)
   const allNewPeopleHaveActivities = requestPeople.every((person) => person.areas.every((idArea) => {
-    const configured = flujosActividades.find((area) => Number(area.idArea) === Number(idArea))?.pasos ?? []
+    const configured = (flujosActividades.find((area) => Number(area.idArea) === Number(idArea))?.pasos ?? []).filter((paso) => activityAppliesToType(paso, requestTypeCode))
     return configured.length === 0 || configured.some((paso) => (person.requerimientos ?? []).includes(paso.idRequerimiento))
   }))
   const canSendRequest = peopleEntryMode === 'provider'
@@ -1251,7 +1255,7 @@ function AuthenticatedApp({ session, onLogout }) {
           <button className="icon-button menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label="Abrir menú"><Icon name="menu" /></button>
           <div className="breadcrumb">
             <Link to="/dashboard" onClick={() => { setError(''); setMenuOpen(false) }}>Inicio</Link>
-            <strong>{approvalDetailRoute ? 'Detalle de solicitud' : activityRequestRoute ? 'Consulta de solicitud' : isDashboardRoute ? 'Dashboard' : isProfileRoute ? 'Mi perfil' : isNewUserRoute ? 'Crear usuario' : userEditRoute ? 'Editar usuario' : userDetailRoute ? 'Detalle del usuario' : isUsersRoute ? 'Usuarios' : isActivityWorkflowsRoute ? 'Flujos de acceso' : isActivitiesRoute ? 'Mis actividades' : isApprovalsRoute ? 'Mis aprobaciones' : isQrScannerRoute ? 'Escanear QR' : isPublicEmployeeCredentialRoute ? 'Credencial del empleado' : isPublicPersonCredentialRoute ? 'Credencial de la persona' : personQrRoute ? 'QR de la persona' : employeeQrRoute ? 'QR del empleado' : isNewPersonRoute ? 'Nueva persona' : isNewProviderRoute ? 'Nuevo proveedor' : isPersonsRoute ? 'Personas y accesos' : isEmployeesRoute ? 'Empleados' : editRoute ? 'Editar solicitud' : location.pathname === '/solicitudes/nueva' ? 'Nueva solicitud' : 'Solicitudes'}</strong>
+            <strong>{approvalDetailRoute ? 'Detalle de solicitud' : activityRequestRoute ? 'Consulta de solicitud' : isDashboardRoute ? 'Dashboard' : isProfileRoute ? 'Mi perfil' : isNewUserRoute ? 'Crear usuario' : userEditRoute ? 'Editar usuario' : userDetailRoute ? 'Detalle del usuario' : isUsersRoute ? 'Usuarios' : isActivityWorkflowsRoute ? 'Flujos de acceso' : isActivitiesRoute ? 'Mis actividades' : isApprovalsRoute ? 'Mis aprobaciones' : isQrScannerRoute ? 'Escanear QR' : isPublicEmployeeCredentialRoute ? 'Credencial del empleado' : isPublicPersonCredentialRoute ? 'Credencial de la persona' : personQrRoute ? 'QR de la persona' : employeeQrRoute ? 'QR del empleado' : isNewPersonRoute ? 'Nueva persona' : isNewProviderRoute ? 'Nuevo proveedor' : isPersonsRoute ? 'Personas y accesos' : isEmployeesRoute ? 'Empleados' : editRoute ? 'Editar solicitud' : trackingRoute ? 'Seguimiento de solicitud' : location.pathname === '/solicitudes/nueva' ? 'Nueva solicitud' : 'Solicitudes'}</strong>
           </div>
           <div className="top-actions">
             {/* <button className="ghost-button"><Icon name="help" />Ayuda</button> */}
@@ -1272,7 +1276,9 @@ function AuthenticatedApp({ session, onLogout }) {
             <Route path="/usuarios/:idUsuario" element={isAdministrator ? <UserDetailPage idUsuario={userDetailRoute?.params.idUsuario ?? ''} onBack={() => { setError(''); navigate('/usuarios') }} onEdit={() => { setError(''); navigate(`/usuarios/${encodeURIComponent(userDetailRoute?.params.idUsuario ?? '')}/editar`) }} onError={setError} /> : <Navigate to="/dashboard" replace />} />
             <Route path="/usuarios/:idUsuario/editar" element={isAdministrator ? <UserEditPage idUsuario={userEditRoute?.params.idUsuario ?? ''} areas={options?.areas ?? []} onUpdate={(user) => updateUser(userEditRoute?.params.idUsuario ?? '', user)} onCancel={() => { setError(''); navigate(`/usuarios/${encodeURIComponent(userEditRoute?.params.idUsuario ?? '')}`) }} onError={setError} /> : <Navigate to="/dashboard" replace />} />
             <Route path="/perfil" element={<ProfilePage profile={profile} loading={profileLoading} onOpenRequest={openEdit} />} />
-            <Route path="/solicitudes" element={<RequestsListPage items={solicitudes} loading={loading} onNew={openNew} onEdit={openEdit} onDelete={remove} />} />
+            <Route path="/solicitudes" element={<RequestsListPage items={solicitudes} loading={loading} canOpenAll={canApprove} onNew={openNew} onOpen={(id) => navigate(`/solicitudes/${id}`)} onEdit={openEdit} onTickets={(id) => navigate(`/solicitudes/${id}/tickets`)} onDelete={remove} />} />
+            <Route path="/solicitudes/:id" element={<RequestTrackingPage session={session} options={options} onBack={() => navigate('/solicitudes')} onTickets={(id, personId) => navigate(`/solicitudes/${id}/tickets${personId ? `?persona=${personId}` : ''}`)} onChanged={async () => setSolicitudes(await controlIngresosApi.listarSolicitudes())} />} />
+            <Route path="/solicitudes/:id/tickets" element={<RequestTicketsPage onBack={() => { navigate(`/solicitudes/${location.pathname.split('/')[2]}`); controlIngresosApi.listarSolicitudes().then(setSolicitudes).catch(() => {}) }} />} />
             <Route path="/solicitudes/nueva" element={<RequestFormPage form={form} options={options} activityFlows={flujosActividades} people={personas} employees={empleados} employeesLoading={employeesLoading} employeesError={employeesError} requestPeople={requestPeople} existingPeople={existingRequestPeople} peopleEntryMode={peopleEntryMode} loading={loading} saving={saving} editingId={null} step={step} selected={selected} canSend={canSendRequest} onPeopleEntryModeChange={(mode) => { setPeopleEntryMode(mode); if (mode === 'provider') setRequestPeople([]) }} onPeopleChange={setRequestPeople} onChange={change} onStepChange={goToStep} onNext={next} onBack={() => setStep((current) => current - 1)} onCancel={cancelForm} onSubmit={submit} />} />
             <Route path="/solicitudes/:id/editar" element={<RequestFormPage form={form} options={options} activityFlows={flujosActividades} people={personas} employees={empleados} employeesLoading={employeesLoading} employeesError={employeesError} requestPeople={requestPeople} existingPeople={existingRequestPeople} peopleEntryMode={peopleEntryMode} loading={loading} saving={saving} editingId={activeEditingId} step={step} selected={selected} canSend={canSendRequest} onPeopleEntryModeChange={(mode) => { setPeopleEntryMode(mode); if (mode === 'provider') setRequestPeople([]) }} onPeopleChange={setRequestPeople} onChange={change} onStepChange={goToStep} onNext={next} onBack={() => setStep((current) => current - 1)} onCancel={cancelForm} onSubmit={submit} />} />
             <Route path="/proveedores/nuevo" element={<ProviderFormPage session={session} onCreate={createProvider} onCancel={() => { setError(''); navigate('/solicitudes') }} onError={setError} />} />
@@ -1341,7 +1347,7 @@ function validateStep(step, form, typeCode, peopleEntryMode, requestPeople = [],
   if (step === 3 && totalPeople > estimatedPeople) return `Solo puedes agregar ${estimatedPeople} persona(s) a esta solicitud.`
   if (step === 3 && peopleEntryMode !== 'provider' && requestPeople.some((person) => person.areas.length === 0)) return 'Selecciona al menos un área para cada integrante agregado.'
   if (step === 3 && peopleEntryMode !== 'provider' && requestPeople.some((person) => person.areas.some((idArea) => {
-    const configured = activityFlows.find((area) => Number(area.idArea) === Number(idArea))?.pasos ?? []
+    const configured = (activityFlows.find((area) => Number(area.idArea) === Number(idArea))?.pasos ?? []).filter((paso) => activityAppliesToType(paso, typeCode))
     return configured.length > 0 && !configured.some((paso) => (person.requerimientos ?? []).includes(paso.idRequerimiento))
   }))) return 'Selecciona al menos una actividad para cada área configurada de la persona.'
   if (step === 3 && typeCode === 'EMPLEADO' && requestPeople.some((person) => !person.codigoEmpleadoHtis || person.idPersona != null)) return 'Selecciona los empleados desde HTIS.'
