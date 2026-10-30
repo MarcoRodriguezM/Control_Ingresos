@@ -35,7 +35,7 @@ export function ProviderRequestsPage({ items = [], loading, onOpen }) {
   </div>
 }
 
-export function ProviderRequestDetailPage({ request, people = [], loading, saving, onBack, onNewPerson, onAddPerson }) {
+export function ProviderRequestDetailPage({ request, people = [], loading, saving, onBack, onNewPerson, onAddPerson, onRemovePerson, onSend }) {
   const [personId, setPersonId] = useState('')
   const assignedIds = useMemo(() => new Set((request?.personas ?? []).map((item) => Number(item.idPersona))), [request])
   const availablePeople = people.filter((person) => !assignedIds.has(Number(person.idPersona)))
@@ -74,15 +74,16 @@ export function ProviderRequestDetailPage({ request, people = [], loading, savin
         <div className="field"><label>Persona del proveedor</label><select value={personId} onChange={(event) => setPersonId(event.target.value)}><option value="">Selecciona una persona</option>{availablePeople.map((person) => <option value={person.idPersona} key={person.idPersona}>{person.nombreCompleto} · {person.numeroDocumento || 'Sin documento'}</option>)}</select></div>
         <button type="button" className="secondary-button" onClick={onNewPerson}><Icon name="users" /> Registrar nueva</button>
       </div>
-      <div className="provider-entry-note"><Icon name="users" /><div><strong>Las áreas serán asignadas por el solicitante</strong><p>Después de completar la cantidad requerida, la solicitud quedará pendiente de asignación de áreas.</p></div></div>
+      <div className="provider-entry-note"><Icon name="users" /><div><strong>Las áreas serán asignadas por el solicitante</strong><p>Cuando envíes la solicitud, quedará pendiente de asignación de áreas.</p></div></div>
       <div className="provider-assignment-actions"><span>Sin asignación de áreas</span><button type="button" className="primary-button" disabled={saving || !personId || remaining === 0} onClick={addPerson}>{saving ? 'Agregando…' : 'Agregar a la solicitud'} <Icon name="arrow" /></button></div>
+      <div className="provider-assignment-actions"><span>Puedes enviar con menos personas que la cantidad estimada.</span><button type="button" className="primary-button teal" disabled={saving || request.cantidadPersonas < 1} onClick={onSend}><Icon name="send" />{saving ? 'Procesando…' : 'Enviar solicitud'}</button></div>
     </section>}
 
     <section className="panel provider-assigned-people">
       <div className="provider-card-heading"><span className="provider-card-icon"><Icon name="check" /></span><div><h2>Personas registradas</h2><p>Personas que ya forman parte de esta solicitud.</p></div></div>
       {(request.personas ?? []).length === 0
         ? <div className="provider-inline-empty">Aún no se han agregado personas.</div>
-        : <div className="provider-assigned-list">{request.personas.map((person) => <article key={person.idSolicitudPersona}><span className="provider-person-avatar">{initials(person.nombreCompleto)}</span><div><strong>{person.nombreCompleto}</strong><small>{person.numeroDocumento || 'Sin documento'}</small></div><span className={`provider-person-result ${personStatusClass(person.codigoEstadoAprobacion)}`}>{person.estadoAprobacion || 'Pendiente'}</span></article>)}</div>}
+        : <div className="provider-assigned-list">{request.personas.map((person) => <article key={person.idSolicitudPersona}><span className="provider-person-avatar">{initials(person.nombreCompleto)}</span><div><strong>{person.nombreCompleto}</strong><small>{person.numeroDocumento || 'Sin documento'}</small></div><span className={`provider-person-result ${personStatusClass(person.codigoEstadoAprobacion)}`}>{person.estadoAprobacion || 'Pendiente'}</span>{editable && <button type="button" className="remove-person-button" disabled={saving} onClick={() => onRemovePerson(person)}>Quitar</button>}</article>)}</div>}
     </section>
   </div>
 }

@@ -320,13 +320,49 @@ public sealed class SolicitudesRepository(
         Add(command, "@ObservacionesRevision", SqlDbType.NVarChar, request.ObservacionesRevision, 1000);
         Add(command, "@AreasJson", SqlDbType.NVarChar, request.Areas is null ? null : JsonSerializer.Serialize(request.Areas), -1);
         Add(command, "@RequerimientosJson", SqlDbType.NVarChar, request.Requerimientos is null ? null : JsonSerializer.Serialize(request.Requerimientos), -1);
-        return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken));
+        var idSolicitudPersona = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken));
+        await activityWorkflows.SincronizarActividadesAsync(
+            idSolicitud,
+            idSolicitudPersona,
+            request.Flujos ?? [],
+            idUsuario,
+            cancellationToken);
+        await SyncTicketStateAsync(idSolicitud, idUsuario, cancellationToken);
+        return idSolicitudPersona;
+    }
+
+    public async Task<bool> EliminarPersonaProveedorAsync(
+        long idSolicitud,
+        long idSolicitudPersona,
+        string idUsuario,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = StoredProcedure(connection, "dbo.usp_Proveedor_Solicitud_Persona_Eliminar");
+        Add(command, "@IdSolicitud", SqlDbType.BigInt, idSolicitud);
+        Add(command, "@IdSolicitudPersona", SqlDbType.BigInt, idSolicitudPersona);
+        Add(command, "@IdUsuario", SqlDbType.VarChar, idUsuario, 50);
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken)) > 0;
+    }
+
+    public async Task EnviarSolicitudProveedorAsync(
+        long idSolicitud,
+        string idUsuario,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = StoredProcedure(connection, "dbo.usp_Proveedor_Solicitud_Enviar");
+        Add(command, "@IdSolicitud", SqlDbType.BigInt, idSolicitud);
+        Add(command, "@IdUsuario", SqlDbType.VarChar, idUsuario, 50);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task AsignarAreasPersonaAsync(
         long idSolicitud,
         long idSolicitudPersona,
         IReadOnlyCollection<int> areas,
+        IReadOnlyCollection<RequerimientoSolicitudRequest>? requerimientos,
+        IReadOnlyCollection<long>? flujos,
         string usuario,
         CancellationToken cancellationToken)
     {
@@ -335,13 +371,15 @@ public sealed class SolicitudesRepository(
         Add(command, "@IdSolicitud", SqlDbType.BigInt, idSolicitud);
         Add(command, "@IdSolicitudPersona", SqlDbType.BigInt, idSolicitudPersona);
         Add(command, "@AreasJson", SqlDbType.NVarChar, JsonSerializer.Serialize(areas), -1);
+        Add(command, "@RequerimientosJson", SqlDbType.NVarChar,
+            JsonSerializer.Serialize(requerimientos ?? []), -1);
         Add(command, "@Usuario", SqlDbType.VarChar, usuario, 50);
         await command.ExecuteNonQueryAsync(cancellationToken);
 
         await activityWorkflows.SincronizarActividadesAsync(
             idSolicitud,
             idSolicitudPersona,
-            areas,
+            flujos ?? [],
             usuario,
             cancellationToken);
         await SyncTicketStateAsync(idSolicitud, usuario, cancellationToken);
@@ -391,7 +429,14 @@ public sealed class SolicitudesRepository(
         var ubicaciones = await ReadOptionsAsync<int>(reader, cancellationToken);
 
         await reader.NextResultAsync(cancellationToken);
-        var proveedores = await ReadOptionsAsync<long>(reader, cancellationToken);
+        var proveedores = new List<ProveedorFormularioOpcion>();
+        while (await reader.ReadAsync(cancellationToken))
+            proveedores.Add(new(
+                reader.GetInt64(0),
+                GetNullableString(reader, 1),
+                GetNullableString(reader, 2),
+                GetNullableString(reader, 3),
+                GetNullableString(reader, 4)));
 
         await reader.NextResultAsync(cancellationToken);
         var usuarios = await ReadOptionsAsync<string>(reader, cancellationToken);
@@ -723,9 +768,10 @@ public sealed class SolicitudesRepository(
     public async Task<long> DecidirAprobacionAsync(long idSolicitudPersonaArea, string idUsuarioAprobador, DecidirAprobacionRequest request, CancellationToken cancellationToken)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
-        await using (var ticketLookup = new SqlCommand("SELECT sp.IdSolicitud FROM dbo.Solicitud_Persona_Area AS spa INNER JOIN dbo.Solicitud_Persona AS sp ON sp.IdSolicitudPersona = spa.IdSolicitudPersona WHERE spa.IdSolicitudPersonaArea = @IdArea", connection))
+        await using (var ticketLookup = StoredProcedure(connection, "dbo.usp_Solicitud_Persona_Area_Solicitud_Obtener"))
         {
-            Add(ticketLookup, "@IdArea", SqlDbType.BigInt, idSolicitudPersonaArea);
+            Add(ticketLookup, "@IdSolicitudPersonaArea", SqlDbType.BigInt, idSolicitudPersonaArea);
+            Add(ticketLookup, "@UsuarioSolicitante", SqlDbType.VarChar, null, 50);
             var ticketRequestId = await ticketLookup.ExecuteScalarAsync(cancellationToken);
             if (ticketRequestId is not null)
             {
@@ -758,8 +804,9 @@ public sealed class SolicitudesRepository(
         Add(recalculate, "@IdSolicitudPersonaArea", SqlDbType.BigInt, idSolicitudPersonaArea);
         Add(recalculate, "@IdUsuario", SqlDbType.VarChar, idUsuarioAprobador, 50);
         await recalculate.ExecuteNonQueryAsync(cancellationToken);
-        await using var lookup = new SqlCommand("SELECT sp.IdSolicitud FROM dbo.Solicitud_Persona_Area AS spa INNER JOIN dbo.Solicitud_Persona AS sp ON sp.IdSolicitudPersona = spa.IdSolicitudPersona WHERE spa.IdSolicitudPersonaArea = @IdArea", connection);
-        Add(lookup, "@IdArea", SqlDbType.BigInt, idSolicitudPersonaArea);
+        await using var lookup = StoredProcedure(connection, "dbo.usp_Solicitud_Persona_Area_Solicitud_Obtener");
+        Add(lookup, "@IdSolicitudPersonaArea", SqlDbType.BigInt, idSolicitudPersonaArea);
+        Add(lookup, "@UsuarioSolicitante", SqlDbType.VarChar, null, 50);
         var requestId = await lookup.ExecuteScalarAsync(cancellationToken);
         if (requestId is not null) await SyncTicketStateAsync(Convert.ToInt64(requestId), idUsuarioAprobador, cancellationToken);
         return idAprobacion;
@@ -834,7 +881,7 @@ public sealed class SolicitudesRepository(
                 await activityWorkflows.SincronizarActividadesAsync(
                     created.Id,
                     integrante.IdSolicitudPersona,
-                    integrante.Persona.Areas ?? [],
+                    integrante.Persona.Flujos ?? [],
                     integrante.Persona.Usuario,
                     cancellationToken);
             }
@@ -894,7 +941,7 @@ public sealed class SolicitudesRepository(
         await activityWorkflows.SincronizarActividadesAsync(
             idSolicitud,
             idSolicitudPersona,
-            request.Areas ?? [],
+            request.Flujos ?? [],
             request.Usuario,
             cancellationToken);
         await SyncTicketStateAsync(idSolicitud, request.Usuario, cancellationToken);
@@ -920,7 +967,15 @@ public sealed class SolicitudesRepository(
         Add(command, "@AreasJson", SqlDbType.NVarChar, JsonSerializer.Serialize(request.Areas), -1);
         Add(command, "@Usuario", SqlDbType.VarChar, usuario, 50);
 
-        return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken));
+        var idSolicitudPersona = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken));
+        await activityWorkflows.SincronizarActividadesAsync(
+            idSolicitud,
+            idSolicitudPersona,
+            request.Flujos ?? [],
+            usuario,
+            cancellationToken);
+        await SyncTicketStateAsync(idSolicitud, usuario, cancellationToken);
+        return idSolicitudPersona;
     }
 
     public async Task<IReadOnlyCollection<EmpleadoAccesoActual>> ListarAccesosEmpleadoAsync(
@@ -953,18 +1008,11 @@ public sealed class SolicitudesRepository(
         long idSolicitud;
         try
         {
-            const string lookupSql = """
-                SELECT sp.IdSolicitud, sp.IdSolicitudPersona
-                FROM dbo.Solicitud_Persona_Area AS spa
-                INNER JOIN dbo.Solicitud_Persona AS sp ON sp.IdSolicitudPersona = spa.IdSolicitudPersona
-                INNER JOIN dbo.Solicitud_Ingreso AS s ON s.IdSolicitud = sp.IdSolicitud
-                WHERE spa.IdSolicitudPersonaArea = @IdArea AND s.IdUsuarioSolicitante = @Usuario;
-                """;
             long idPersona;
-            await using (var lookup = new SqlCommand(lookupSql, connection, transaction))
+            await using (var lookup = StoredProcedure(connection, "dbo.usp_Solicitud_Persona_Area_Solicitud_Obtener", transaction))
             {
-                Add(lookup, "@IdArea", SqlDbType.BigInt, idSolicitudPersonaArea);
-                Add(lookup, "@Usuario", SqlDbType.VarChar, idUsuarioSolicitante, 50);
+                Add(lookup, "@IdSolicitudPersonaArea", SqlDbType.BigInt, idSolicitudPersonaArea);
+                Add(lookup, "@UsuarioSolicitante", SqlDbType.VarChar, idUsuarioSolicitante, 50);
                 await using var reader = await lookup.ExecuteReaderAsync(cancellationToken);
                 if (!await reader.ReadAsync(cancellationToken))
                     throw new InvalidOperationException("La aprobacion no pertenece a tu solicitud.");
@@ -977,23 +1025,13 @@ public sealed class SolicitudesRepository(
                 Add(command, "@IdUsuarioSolicitante", SqlDbType.VarChar, idUsuarioSolicitante, 50);
                 await command.ExecuteNonQueryAsync(cancellationToken);
             }
-            const string historySql = """
-                DECLARE @IdHistorial BIGINT;
-                EXEC dbo.usp_ObtenerSiguienteId 'Historial_Solicitud', @IdHistorial OUTPUT;
-                INSERT dbo.Historial_Solicitud
-                (IdHistorialSolicitud, IdSolicitud, IdSolicitudPersona, TipoEvento, Accion, Comentario,
-                 IdUsuarioAccion, FechaAccion, DatosAdicionalesJson, FechaCreacion, UsuarioCreacion)
-                VALUES (@IdHistorial, @IdSolicitud, @IdPersona, 'REENVIO_APROBACION',
-                        'Solicitud de nueva aprobacion de area', @Justificacion,
-                        @Usuario, SYSDATETIME(), @Datos, SYSDATETIME(), @Usuario);
-                """;
-            await using (var history = new SqlCommand(historySql, connection, transaction))
+            await using (var history = StoredProcedure(connection, "dbo.usp_Historial_Solicitud_Reenvio_Agregar", transaction))
             {
                 Add(history, "@IdSolicitud", SqlDbType.BigInt, idSolicitud);
-                Add(history, "@IdPersona", SqlDbType.BigInt, idPersona);
+                Add(history, "@IdSolicitudPersona", SqlDbType.BigInt, idPersona);
+                Add(history, "@IdSolicitudPersonaArea", SqlDbType.BigInt, idSolicitudPersonaArea);
                 Add(history, "@Justificacion", SqlDbType.NVarChar, justificacion, 1000);
                 Add(history, "@Usuario", SqlDbType.VarChar, idUsuarioSolicitante, 50);
-                Add(history, "@Datos", SqlDbType.NVarChar, JsonSerializer.Serialize(new { idSolicitudPersonaArea }), -1);
                 await history.ExecuteNonQueryAsync(cancellationToken);
             }
             await transaction.CommitAsync(cancellationToken);
@@ -1066,46 +1104,10 @@ public sealed class SolicitudesRepository(
             }
         }
         if (items.Count == 0) return items;
-        const string stateSql = """
-            SELECT s.IdSolicitud,
-                   CONVERT(BIT, CASE WHEN s.IdUsuarioSolicitante = @Usuario THEN 1 ELSE 0 END),
-                   (SELECT COUNT(*) FROM dbo.Actividad AS a
-                    LEFT JOIN dbo.Cat_Estado_Actividad AS ea ON ea.IdEstadoActividad = a.IdEstadoActividad
-                    WHERE a.IdSolicitud = s.IdSolicitud
-                      AND a.IdSolicitudPersona IS NOT NULL
-                      AND ISNULL(a.RequiereTicketExterno, 0) = 1
-                      AND ISNULL(ea.EsEstadoFinal, 0) = 0
-                      AND s.FechaFin >= CONVERT(DATE, SYSDATETIME())
-                      AND NOT EXISTS (SELECT 1 FROM dbo.Actividad_Ticket_Externo AS t WHERE t.IdActividad = a.IdActividad)
-                      AND EXISTS (SELECT 1 FROM dbo.Solicitud_Persona_Area AS spa
-                          INNER JOIN dbo.Config_Requerimiento_Area AS cra ON cra.IdAreaAcceso = spa.IdArea
-                          WHERE spa.IdSolicitudPersona = a.IdSolicitudPersona
-                            AND cra.IdRequerimiento = a.IdRequerimiento)),
-                   es.Codigo,
-                   CONVERT(BIT, CASE WHEN EXISTS
-                   (SELECT 1 FROM dbo.Solicitud_Persona_Area AS spa
-                    INNER JOIN dbo.Solicitud_Persona AS sp ON sp.IdSolicitudPersona = spa.IdSolicitudPersona
-                    INNER JOIN dbo.Cat_Estado_Aprobacion_Area AS ea ON ea.IdEstadoAprobacion = spa.IdEstadoAprobacion
-                    WHERE sp.IdSolicitud = s.IdSolicitud AND ea.Codigo = 'RECHAZADA') THEN 1 ELSE 0 END),
-                   CONVERT(BIT, CASE WHEN EXISTS
-                   (SELECT 1 FROM dbo.Solicitud_Persona_Area AS spa
-                    INNER JOIN dbo.Solicitud_Persona AS sp ON sp.IdSolicitudPersona = spa.IdSolicitudPersona
-                    LEFT JOIN dbo.Cat_Estado_Aprobacion_Area AS ea ON ea.IdEstadoAprobacion = spa.IdEstadoAprobacion
-                    WHERE sp.IdSolicitud = s.IdSolicitud
-                      AND ISNULL(ea.Codigo, 'PENDIENTE') <> 'APROBADA'
-                      AND ISNULL(ea.Codigo, 'PENDIENTE') <> 'RECHAZADA') THEN 1 ELSE 0 END),
-                   CONVERT(BIT, CASE WHEN EXISTS
-                   (SELECT 1 FROM dbo.Solicitud_Persona_Area AS spa
-                    INNER JOIN dbo.Solicitud_Persona AS sp ON sp.IdSolicitudPersona = spa.IdSolicitudPersona
-                    WHERE sp.IdSolicitud = s.IdSolicitud) THEN 1 ELSE 0 END)
-            FROM dbo.Solicitud_Ingreso AS s
-            LEFT JOIN dbo.Cat_Estado_Solicitud AS es ON es.IdEstadoSolicitud = s.IdEstadoSolicitud
-            WHERE s.IdSolicitud IN (SELECT TRY_CONVERT(BIGINT, value) FROM STRING_SPLIT(@Ids, ','));
-            """;
-        await using var stateCommand = new SqlCommand(stateSql, connection);
+        await using var stateCommand = StoredProcedure(connection, "dbo.usp_Solicitud_Listado_Estados_Obtener");
         Add(stateCommand, "@Usuario", SqlDbType.VarChar, idUsuario, 50);
         Add(stateCommand, "@Ids", SqlDbType.VarChar, string.Join(',', items.Select(item => item.IdSolicitud)), -1);
-        var states = new Dictionary<long, (bool Own, int Pending, string? Code, bool Rejected, bool PendingApproval, bool HasAreas)>();
+        var states = new Dictionary<long, (bool Own, int Pending, string? Code, bool Rejected, bool PendingApproval, bool HasConfiguration)>();
         await using (var reader = await stateCommand.ExecuteReaderAsync(cancellationToken))
         {
             while (await reader.ReadAsync(cancellationToken))
@@ -1117,17 +1119,17 @@ public sealed class SolicitudesRepository(
             if (!states.TryGetValue(item.IdSolicitud, out var state)) return item;
             var pending = state.Code is "BORRADOR" or "PENDIENTE_PROVEEDOR" or "FINALIZADA" or "CANCELADA"
                 ? 0 : state.Pending;
-            var effective = EffectiveRequestStatus(state.Code, item.Estado, pending, state.Rejected, state.PendingApproval, state.HasAreas);
+            var effective = EffectiveRequestStatus(state.Code, item.Estado, pending, state.Rejected, state.PendingApproval, state.HasConfiguration);
             return item with { EsPropia = state.Own, TicketsPendientes = pending, Estado = effective.Name };
         }).ToArray();
     }
 
     private static (string Code, string Name) EffectiveRequestStatus(
-        string? code, string? name, int pendingTickets, bool rejected, bool pendingApproval, bool hasAreas)
+        string? code, string? name, int pendingTickets, bool rejected, bool pendingApproval, bool hasConfiguration)
     {
         if (code is "BORRADOR" or "PENDIENTE_PROVEEDOR" or "FINALIZADA" or "CANCELADA")
             return (code, name ?? code);
-        if (!hasAreas) return ("CONFIGURACION_ACCESOS", "Pendiente de asignar areas");
+        if (!hasConfiguration) return ("CONFIGURACION_ACCESOS", "Pendiente de asignar areas o flujos");
         if (pendingTickets > 0) return ("PENDIENTE_CREACION_TICKET", "Pendiente de creacion de ticket");
         if (rejected) return ("EN_REVISION", "En revision");
         if (pendingApproval) return ("PENDIENTE_APROBACIONES", "Pendiente de aprobaciones de area");
@@ -1142,65 +1144,7 @@ public sealed class SolicitudesRepository(
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         try
         {
-            const string sql = """
-                DECLARE @Actual VARCHAR(40) =
-                    (SELECT estado.Codigo FROM dbo.Solicitud_Ingreso AS solicitud WITH (UPDLOCK, HOLDLOCK)
-                     INNER JOIN dbo.Cat_Estado_Solicitud AS estado ON estado.IdEstadoSolicitud = solicitud.IdEstadoSolicitud
-                     WHERE solicitud.IdSolicitud = @IdSolicitud);
-                IF @Actual IS NULL OR @Actual IN ('BORRADOR', 'PENDIENTE_PROVEEDOR', 'FINALIZADA', 'CANCELADA') RETURN;
-
-                DECLARE @Pendientes INT =
-                    (SELECT COUNT(*) FROM dbo.Actividad AS a
-                     INNER JOIN dbo.Solicitud_Ingreso AS s ON s.IdSolicitud = a.IdSolicitud
-                     LEFT JOIN dbo.Cat_Estado_Actividad AS ea ON ea.IdEstadoActividad = a.IdEstadoActividad
-                     WHERE a.IdSolicitud = @IdSolicitud AND a.IdSolicitudPersona IS NOT NULL
-                       AND ISNULL(a.RequiereTicketExterno, 0) = 1 AND ISNULL(ea.EsEstadoFinal, 0) = 0
-                       AND s.FechaFin >= CONVERT(DATE, SYSDATETIME())
-                       AND NOT EXISTS (SELECT 1 FROM dbo.Actividad_Ticket_Externo AS t WHERE t.IdActividad = a.IdActividad)
-                       AND EXISTS (SELECT 1 FROM dbo.Solicitud_Persona_Area AS spa
-                           INNER JOIN dbo.Config_Requerimiento_Area AS cra ON cra.IdAreaAcceso = spa.IdArea
-                           WHERE spa.IdSolicitudPersona = a.IdSolicitudPersona AND cra.IdRequerimiento = a.IdRequerimiento));
-                DECLARE @Siguiente VARCHAR(40) = @Actual;
-                IF @Pendientes > 0 SET @Siguiente = 'PENDIENTE_CREACION_TICKET';
-                ELSE IF EXISTS (SELECT 1 FROM dbo.Solicitud_Persona_Area AS spa
-                    INNER JOIN dbo.Solicitud_Persona AS sp ON sp.IdSolicitudPersona = spa.IdSolicitudPersona
-                    INNER JOIN dbo.Cat_Estado_Aprobacion_Area AS ea ON ea.IdEstadoAprobacion = spa.IdEstadoAprobacion
-                    WHERE sp.IdSolicitud = @IdSolicitud AND ea.Codigo = 'RECHAZADA')
-                    SET @Siguiente = 'EN_REVISION';
-                ELSE IF EXISTS (SELECT 1 FROM dbo.Solicitud_Persona_Area AS spa
-                    INNER JOIN dbo.Solicitud_Persona AS sp ON sp.IdSolicitudPersona = spa.IdSolicitudPersona
-                    LEFT JOIN dbo.Cat_Estado_Aprobacion_Area AS ea ON ea.IdEstadoAprobacion = spa.IdEstadoAprobacion
-                    WHERE sp.IdSolicitud = @IdSolicitud
-                      AND ISNULL(ea.Codigo, 'PENDIENTE') NOT IN ('APROBADA', 'RECHAZADA'))
-                    SET @Siguiente = 'PENDIENTE_APROBACIONES';
-                ELSE IF EXISTS (SELECT 1 FROM dbo.Solicitud_Persona_Area AS spa
-                    INNER JOIN dbo.Solicitud_Persona AS sp ON sp.IdSolicitudPersona = spa.IdSolicitudPersona
-                    WHERE sp.IdSolicitud = @IdSolicitud)
-                    SET @Siguiente = 'LISTA_INGRESO';
-                ELSE SET @Siguiente = 'CONFIGURACION_ACCESOS';
-
-                IF @Siguiente = @Actual RETURN;
-                IF @Siguiente = 'PENDIENTE_CREACION_TICKET'
-                   AND NOT EXISTS (SELECT 1 FROM dbo.Cat_Estado_Solicitud WITH (UPDLOCK, HOLDLOCK) WHERE Codigo = @Siguiente)
-                BEGIN
-                    DECLARE @NuevoId SMALLINT =
-                        (SELECT CONVERT(SMALLINT, ISNULL(MAX(IdEstadoSolicitud), 0) + 1)
-                         FROM dbo.Cat_Estado_Solicitud WITH (UPDLOCK, HOLDLOCK));
-                    INSERT dbo.Cat_Estado_Solicitud
-                    (IdEstadoSolicitud, Codigo, Nombre, Descripcion, EsEstadoFinal, OrdenFlujo,
-                     IdEstadoGeneral, FechaCreacion, UsuarioCreacion)
-                    SELECT @NuevoId, 'PENDIENTE_CREACION_TICKET', 'Pendiente de creacion de ticket',
-                           'Faltan tickets de actividades asignadas.', 0, 5,
-                           IdEstadoGeneral, SYSDATETIME(), @Usuario
-                    FROM dbo.Cat_Estado_Solicitud WHERE Codigo = 'PENDIENTE_APROBACIONES';
-                END;
-                UPDATE s SET IdEstadoSolicitud = estado.IdEstadoSolicitud,
-                             FechaModificacion = SYSDATETIME(), UsuarioModificacion = @Usuario
-                FROM dbo.Solicitud_Ingreso AS s
-                INNER JOIN dbo.Cat_Estado_Solicitud AS estado ON estado.Codigo = @Siguiente
-                WHERE s.IdSolicitud = @IdSolicitud;
-                """;
-            await using var command = new SqlCommand(sql, connection, transaction);
+        await using var command = StoredProcedure(connection, "dbo.usp_Solicitud_Estado_Ticket_Sincronizar", transaction);
             Add(command, "@IdSolicitud", SqlDbType.BigInt, idSolicitud);
             Add(command, "@Usuario", SqlDbType.VarChar, usuario, 50);
             await command.ExecuteNonQueryAsync(cancellationToken);
@@ -1217,96 +1161,15 @@ public sealed class SolicitudesRepository(
         long idSolicitud, string idUsuario, bool accesoTotal, CancellationToken cancellationToken)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
-        const string accessSql = """
-            SELECT COUNT(*) FROM dbo.Solicitud_Ingreso
-            WHERE IdSolicitud = @IdSolicitud AND (@AccesoTotal = 1 OR IdUsuarioSolicitante = @Usuario);
-            """;
-        await using (var access = new SqlCommand(accessSql, connection))
-        {
-            Add(access, "@IdSolicitud", SqlDbType.BigInt, idSolicitud);
-            Add(access, "@AccesoTotal", SqlDbType.Bit, accesoTotal);
-            Add(access, "@Usuario", SqlDbType.VarChar, idUsuario, 50);
-            if (Convert.ToInt32(await access.ExecuteScalarAsync(cancellationToken)) == 0) return null;
-        }
         var solicitud = await ObtenerSolicitudAsync(idSolicitud, cancellationToken);
         if (solicitud is null) return null;
-
-        const string sql = """
-            SELECT spa.IdSolicitudPersonaArea, sp.IdSolicitudPersona,
-                   COALESCE(p.NombreCompleto, sp.CodigoEmpleadoHtis), p.NumeroDocumento,
-                   area.Nombre, estado.Codigo, estado.Nombre,
-                   CASE WHEN estado.Codigo = 'RECHAZADA' THEN ultima.ComentarioDecision ELSE NULL END,
-                   CASE WHEN estado.Codigo IN ('APROBADA', 'RECHAZADA') THEN ultima.FechaDecision END,
-                   CASE WHEN estado.Codigo IN ('APROBADA', 'RECHAZADA') THEN ultima.UsuarioDecision END
-            FROM dbo.Solicitud_Persona_Area AS spa
-            INNER JOIN dbo.Solicitud_Persona AS sp ON sp.IdSolicitudPersona = spa.IdSolicitudPersona
-            LEFT JOIN dbo.Persona AS p ON p.IdPersona = sp.IdPersona
-            LEFT JOIN dbo.Cat_Area AS area ON area.IdArea = spa.IdArea
-            LEFT JOIN dbo.Cat_Estado_Aprobacion_Area AS estado ON estado.IdEstadoAprobacion = spa.IdEstadoAprobacion
-            OUTER APPLY (SELECT TOP (1) ap.ComentarioDecision, ap.FechaDecision,
-                COALESCE(usuario.NombreCompleto, ap.IdUsuarioAprobador) AS UsuarioDecision
-                FROM dbo.Aprobacion_Area AS ap
-                LEFT JOIN dbo.Usuario AS usuario ON usuario.IdUsuario = ap.IdUsuarioAprobador
-                WHERE ap.IdSolicitudPersonaArea = spa.IdSolicitudPersonaArea
-                ORDER BY ap.IdAprobacionArea DESC) AS ultima
-            WHERE sp.IdSolicitud = @IdSolicitud
-            ORDER BY sp.IdSolicitudPersona, area.Nombre;
-
-            SELECT a.IdActividad, a.IdSolicitudPersona,
-                   COALESCE(p.NombreCompleto, sp.CodigoEmpleadoHtis), area.Nombre,
-                   a.NombreActividad, estado.Codigo, estado.Nombre,
-                   CONVERT(BIT, ISNULL(a.RequiereTicketExterno, 0)), ticket.NumeroTicket, a.FechaFinalizacion,
-                   COALESCE(usuarioActividad.NombreCompleto, a.IdUsuarioAprobador),
-                   a.ComentarioDecision, a.FechaDecision,
-                   CONVERT(BIT, ISNULL(estado.EsEstadoFinal, 0)),
-                   CONVERT(BIT, CASE WHEN ISNULL(a.RequiereTicketExterno, 0) = 1
-                       AND ISNULL(estado.EsEstadoFinal, 0) = 0
-                       AND solicitud.FechaFin >= CONVERT(DATE, SYSDATETIME())
-                       AND ticket.IdActividadTicket IS NULL
-                       AND EXISTS (SELECT 1 FROM dbo.Solicitud_Persona_Area AS spa
-                           INNER JOIN dbo.Config_Requerimiento_Area AS cra ON cra.IdAreaAcceso = spa.IdArea
-                           WHERE spa.IdSolicitudPersona = a.IdSolicitudPersona
-                             AND cra.IdRequerimiento = a.IdRequerimiento)
-                       THEN 1 ELSE 0 END)
-            FROM dbo.Actividad AS a
-            INNER JOIN dbo.Solicitud_Ingreso AS solicitud ON solicitud.IdSolicitud = a.IdSolicitud
-            LEFT JOIN dbo.Solicitud_Persona AS sp ON sp.IdSolicitudPersona = a.IdSolicitudPersona
-            LEFT JOIN dbo.Persona AS p ON p.IdPersona = sp.IdPersona
-            LEFT JOIN dbo.Cat_Area AS area ON area.IdArea = a.IdAreaResponsable
-            LEFT JOIN dbo.Cat_Estado_Actividad AS estado ON estado.IdEstadoActividad = a.IdEstadoActividad
-            LEFT JOIN dbo.Usuario AS usuarioActividad ON usuarioActividad.IdUsuario = a.IdUsuarioAprobador
-            OUTER APPLY (SELECT TOP (1) t.IdActividadTicket, t.NumeroTicket FROM dbo.Actividad_Ticket_Externo AS t
-                WHERE t.IdActividad = a.IdActividad ORDER BY t.IdActividadTicket DESC) AS ticket
-            WHERE a.IdSolicitud = @IdSolicitud
-            ORDER BY a.IdSolicitudPersona, a.IdActividad;
-
-            SELECT ap.IdSolicitudPersonaArea,
-                   COALESCE(p.NombreCompleto, sp.CodigoEmpleadoHtis), area.Nombre,
-                   COALESCE(estado.Codigo, CASE WHEN rechazo.IdRechazoArea IS NULL THEN 'APROBADA' ELSE 'RECHAZADA' END),
-                   ap.ComentarioDecision, ap.FechaDecision,
-                   COALESCE(usuarioDecision.NombreCompleto, ap.IdUsuarioAprobador)
-            FROM dbo.Aprobacion_Area AS ap
-            INNER JOIN dbo.Solicitud_Persona_Area AS spa ON spa.IdSolicitudPersonaArea = ap.IdSolicitudPersonaArea
-            INNER JOIN dbo.Solicitud_Persona AS sp ON sp.IdSolicitudPersona = spa.IdSolicitudPersona
-            LEFT JOIN dbo.Persona AS p ON p.IdPersona = sp.IdPersona
-            LEFT JOIN dbo.Cat_Area AS area ON area.IdArea = spa.IdArea
-            LEFT JOIN dbo.Cat_Estado_Aprobacion_Area AS estado ON estado.IdEstadoAprobacion = ap.IdEstadoAprobacion
-            OUTER APPLY (SELECT TOP (1) r.IdRechazoArea FROM dbo.Rechazo_Area AS r
-                WHERE r.IdAprobacionArea = ap.IdAprobacionArea) AS rechazo
-            LEFT JOIN dbo.Usuario AS usuarioDecision ON usuarioDecision.IdUsuario = ap.IdUsuarioAprobador
-            WHERE sp.IdSolicitud = @IdSolicitud
-            ORDER BY ap.IdAprobacionArea DESC;
-
-            SELECT TRY_CONVERT(BIGINT, JSON_VALUE(h.DatosAdicionalesJson, '$.idSolicitudPersonaArea')),
-                   h.Comentario, COALESCE(usuarioReenvio.NombreCompleto, h.IdUsuarioAccion), h.FechaAccion
-            FROM dbo.Historial_Solicitud AS h
-            LEFT JOIN dbo.Usuario AS usuarioReenvio ON usuarioReenvio.IdUsuario = h.IdUsuarioAccion
-            WHERE h.IdSolicitud = @IdSolicitud AND h.TipoEvento = 'REENVIO_APROBACION'
-            ORDER BY h.FechaAccion DESC, h.IdHistorialSolicitud DESC;
-            """;
-        await using var command = new SqlCommand(sql, connection);
+        await using var command = StoredProcedure(connection, "dbo.usp_Solicitud_Seguimiento_Obtener");
         Add(command, "@IdSolicitud", SqlDbType.BigInt, idSolicitud);
+        Add(command, "@Usuario", SqlDbType.VarChar, idUsuario, 50);
+        Add(command, "@AccesoTotal", SqlDbType.Bit, accesoTotal);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken) || !reader.GetBoolean(0)) return null;
+        if (!await reader.NextResultAsync(cancellationToken)) return null;
         var areas = new List<SeguimientoArea>();
         while (await reader.ReadAsync(cancellationToken))
             areas.Add(new(reader.GetInt64(0), reader.GetInt64(1), GetNullableString(reader, 2),
@@ -1348,8 +1211,7 @@ public sealed class SolicitudesRepository(
 
     private static async Task<string?> ObtenerCodigoEstadoSolicitudAsync(SqlConnection connection, long idSolicitud, CancellationToken cancellationToken)
     {
-        const string sql = "SELECT estado.Codigo FROM dbo.Solicitud_Ingreso AS s INNER JOIN dbo.Cat_Estado_Solicitud AS estado ON estado.IdEstadoSolicitud = s.IdEstadoSolicitud WHERE s.IdSolicitud = @IdSolicitud;";
-        await using var command = new SqlCommand(sql, connection);
+        await using var command = StoredProcedure(connection, "dbo.usp_Solicitud_Estado_Codigo_Obtener");
         Add(command, "@IdSolicitud", SqlDbType.BigInt, idSolicitud);
         return await command.ExecuteScalarAsync(cancellationToken) as string;
     }
@@ -1357,60 +1219,7 @@ public sealed class SolicitudesRepository(
     public async Task<IReadOnlyCollection<ActividadResumen>> ListarMisActividadesAsync(string idUsuarioResponsable, CancellationToken cancellationToken)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
-        const string sql = """
-            SELECT a.IdActividad,
-                   a.IdSolicitud,
-                   s.NumeroSolicitud,
-                   a.NombreActividad,
-                   ar.Nombre AS AreaResponsable,
-                   ea.Codigo AS CodigoEstado,
-                   ea.Nombre AS Estado,
-                   CONVERT(BIT, ISNULL(ea.EsEstadoFinal, 0)) AS EsEstadoFinal,
-                   a.FechaLimite,
-                   a.FechaInicio,
-                   a.FechaFinalizacion,
-                   a.Comentarios,
-                   CONVERT(BIT, ISNULL(a.RequiereTicketExterno, 0)) AS RequiereTicketExterno,
-                   a.IdSolicitudPersona,
-                   p.NombreCompleto AS Persona,
-                   p.NumeroDocumento,
-                   acceso.IdAreaAcceso,
-                   acceso.AreaAcceso,
-                   ticket.IdActividadTicket,
-                   ticket.Plataforma,
-                   ticket.NumeroTicket,
-                   ticket.UrlTicket,
-                   ticket.FechaRegistro
-            FROM dbo.Actividad AS a
-            LEFT JOIN dbo.Solicitud_Ingreso AS s ON s.IdSolicitud = a.IdSolicitud
-            LEFT JOIN dbo.Solicitud_Persona AS sp ON sp.IdSolicitudPersona = a.IdSolicitudPersona
-            LEFT JOIN dbo.Persona AS p ON p.IdPersona = sp.IdPersona
-            LEFT JOIN dbo.Cat_Area AS ar ON ar.IdArea = a.IdAreaResponsable
-            LEFT JOIN dbo.Cat_Estado_Actividad AS ea ON ea.IdEstadoActividad = a.IdEstadoActividad
-            OUTER APPLY
-            (
-                SELECT TOP (1) cra.IdAreaAcceso, areaAcceso.Nombre AS AreaAcceso
-                FROM dbo.Config_Requerimiento_Area AS cra
-                LEFT JOIN dbo.Cat_Area AS areaAcceso ON areaAcceso.IdArea = cra.IdAreaAcceso
-                WHERE cra.IdRequerimiento = a.IdRequerimiento
-                  AND cra.IdAreaResponsable = a.IdAreaResponsable
-                ORDER BY cra.IdConfigReqArea DESC
-            ) AS acceso
-            OUTER APPLY
-            (
-                SELECT TOP (1) t.IdActividadTicket, t.Plataforma, t.NumeroTicket, t.UrlTicket, t.FechaRegistro
-                FROM dbo.Actividad_Ticket_Externo AS t
-                WHERE t.IdActividad = a.IdActividad
-                ORDER BY t.FechaRegistro DESC, t.IdActividadTicket DESC
-            ) AS ticket
-            WHERE a.IdUsuarioResponsable = @IdUsuarioResponsable
-              AND (a.IdSolicitud IS NULL OR s.FechaFin IS NULL OR s.FechaFin >= CONVERT(DATE, SYSDATETIME()))
-            ORDER BY CASE WHEN ISNULL(ea.EsEstadoFinal, 0) = 0 THEN 0 ELSE 1 END,
-                     CASE WHEN a.FechaLimite IS NULL THEN 1 ELSE 0 END,
-                     a.FechaLimite,
-                     a.IdActividad DESC;
-            """;
-        await using var command = new SqlCommand(sql, connection);
+        await using var command = StoredProcedure(connection, "dbo.usp_Actividad_Mis_Listar");
         Add(command, "@IdUsuarioResponsable", SqlDbType.VarChar, idUsuarioResponsable, 50);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var items = new List<ActividadResumen>();
@@ -1443,66 +1252,7 @@ public sealed class SolicitudesRepository(
     public async Task<IReadOnlyCollection<ActividadAdministracionResumen>> ListarActividadesAsync(CancellationToken cancellationToken)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
-        const string sql = """
-            SELECT a.IdActividad,
-                   a.IdSolicitud,
-                   s.NumeroSolicitud,
-                   a.NombreActividad,
-                   a.IdAreaResponsable,
-                   ar.Nombre AS AreaResponsable,
-                   a.IdUsuarioResponsable,
-                   u.NombreCompleto AS UsuarioResponsable,
-                   a.IdEstadoActividad,
-                   ea.Codigo AS CodigoEstado,
-                   ea.Nombre AS Estado,
-                   CONVERT(BIT, ISNULL(ea.EsEstadoFinal, 0)) AS EsEstadoFinal,
-                   a.FechaLimite,
-                   a.FechaInicio,
-                   a.FechaFinalizacion,
-                   a.Comentarios,
-                   CONVERT(BIT, ISNULL(a.RequiereTicketExterno, 0)) AS RequiereTicketExterno,
-                   a.IdUsuarioAprobador,
-                   a.FechaDecision,
-                   a.ComentarioDecision,
-                   a.IdSolicitudPersona,
-                   p.NombreCompleto AS Persona,
-                   p.NumeroDocumento
-                   , acceso.IdAreaAcceso
-                   , acceso.AreaAcceso
-                   , ticket.IdActividadTicket
-                   , ticket.Plataforma
-                   , ticket.NumeroTicket
-                   , ticket.UrlTicket
-                   , ticket.FechaRegistro
-            FROM dbo.Actividad AS a
-            LEFT JOIN dbo.Solicitud_Ingreso AS s ON s.IdSolicitud = a.IdSolicitud
-            LEFT JOIN dbo.Solicitud_Persona AS sp ON sp.IdSolicitudPersona = a.IdSolicitudPersona
-            LEFT JOIN dbo.Persona AS p ON p.IdPersona = sp.IdPersona
-            LEFT JOIN dbo.Cat_Area AS ar ON ar.IdArea = a.IdAreaResponsable
-            LEFT JOIN dbo.Usuario AS u ON u.IdUsuario = a.IdUsuarioResponsable
-            LEFT JOIN dbo.Cat_Estado_Actividad AS ea ON ea.IdEstadoActividad = a.IdEstadoActividad
-            OUTER APPLY
-            (
-                SELECT TOP (1) cra.IdAreaAcceso, areaAcceso.Nombre AS AreaAcceso
-                FROM dbo.Config_Requerimiento_Area AS cra
-                LEFT JOIN dbo.Cat_Area AS areaAcceso ON areaAcceso.IdArea = cra.IdAreaAcceso
-                WHERE cra.IdRequerimiento = a.IdRequerimiento
-                  AND cra.IdAreaResponsable = a.IdAreaResponsable
-                ORDER BY cra.IdConfigReqArea DESC
-            ) AS acceso
-            OUTER APPLY
-            (
-                SELECT TOP (1) t.IdActividadTicket, t.Plataforma, t.NumeroTicket, t.UrlTicket, t.FechaRegistro
-                FROM dbo.Actividad_Ticket_Externo AS t
-                WHERE t.IdActividad = a.IdActividad
-                ORDER BY t.FechaRegistro DESC, t.IdActividadTicket DESC
-            ) AS ticket
-            WHERE a.IdSolicitud IS NULL OR s.FechaFin IS NULL OR s.FechaFin >= CONVERT(DATE, SYSDATETIME())
-            ORDER BY CASE WHEN ea.Codigo = 'PENDIENTE_APROBACION' THEN 0 WHEN ISNULL(ea.EsEstadoFinal, 0) = 0 THEN 1 ELSE 2 END,
-                     a.FechaLimite,
-                     a.IdActividad DESC;
-            """;
-        await using var command = new SqlCommand(sql, connection);
+        await using var command = StoredProcedure(connection, "dbo.usp_Actividad_Administracion_Listar");
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var items = new List<ActividadAdministracionResumen>();
         while (await reader.ReadAsync(cancellationToken))
@@ -1561,56 +1311,7 @@ public sealed class SolicitudesRepository(
             cancellationToken);
 
         await using var connection = await OpenConnectionAsync(cancellationToken);
-        const string sql = """
-            DECLARE @IdAprobada SMALLINT =
-            (
-                SELECT TOP (1) IdEstadoActividad
-                FROM dbo.Cat_Estado_Actividad
-                WHERE Codigo = 'APROBADA'
-            );
-
-            IF @IdAprobada IS NULL
-                THROW 50223, 'No existe el estado APROBADA para las actividades.', 1;
-
-            IF EXISTS
-            (
-                SELECT 1 FROM dbo.Actividad AS a
-                WHERE a.IdActividad = @IdActividad
-                  AND a.IdUsuarioResponsable = @IdUsuarioResponsable
-                  AND ISNULL(a.RequiereTicketExterno, 0) = 1
-                  AND NOT EXISTS (SELECT 1 FROM dbo.Actividad_Ticket_Externo AS t WHERE t.IdActividad = a.IdActividad)
-            )
-                THROW 50224, 'Primero debes crear el ticket requerido para esta actividad.', 1;
-
-            UPDATE actividad
-               SET IdEstadoActividad = @IdAprobada,
-                   FechaInicio = COALESCE(actividad.FechaInicio, SYSDATETIME()),
-                   FechaFinalizacion = SYSDATETIME(),
-                   Comentarios = CASE
-                       WHEN NULLIF(LTRIM(RTRIM(@Comentarios)), '') IS NULL THEN actividad.Comentarios
-                       WHEN NULLIF(LTRIM(RTRIM(actividad.Comentarios)), '') IS NULL THEN @Comentarios
-                       ELSE CONCAT(actividad.Comentarios, CHAR(13), CHAR(10), @Comentarios)
-                   END,
-                   IdUsuarioAprobador = @IdUsuarioResponsable,
-                   FechaDecision = SYSDATETIME(),
-                   ComentarioDecision = 'Aprobada automaticamente al registrar su realizacion.',
-                   FechaModificacion = SYSDATETIME(),
-                   UsuarioModificacion = @IdUsuarioResponsable
-            FROM dbo.Actividad AS actividad
-            LEFT JOIN dbo.Cat_Estado_Actividad AS estadoActual
-                ON estadoActual.IdEstadoActividad = actividad.IdEstadoActividad
-            WHERE actividad.IdActividad = @IdActividad
-              AND actividad.IdUsuarioResponsable = @IdUsuarioResponsable
-              AND (ISNULL(actividad.RequiereTicketExterno, 0) = 0
-                   OR EXISTS (SELECT 1 FROM dbo.Actividad_Ticket_Externo AS t WHERE t.IdActividad = actividad.IdActividad))
-              AND ISNULL(estadoActual.Codigo, '') <> 'APROBADA';
-
-            IF @@ROWCOUNT = 0
-                THROW 50210, 'La actividad no existe, ya fue aprobada o no esta asignada al usuario actual.', 1;
-
-            SELECT @IdActividad;
-            """;
-        await using var command = new SqlCommand(sql, connection);
+        await using var command = StoredProcedure(connection, "dbo.usp_Actividad_Completar");
         Add(command, "@IdActividad", SqlDbType.BigInt, idActividad);
         Add(command, "@IdUsuarioResponsable", SqlDbType.VarChar, idUsuarioResponsable, 50);
         Add(command, "@Comentarios", SqlDbType.NVarChar, request.Comentarios, 1000);
@@ -1622,7 +1323,7 @@ public sealed class SolicitudesRepository(
         var plataforma = request.Plataforma?.Trim();
         var numero = request.NumeroTicket?.Trim();
         var url = request.UrlTicket?.Trim();
-        if (string.IsNullOrWhiteSpace(plataforma) || string.IsNullOrWhiteSpace(numero))
+        if (request.IdTicketExterno is null && (string.IsNullOrWhiteSpace(plataforma) || string.IsNullOrWhiteSpace(numero)))
             throw new InvalidOperationException("Indica la plataforma y el numero del ticket.");
         if (!string.IsNullOrEmpty(url) && (!Uri.TryCreate(url, UriKind.Absolute, out var parsed) || parsed.Scheme != Uri.UriSchemeHttps))
             throw new InvalidOperationException("El enlace del ticket debe ser una direccion HTTPS valida.");
@@ -1630,43 +1331,13 @@ public sealed class SolicitudesRepository(
         await using var connection = await OpenConnectionAsync(cancellationToken);
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         ActividadTicketResumen ticket;
+        long requestId;
         try
         {
-            const string sql = """
-                IF NOT EXISTS
-                (
-                    SELECT 1 FROM dbo.Actividad AS a
-                    LEFT JOIN dbo.Cat_Estado_Actividad AS ea ON ea.IdEstadoActividad = a.IdEstadoActividad
-                    INNER JOIN dbo.Solicitud_Ingreso AS solicitud ON solicitud.IdSolicitud = a.IdSolicitud
-                    WHERE a.IdActividad = @IdActividad
-                      AND solicitud.IdUsuarioSolicitante = @Usuario
-                      AND ISNULL(a.RequiereTicketExterno, 0) = 1
-                      AND ISNULL(ea.EsEstadoFinal, 0) = 0
-                      AND solicitud.FechaFin >= CONVERT(DATE, SYSDATETIME())
-                      AND EXISTS (SELECT 1 FROM dbo.Solicitud_Persona_Area AS spa
-                          INNER JOIN dbo.Config_Requerimiento_Area AS cra ON cra.IdAreaAcceso = spa.IdArea
-                          WHERE spa.IdSolicitudPersona = a.IdSolicitudPersona
-                            AND cra.IdRequerimiento = a.IdRequerimiento)
-                ) THROW 50225, 'La actividad no permite crear este ticket.', 1;
-
-                IF EXISTS (SELECT 1 FROM dbo.Actividad_Ticket_Externo WHERE IdActividad = @IdActividad)
-                    THROW 50226, 'Esta actividad ya tiene un ticket registrado.', 1;
-
-                DECLARE @IdActividadTicket BIGINT =
-                    (SELECT ISNULL(MAX(IdActividadTicket), 0) + 1 FROM dbo.Actividad_Ticket_Externo WITH (UPDLOCK, HOLDLOCK));
-
-                INSERT dbo.Actividad_Ticket_Externo
-                (IdActividadTicket, IdActividad, Plataforma, NumeroTicket, UrlTicket,
-                 FechaRegistro, IdUsuarioRegistro, FechaCreacion, UsuarioCreacion)
-                VALUES
-                (@IdActividadTicket, @IdActividad, @Plataforma, @NumeroTicket, @UrlTicket,
-                 SYSDATETIME(), @Usuario, SYSDATETIME(), @Usuario);
-
-                SELECT IdActividadTicket, Plataforma, NumeroTicket, UrlTicket, FechaRegistro
-                FROM dbo.Actividad_Ticket_Externo WHERE IdActividadTicket = @IdActividadTicket;
-                """;
-            await using var command = new SqlCommand(sql, connection, transaction);
-            Add(command, "@IdActividad", SqlDbType.BigInt, idActividad);
+            await using var command = StoredProcedure(connection, "dbo.usp_Actividad_Ticket_Guardar", transaction);
+            Add(command, "@IdActividadPrincipal", SqlDbType.BigInt, idActividad);
+            Add(command, "@IdTicketExterno", SqlDbType.BigInt, request.IdTicketExterno);
+            Add(command, "@IdsActividadJson", SqlDbType.NVarChar, JsonSerializer.Serialize(request.IdsActividad ?? []), -1);
             Add(command, "@Usuario", SqlDbType.VarChar, idUsuarioSolicitante, 50);
             Add(command, "@Plataforma", SqlDbType.NVarChar, plataforma, 100);
             Add(command, "@NumeroTicket", SqlDbType.VarChar, numero, 80);
@@ -1676,6 +1347,7 @@ public sealed class SolicitudesRepository(
                 if (!await reader.ReadAsync(cancellationToken)) throw new InvalidOperationException("No se pudo registrar el ticket.");
                 ticket = new ActividadTicketResumen(reader.GetInt64(0), GetNullableString(reader, 1),
                     GetNullableString(reader, 2), GetNullableString(reader, 3), GetNullable<DateTime>(reader, 4));
+                requestId = reader.GetInt64(5);
             }
             await transaction.CommitAsync(cancellationToken);
         }
@@ -1684,10 +1356,7 @@ public sealed class SolicitudesRepository(
             await transaction.RollbackAsync(cancellationToken);
             throw;
         }
-        await using var lookup = new SqlCommand("SELECT IdSolicitud FROM dbo.Actividad WHERE IdActividad = @IdActividad", connection);
-        Add(lookup, "@IdActividad", SqlDbType.BigInt, idActividad);
-        var requestId = await lookup.ExecuteScalarAsync(cancellationToken);
-        if (requestId is not null) await SyncTicketStateAsync(Convert.ToInt64(requestId), idUsuarioSolicitante, cancellationToken);
+        await SyncTicketStateAsync(requestId, idUsuarioSolicitante, cancellationToken);
         return ticket;
     }
 
@@ -1695,50 +1364,46 @@ public sealed class SolicitudesRepository(
         long idSolicitud, string idUsuarioSolicitante, CancellationToken cancellationToken)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
-        const string sql = """
-            SELECT a.IdActividad, s.IdSolicitud, s.FechaFin, s.NumeroSolicitud, a.NombreActividad,
-                   COALESCE(p.NombreCompleto, sp.CodigoEmpleadoHtis), area.Nombre,
-                   CONVERT(BIT, ISNULL(estado.EsEstadoFinal, 0)),
-                   ticket.IdActividadTicket, ticket.Plataforma, ticket.NumeroTicket,
-                   ticket.UrlTicket, ticket.FechaRegistro, a.IdSolicitudPersona
-            FROM dbo.Actividad AS a
-            INNER JOIN dbo.Solicitud_Ingreso AS s ON s.IdSolicitud = a.IdSolicitud
-            LEFT JOIN dbo.Solicitud_Persona AS sp ON sp.IdSolicitudPersona = a.IdSolicitudPersona
-            LEFT JOIN dbo.Persona AS p ON p.IdPersona = sp.IdPersona
-            LEFT JOIN dbo.Cat_Area AS area ON area.IdArea = a.IdAreaResponsable
-            LEFT JOIN dbo.Cat_Estado_Actividad AS estado ON estado.IdEstadoActividad = a.IdEstadoActividad
-            OUTER APPLY
-            (
-                SELECT TOP (1) t.IdActividadTicket, t.Plataforma, t.NumeroTicket, t.UrlTicket, t.FechaRegistro
-                FROM dbo.Actividad_Ticket_Externo AS t
-                WHERE t.IdActividad = a.IdActividad
-                ORDER BY t.FechaRegistro DESC, t.IdActividadTicket DESC
-            ) AS ticket
-            WHERE s.IdSolicitud = @IdSolicitud
-              AND s.IdUsuarioSolicitante = @Usuario
-              AND ISNULL(a.RequiereTicketExterno, 0) = 1
-              AND a.IdSolicitudPersona IS NOT NULL
-              AND EXISTS (SELECT 1 FROM dbo.Solicitud_Persona_Area AS spa
-                  INNER JOIN dbo.Config_Requerimiento_Area AS cra ON cra.IdAreaAcceso = spa.IdArea
-                  WHERE spa.IdSolicitudPersona = a.IdSolicitudPersona
-                    AND cra.IdRequerimiento = a.IdRequerimiento)
-            ORDER BY CASE WHEN ticket.IdActividadTicket IS NULL THEN 0 ELSE 1 END,
-                     a.IdSolicitudPersona, a.IdActividad;
-            """;
-        await using var command = new SqlCommand(sql, connection);
+        await using var command = StoredProcedure(connection, "dbo.usp_Solicitud_Tickets_Listar");
         Add(command, "@IdSolicitud", SqlDbType.BigInt, idSolicitud);
         Add(command, "@Usuario", SqlDbType.VarChar, idUsuarioSolicitante, 50);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        var items = new List<TicketSolicitudResumen>();
+        var baseItems = new List<(long IdActividad, long IdSolicitud, DateTime? FechaFin,
+            string? NumeroSolicitud, string? NombreActividad, string? Persona,
+            string? AreaResponsable, bool EsEstadoFinal, long? IdSolicitudPersona)>();
         while (await reader.ReadAsync(cancellationToken))
-            items.Add(new TicketSolicitudResumen(reader.GetInt64(0), reader.GetInt64(1),
+            baseItems.Add((reader.GetInt64(0), reader.GetInt64(1),
                 GetNullable<DateTime>(reader, 2), GetNullableString(reader, 3), GetNullableString(reader, 4),
                 GetNullableString(reader, 5), GetNullableString(reader, 6), reader.GetBoolean(7),
-                reader.IsDBNull(8) ? null : new ActividadTicketResumen(reader.GetInt64(8),
-                    GetNullableString(reader, 9), GetNullableString(reader, 10),
-                    GetNullableString(reader, 11), GetNullable<DateTime>(reader, 12)),
-                GetNullable<long>(reader, 13)));
-        return items;
+                GetNullable<long>(reader, 8)));
+
+        var tickets = new Dictionary<long, List<ActividadTicketResumen>>();
+        if (await reader.NextResultAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var idActividad = reader.GetInt64(0);
+                if (!tickets.TryGetValue(idActividad, out var activityTickets))
+                {
+                    activityTickets = [];
+                    tickets[idActividad] = activityTickets;
+                }
+                activityTickets.Add(new ActividadTicketResumen(reader.GetInt64(1),
+                    GetNullableString(reader, 2), GetNullableString(reader, 3),
+                    GetNullableString(reader, 4), GetNullable<DateTime>(reader, 5)));
+            }
+        }
+
+        return baseItems.Select(item =>
+        {
+            var activityTickets = tickets.TryGetValue(item.IdActividad, out var values)
+                ? (IReadOnlyCollection<ActividadTicketResumen>)values
+                : [];
+            return new TicketSolicitudResumen(item.IdActividad, item.IdSolicitud, item.FechaFin,
+                item.NumeroSolicitud, item.NombreActividad, item.Persona, item.AreaResponsable,
+                item.EsEstadoFinal, activityTickets.LastOrDefault(), activityTickets,
+                item.IdSolicitudPersona);
+        }).ToArray();
     }
 
     public async Task<long> DecidirActividadAsync(long idActividad, string idUsuarioAprobador, DecidirActividadRequest request, CancellationToken cancellationToken)
@@ -1806,12 +1471,36 @@ public sealed class SolicitudesRepository(
                     reader.GetInt32(9),
                     reader.GetInt32(10),
                     GetNullableString(reader, 11),
-                    GetNullableString(reader, 12)));
+                    GetNullableString(reader, 12),
+                    ParseIntList(GetNullableString(reader, 13)),
+                    ParseIntList(GetNullableString(reader, 14))));
 
             }
         }
 
-        return solicitud with { Personas = personas };
+        await reader.CloseAsync();
+        await using var flowCommand = StoredProcedure(connection, "dbo.usp_Solicitud_Flujos_Asignados_Listar");
+        Add(flowCommand, "@IdSolicitud", SqlDbType.BigInt, idSolicitud);
+        await using var flowReader = await flowCommand.ExecuteReaderAsync(cancellationToken);
+        var flujosPorPersona = new Dictionary<long, List<long>>();
+        while (await flowReader.ReadAsync(cancellationToken))
+        {
+            var idSolicitudPersona = flowReader.GetInt64(0);
+            if (!flujosPorPersona.TryGetValue(idSolicitudPersona, out var flujos))
+            {
+                flujos = [];
+                flujosPorPersona[idSolicitudPersona] = flujos;
+            }
+            flujos.Add(flowReader.GetInt64(1));
+        }
+
+        return solicitud with
+        {
+            Personas = personas.Select(persona => persona with
+            {
+                Flujos = flujosPorPersona.TryGetValue(persona.IdSolicitudPersona, out var flujos) ? flujos : []
+            }).ToArray()
+        };
     }
 
     private async Task<SqlConnection> OpenConnectionAsync(

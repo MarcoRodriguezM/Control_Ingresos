@@ -72,6 +72,34 @@ public sealed class ProveedoresController(
         return Created($"/api/proveedores/solicitudes/{id}", new IdCreadoResponse(idSolicitudPersona));
     }
 
+    [HttpDelete("solicitudes/{id:long}/personas/{idSolicitudPersona:long}")]
+    [Authorize(Roles = "Proveedor")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> EliminarPersona(
+        long id,
+        long idSolicitudPersona,
+        CancellationToken cancellationToken)
+    {
+        var usuario = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(usuario)) return Unauthorized();
+        return await repository.EliminarPersonaProveedorAsync(
+            id, idSolicitudPersona, usuario, cancellationToken)
+            ? NoContent()
+            : NotFound();
+    }
+
+    [HttpPost("solicitudes/{id:long}/enviar")]
+    [Authorize(Roles = "Proveedor")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> EnviarSolicitud(long id, CancellationToken cancellationToken)
+    {
+        var usuario = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(usuario)) return Unauthorized();
+        await repository.EnviarSolicitudProveedorAsync(id, usuario, cancellationToken);
+        return NoContent();
+    }
+
     [HttpPost]
     [ProducesResponseType<ProveedorCreadoResponse>(StatusCodes.Status201Created)]
     public async Task<ActionResult<ProveedorCreadoResponse>> Crear(
@@ -80,7 +108,7 @@ public sealed class ProveedoresController(
     {
         var usuario = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrWhiteSpace(usuario)) return Unauthorized();
-        request = request with { Usuario = usuario };
+        request = request with { Usuario = usuario, IdEstadoGeneral = null };
         var contrasenaTemporal = GenerarContrasenaTemporal();
         var creado = await repository.CrearProveedorAsync(request, contrasenaTemporal, cancellationToken);
         var credencialesEnviadas = await credentialEmailSender.EnviarCredencialesProveedorAsync(

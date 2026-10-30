@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Icon } from '../components/Icon'
-import { controlIngresosApi } from '../services/api'
 
 const initialForm = {
   codigo: '',
@@ -10,32 +9,11 @@ const initialForm = {
   contactoPrincipal: '',
   correoPrincipal: '',
   telefonoPrincipal: '',
-  idEstadoGeneral: '',
 }
 
 export function ProviderFormPage({ session, onCreate, onCancel, onError }) {
   const [form, setForm] = useState(initialForm)
-  const [statuses, setStatuses] = useState([])
-  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-
-  useEffect(() => {
-    let active = true
-    controlIngresosApi.listarCatalogo('estados-generales')
-      .then((items) => {
-        if (!active) return
-        const activeStatus = items.find((item) => item.codigo?.toUpperCase() === 'ACTIVO') ?? items[0]
-        setStatuses(items)
-        setForm((current) => ({
-          ...current,
-          idEstadoGeneral: current.idEstadoGeneral || String(activeStatus?.id ?? ''),
-        }))
-      })
-      .catch((error) => active && onError(error.message))
-      .finally(() => active && setLoading(false))
-
-    return () => { active = false }
-  }, [onError])
 
   function change(event) {
     const { name, value } = event.target
@@ -57,7 +35,7 @@ export function ProviderFormPage({ session, onCreate, onCancel, onError }) {
         contactoPrincipal: textOrNull(form.contactoPrincipal),
         correoPrincipal: textOrNull(form.correoPrincipal),
         telefonoPrincipal: textOrNull(form.telefonoPrincipal),
-        idEstadoGeneral: numberOrNull(form.idEstadoGeneral),
+        idEstadoGeneral: null,
         usuario: session.idUsuario,
       })
     } finally {
@@ -77,12 +55,6 @@ export function ProviderFormPage({ session, onCreate, onCancel, onError }) {
         <Field label="RTN"><input name="rtn" maxLength="30" value={form.rtn} onChange={change} placeholder="Registro tributario" /></Field>
         <Field label="Nombre legal" required><input name="nombreLegal" maxLength="200" value={form.nombreLegal} onChange={change} required placeholder="Razón social de la empresa" /></Field>
         <Field label="Nombre comercial"><input name="nombreComercial" maxLength="200" value={form.nombreComercial} onChange={change} placeholder="Nombre con el que opera" /></Field>
-        <Field label="Estado" required>
-          <select name="idEstadoGeneral" value={form.idEstadoGeneral} onChange={change} required disabled={loading}>
-            <option value="">{loading ? 'Cargando…' : 'Selecciona un estado'}</option>
-            {statuses.map((item) => <option key={item.id} value={item.id}>{item.nombre ?? item.codigo}</option>)}
-          </select>
-        </Field>
       </div>
 
       <div className="section-heading person-form-section"><h2>Contacto principal</h2><p>Estos datos se utilizarán para coordinar las solicitudes de ingreso.</p></div>
@@ -99,7 +71,7 @@ export function ProviderFormPage({ session, onCreate, onCancel, onError }) {
 
       <div className="form-footer">
         <button type="button" className="ghost-button" onClick={onCancel} disabled={saving}>Cancelar</button>
-        <button type="submit" className="primary-button teal" disabled={saving || loading}><Icon name="company" />{saving ? 'Guardando…' : 'Crear proveedor'}</button>
+        <button type="submit" className="primary-button teal" disabled={saving}><Icon name="company" />{saving ? 'Guardando…' : 'Crear proveedor'}</button>
       </div>
     </form>
   </>
@@ -112,8 +84,4 @@ function Field({ label, required, children }) {
 function textOrNull(value) {
   const normalized = value?.trim()
   return normalized || null
-}
-
-function numberOrNull(value) {
-  return value === '' || value == null ? null : Number(value)
 }

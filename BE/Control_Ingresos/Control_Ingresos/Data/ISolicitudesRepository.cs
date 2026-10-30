@@ -18,6 +18,8 @@ public interface ISolicitudesRepository
     Task<SolicitudProveedorDetalle?> ObtenerSolicitudProveedorAsync(long idSolicitud, string idUsuario, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<PersonaResumen>> ListarPersonasProveedorAsync(string idUsuario, CancellationToken cancellationToken);
     Task<long> AgregarPersonaProveedorAsync(long idSolicitud, string idUsuario, AgregarPersonaSolicitudRequest request, CancellationToken cancellationToken);
+    Task<bool> EliminarPersonaProveedorAsync(long idSolicitud, long idSolicitudPersona, string idUsuario, CancellationToken cancellationToken);
+    Task EnviarSolicitudProveedorAsync(long idSolicitud, string idUsuario, CancellationToken cancellationToken);
     Task<long> CrearPersonaAsync(CrearPersonaRequest request, CancellationToken cancellationToken);
     Task<bool> ActualizarFotografiaPersonaAsync(long idPersona, string fotografiaUrl, string usuario, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<PersonaResumen>> ListarPersonasAsync(CancellationToken cancellationToken);
@@ -34,7 +36,7 @@ public interface ISolicitudesRepository
     Task<long> AgregarPersonaAsync(long idSolicitud, AgregarPersonaSolicitudRequest request, CancellationToken cancellationToken);
     Task<long> AgregarEmpleadoAsync(long idSolicitud, Empleado empleado, AgregarEmpleadoSolicitudRequest request, string usuario, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<EmpleadoAccesoActual>> ListarAccesosEmpleadoAsync(string codigoEmpleado, CancellationToken cancellationToken);
-    Task AsignarAreasPersonaAsync(long idSolicitud, long idSolicitudPersona, IReadOnlyCollection<int> areas, string usuario, CancellationToken cancellationToken);
+    Task AsignarAreasPersonaAsync(long idSolicitud, long idSolicitudPersona, IReadOnlyCollection<int> areas, IReadOnlyCollection<RequerimientoSolicitudRequest>? requerimientos, IReadOnlyCollection<long>? flujos, string usuario, CancellationToken cancellationToken);
     Task ReenviarAprobacionAsync(long idSolicitudPersonaArea, string idUsuarioSolicitante, string justificacion, CancellationToken cancellationToken);
     Task<SeguimientoSolicitud?> ObtenerSeguimientoSolicitudAsync(long idSolicitud, string idUsuario, bool accesoTotal, CancellationToken cancellationToken);
     Task EnviarSolicitudAsync(long idSolicitud, string idUsuario, CancellationToken cancellationToken);

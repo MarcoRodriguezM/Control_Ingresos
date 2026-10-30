@@ -1,20 +1,21 @@
 import { useEffect, useState } from 'react'
 import { Icon } from '../components/Icon'
 import { accessStatusClass, formatDate } from '../utils/formatters'
-import { activityAppliesToType } from '../utils/activityTypes'
+import { activityAppliesToType, activityIsAutomaticForType, flowIsRequiredBySelection, includeRequiredFlowVersions } from '../utils/activityTypes'
 
-export function RequestFormPage({ form, options, activityFlows = [], people, employees = [], employeesLoading = false, employeesError = '', requestPeople, existingPeople, peopleEntryMode, loading, saving, editingId, step, selected, canSend, onPeopleEntryModeChange, onPeopleChange, onChange, onStepChange, onNext, onBack, onCancel, onSubmit }) {
+export function RequestFormPage({ form, options, activityFlows = [], people, employees = [], employeesLoading = false, employeesError = '', requestPeople, existingPeople, peopleEntryMode, loading, saving, editingId, step, selected, canSend, onPeopleEntryModeChange, onPeopleChange, onExistingPeopleChange, onChange, onStepChange, onNext, onBack, onCancel, onSubmit, onDelete }) {
   const typeCode = normalizeTypeCode(selected.tipo)
+  const canDelete = editingId && ['BORRADOR', 'PENDIENTE_PROVEEDOR'].includes(selected.estado?.codigo)
   return <>
-    <div className="page-heading"><div><p className="eyebrow">{editingId ? 'Editar solicitud' : 'Nueva solicitud'}</p><h1>{editingId ? 'Actualizar solicitud de ingreso' : 'Registrar solicitud de ingreso'}</h1><p>Completa los datos e indica quién registrará a las personas que ingresarán.</p></div></div>
+    <div className="page-heading"><div><p className="eyebrow">{editingId ? form.numeroSolicitud || `Solicitud #${editingId}` : 'Nueva solicitud'}</p><h1>{editingId ? 'Actualizar solicitud de ingreso' : 'Registrar solicitud de ingreso'}</h1><p>Completa los datos e indica quién registrará a las personas que ingresarán.</p>{editingId && <span className="status-badge">{selected.estado?.nombre || selected.estado?.codigo || 'Sin estado'}</span>}</div></div>
     <Progress step={step} onStepChange={onStepChange} />
     <div className="panel form-panel">
       {step === 1 && <StepOne form={form} options={options} selectedType={selected.tipo} loading={loading} change={onChange} />}
       {step === 2 && <StepTwo form={form} options={options} selectedType={selected.tipo} loading={loading} change={onChange} />}
-      {step === 3 && <PeopleStep typeCode={typeCode} mode={peopleEntryMode} provider={selected.proveedor} estimatedCount={form.cantidadEstimada} people={people} employees={employees} employeesLoading={employeesLoading} employeesError={employeesError} selectedPeople={requestPeople} existingPeople={existingPeople} areas={options?.areas ?? []} activityFlows={activityFlows} onModeChange={onPeopleEntryModeChange} onChange={onPeopleChange} />}
+      {step === 3 && <PeopleStep typeCode={typeCode} mode={peopleEntryMode} provider={selected.proveedor} estimatedCount={form.cantidadEstimada} people={people} employees={employees} employeesLoading={employeesLoading} employeesError={employeesError} selectedPeople={requestPeople} existingPeople={existingPeople} areas={options?.areas ?? []} activityFlows={activityFlows} onModeChange={onPeopleEntryModeChange} onChange={onPeopleChange} onExistingChange={onExistingPeopleChange} />}
       {step === 4 && <Review form={form} selected={selected} people={people} employees={employees} selectedPeople={requestPeople} existingPeople={existingPeople} peopleEntryMode={peopleEntryMode} />}
       <div className="form-footer">
-        <button type="button" className="ghost-button" onClick={onCancel}>Cancelar</button>
+        <div className="action-row"><button type="button" className="ghost-button" onClick={onCancel}>Cancelar</button>{canDelete && <button type="button" className="primary-button danger-button" disabled={saving} onClick={onDelete}><Icon name="warning" />Cancelar solicitud</button>}</div>
         <div className="action-row">
           {step > 1 && <button type="button" className="secondary-button" onClick={onBack}><Icon name="back" />Atrás</button>}
           {step < 4
@@ -54,7 +55,7 @@ function StepTwo({ form, options, selectedType, loading, change }) {
   return <><SectionHeading title="Contacto y ubicación" text={isEmployee ? 'Indica el área, la ubicación y el usuario responsable de la solicitud.' : 'Indica quién coordina el ingreso y dónde se realizará.'} /><div className="form-grid">{!isEmployee && <><Field label={contactLabel} required><input name="contactoProveedor" maxLength="200" value={form.contactoProveedor} onChange={change} placeholder={isNewEmployee ? 'Nombre completo del nuevo empleado' : 'Nombre del contacto'} /></Field><Field label={emailLabel} required><input type="email" name="correoProveedor" maxLength="254" value={form.correoProveedor} onChange={change} placeholder={isNewEmployee ? 'nuevo.empleado@empresa.com' : 'contacto@empresa.com'} /></Field></>}<Field label="Área solicitante" required><Select name="idAreaSolicitante" value={form.idAreaSolicitante} onChange={change} items={options?.areas} loading={loading} /></Field><Field label="Ubicación / instalación" required><Select name="idUbicacion" value={form.idUbicacion} onChange={change} items={options?.ubicaciones} loading={loading} /></Field><Field label="Usuario solicitante" required full><Select name="idUsuarioSolicitante" value={form.idUsuarioSolicitante} onChange={change} items={options?.usuarios} loading={loading} disabled /><small className="field-help">Se asigna automáticamente desde la sesión iniciada.</small></Field><Field label="Observaciones" full><textarea name="observaciones" maxLength="1000" value={form.observaciones} onChange={change} placeholder="Indicaciones para el ingreso" /></Field></div></>
 }
 
-function PeopleStep({ typeCode, mode, provider, estimatedCount, people, employees, employeesLoading, employeesError, selectedPeople, existingPeople, areas, activityFlows, onModeChange, onChange }) {
+function PeopleStep({ typeCode, mode, provider, estimatedCount, people, employees, employeesLoading, employeesError, selectedPeople, existingPeople, areas, activityFlows, onModeChange, onChange, onExistingChange }) {
   const [selectedValue, setSelectedValue] = useState('')
   const usesHtis = typeCode === 'EMPLEADO'
   const isNewEmployee = typeCode === 'NUEVO_EMPLEADO'
@@ -70,36 +71,64 @@ function PeopleStep({ typeCode, mode, provider, estimatedCount, people, employee
 
   function addEntry() {
     if (!selectedValue || limitReached) return
+    const flujos = automaticFlowIds(activityFlows, typeCode)
     onChange([...selectedPeople, usesHtis
-      ? { idPersona: null, codigoEmpleadoHtis: selectedValue, areas: [], requerimientos: [] }
-      : { idPersona: Number(selectedValue), codigoEmpleadoHtis: null, areas: [], requerimientos: [] }])
+      ? { idPersona: null, codigoEmpleadoHtis: selectedValue, areas: [], requerimientos: [], flujos }
+      : { idPersona: Number(selectedValue), codigoEmpleadoHtis: null, areas: [], requerimientos: [], flujos }])
     setSelectedValue('')
   }
 
   function toggleArea(entryKey, idArea) {
-    const activityIds = activitiesForArea(activityFlows, idArea).map((step) => step.idRequerimiento)
     onChange(selectedPeople.map((entry) => {
       if (requestEntryKey(entry, usesHtis) !== entryKey) return entry
       const removing = entry.areas.includes(idArea)
       return {
         ...entry,
         areas: removing ? entry.areas.filter((id) => id !== idArea) : [...entry.areas, idArea],
-        requerimientos: removing
-          ? (entry.requerimientos ?? []).filter((id) => !activityIds.includes(id))
-          : entry.requerimientos ?? [],
       }
     }))
   }
 
-  function toggleActivity(entryKey, idRequerimiento) {
+  function toggleFlow(entryKey, idActividadFlujoVersion) {
     onChange(selectedPeople.map((entry) => {
       if (requestEntryKey(entry, usesHtis) !== entryKey) return entry
-      const selected = entry.requerimientos ?? []
+      const selected = includeRequiredFlowVersions(entry.flujos, activityFlows)
+      if (selected.includes(idActividadFlujoVersion)
+          && flowIsRequiredBySelection(idActividadFlujoVersion, selected, activityFlows)) return entry
+      const next = selected.includes(idActividadFlujoVersion)
+        ? selected.filter((id) => id !== idActividadFlujoVersion)
+        : [...selected, idActividadFlujoVersion]
       return {
         ...entry,
-        requerimientos: selected.includes(idRequerimiento)
-          ? selected.filter((id) => id !== idRequerimiento)
-          : [...selected, idRequerimiento],
+        flujos: includeRequiredFlowVersions(next, activityFlows),
+      }
+    }))
+  }
+
+  function toggleExistingArea(entryKey, idArea) {
+    onExistingChange(existingPeople.map((entry) => {
+      if (requestEntryKey(entry, usesHtis) !== entryKey) return entry
+      const currentAreas = entry.areas ?? []
+      const removing = currentAreas.includes(idArea)
+      return {
+        ...entry,
+        areas: removing ? currentAreas.filter((id) => id !== idArea) : [...currentAreas, idArea],
+      }
+    }))
+  }
+
+  function toggleExistingFlow(entryKey, idActividadFlujoVersion) {
+    onExistingChange(existingPeople.map((entry) => {
+      if (requestEntryKey(entry, usesHtis) !== entryKey) return entry
+      const current = includeRequiredFlowVersions(entry.flujos, activityFlows)
+      if (current.includes(idActividadFlujoVersion)
+          && flowIsRequiredBySelection(idActividadFlujoVersion, current, activityFlows)) return entry
+      const next = current.includes(idActividadFlujoVersion)
+        ? current.filter((id) => id !== idActividadFlujoVersion)
+        : [...current, idActividadFlujoVersion]
+      return {
+        ...entry,
+        flujos: includeRequiredFlowVersions(next, activityFlows),
       }
     }))
   }
@@ -127,32 +156,47 @@ function PeopleStep({ typeCode, mode, provider, estimatedCount, people, employee
         <button type="button" className="primary-button" disabled={!selectedValue || limitReached || (usesHtis && employeesLoading)} onClick={addEntry}><Icon name="users" />{usesHtis ? 'Agregar empleado' : 'Agregar persona'}</button>
       </div>
 
-      {existingPeople.length > 0 && <section className="existing-request-people"><h3>{usesHtis ? 'Empleados ya asociados' : 'Personas ya asociadas'}</h3><div>{existingPeople.map((person) => <article className={`existing-person-status ${person.codigoEstadoAprobacion?.toLowerCase() ?? 'pendiente'}`} key={person.idSolicitudPersona ?? requestEntryKey(person, usesHtis)}><div><strong>{person.nombreCompleto || person.codigoEmpleadoHtis || person.numeroDocumento || `Persona #${person.idPersona}`}</strong><span>{person.codigoEmpleadoHtis || person.numeroDocumento || 'Sin documento'}</span></div><span className={`access-status ${accessStatusClass(person.codigoEstadoAprobacion)}`}>{person.estadoAprobacion || 'Pendiente'}</span><small>{person.areasAprobadas ?? 0} aprobada(s) · {person.areasPendientes ?? 0} pendiente(s) · {person.areasRechazadas ?? 0} rechazada(s)</small>{person.detalleRechazos && <p><strong>Motivo del rechazo:</strong> {person.detalleRechazos}</p>}</article>)}</div></section>}
+      {existingPeople.length > 0 && <section className="existing-request-people"><h3>{usesHtis ? 'Empleados ya asociados' : 'Personas ya asociadas'}</h3><div>{existingPeople.map((person) => {
+        const key = requestEntryKey(person, usesHtis)
+        const selectedAreas = person.areas ?? []
+        const selectedFlows = includeRequiredFlowVersions(person.flujos, activityFlows)
+        const flowGroups = availableFlowGroups(activityFlows, selectedFlows, typeCode)
+        return <article className={`request-person-card existing-person-status ${person.codigoEstadoAprobacion?.toLowerCase() ?? 'pendiente'}`} key={person.idSolicitudPersona ?? key}>
+          <div className="request-person-head"><div><strong>{person.nombreCompleto || person.codigoEmpleadoHtis || person.numeroDocumento || `Persona #${person.idPersona}`}</strong><span>{person.codigoEmpleadoHtis || person.numeroDocumento || 'Sin documento'}</span></div><span className={`access-status ${accessStatusClass(person.codigoEstadoAprobacion)}`}>{person.estadoAprobacion || 'Pendiente'}</span></div>
+          <div className="request-area-options"><p>Áreas requeridas</p>{areas.map((area) => <label key={area.id}><input type="checkbox" checked={selectedAreas.includes(Number(area.id))} onChange={() => toggleExistingArea(key, Number(area.id))} /><span>{area.nombre ?? area.codigo}</span></label>)}</div>
+          {selectedAreas.length === 0 && (person.flujos ?? []).length === 0 && automaticFlowIds(activityFlows, typeCode).length === 0 && <small className="request-person-warning">Selecciona al menos un área o un flujo de actividades.</small>}
+          {flowGroups.length > 0 && <div className="request-activity-selection">
+            <div className="request-activity-selection-heading"><strong>Actividades previas al ingreso</strong><span>Son independientes de las áreas de acceso solicitadas.</span></div>
+            {flowGroups.map(({ area, flows }) => <section className="request-area-activities" key={area.idArea}>
+              <div className="request-area-activities-title"><Icon name="shield" /><div><strong>{area.nombre ?? area.codigo ?? `Área #${area.idArea}`}</strong><span>{`${flows.length} flujo(s) disponible(s)`}</span></div></div>
+              <div className="request-activity-options">{flows.map((item, index) => { const automatic = activityIsAutomaticForType(item, typeCode); const required = flowIsRequiredBySelection(item.idActividadFlujoVersion, selectedFlows, activityFlows); return <label key={item.idActividadFlujoVersion}><input type="checkbox" checked={automatic || selectedFlows.includes(item.idActividadFlujoVersion)} disabled={automatic || required} onChange={() => toggleExistingFlow(key, item.idActividadFlujoVersion)} /><span className="request-activity-order">{index + 1}</span><span><strong>{item.nombre}</strong><small>{item.esVersionActual === false ? 'Version historica asignada' : automatic ? 'Asignacion automatica' : required ? 'Seleccionado por dependencia de otro flujo' : `${item.pasos?.length ?? 0} actividad(es)`}</small></span></label> })}</div>
+            </section>)}
+          </div>}
+          <small>{person.areasAprobadas ?? 0} aprobada(s) · {person.areasPendientes ?? 0} pendiente(s) · {person.areasRechazadas ?? 0} rechazada(s)</small>{person.detalleRechazos && <p><strong>Motivo del rechazo:</strong> {person.detalleRechazos}</p>}
+        </article>
+      })}</div></section>}
 
       <div className="request-people-list">
         {selectedPeople.length === 0 && <div className="request-people-empty"><Icon name="users" /><strong>{usesHtis ? 'No has agregado empleados' : 'No has agregado personas nuevas'}</strong><span>Puedes continuar sin integrantes y agregarlos después al editar la solicitud.</span></div>}
         {selectedPeople.map((entry) => {
           const key = requestEntryKey(entry, usesHtis)
           const source = sourceItems.find((item) => sourceItemKey(item, usesHtis) === key)
+          const selectedFlows = includeRequiredFlowVersions(entry.flujos, activityFlows)
+          const flowGroups = availableFlowGroups(activityFlows, selectedFlows, typeCode)
           return <article className="request-person-card" key={key}>
             <div className="request-person-head"><div><strong>{source?.nombreCompleto || entry.codigoEmpleadoHtis || `Persona #${entry.idPersona}`}</strong><span>{usesHtis ? source?.codigoEmpleado || entry.codigoEmpleadoHtis : source?.numeroDocumento || source?.empresa || 'Sin información adicional'}</span></div><button type="button" className="remove-person-button" onClick={() => onChange(selectedPeople.filter((item) => requestEntryKey(item, usesHtis) !== key))}>Quitar</button></div>
-            <div className="request-area-options"><p>Áreas autorizadas <span className="required">*</span></p>{areas.map((area) => <label key={area.id}><input type="checkbox" checked={entry.areas.includes(Number(area.id))} onChange={() => toggleArea(key, Number(area.id))} /><span>{area.nombre ?? area.codigo}</span></label>)}</div>
-            {entry.areas.length === 0 && <small className="request-person-warning">Selecciona al menos un área.</small>}
-            {entry.areas.length > 0 && <div className="request-activity-selection">
-              <div className="request-activity-selection-heading"><strong>Actividades previas al ingreso</strong><span>Selecciona las que deberá realizar esta persona.</span></div>
-              {entry.areas.map((idArea) => {
-                const area = areas.find((item) => Number(item.id) === Number(idArea))
-                const activities = activitiesForArea(activityFlows, idArea).filter((activity) => activityAppliesToType(activity, typeCode))
-                return <section className="request-area-activities" key={idArea}>
-                  <div className="request-area-activities-title"><Icon name="shield" /><div><strong>{area?.nombre ?? area?.codigo ?? `Área #${idArea}`}</strong><span>{activities.length ? `${activities.length} actividad(es) configurada(s)` : 'Sin actividades configuradas'}</span></div></div>
-                  {activities.length > 0 && <div className="request-activity-options">{activities.map((activity, index) => <label key={activity.idConfigReqArea}>
-                    <input type="checkbox" checked={(entry.requerimientos ?? []).includes(activity.idRequerimiento)} onChange={() => toggleActivity(key, activity.idRequerimiento)} />
+            <div className="request-area-options"><p>Áreas autorizadas</p>{areas.map((area) => <label key={area.id}><input type="checkbox" checked={entry.areas.includes(Number(area.id))} onChange={() => toggleArea(key, Number(area.id))} /><span>{area.nombre ?? area.codigo}</span></label>)}</div>
+            {entry.areas.length === 0 && (entry.flujos ?? []).length === 0 && automaticFlowIds(activityFlows, typeCode).length === 0 && <small className="request-person-warning">Selecciona al menos un área o un flujo de actividades.</small>}
+            {flowGroups.length > 0 && <div className="request-activity-selection">
+              <div className="request-activity-selection-heading"><strong>Actividades previas al ingreso</strong><span>Son independientes de las áreas de acceso solicitadas.</span></div>
+              {flowGroups.map(({ area, flows }) => <section className="request-area-activities" key={area.idArea}>
+                  <div className="request-area-activities-title"><Icon name="shield" /><div><strong>{area.nombre ?? area.codigo ?? `Área #${area.idArea}`}</strong><span>{`${flows.length} flujo(s) disponible(s)`}</span></div></div>
+                  <div className="request-activity-options">{flows.map((item, index) => { const automatic = activityIsAutomaticForType(item, typeCode); const required = flowIsRequiredBySelection(item.idActividadFlujoVersion, selectedFlows, activityFlows); return <label key={item.idActividadFlujoVersion}>
+                    <input type="checkbox" checked={automatic || selectedFlows.includes(item.idActividadFlujoVersion)} disabled={automatic || required} onChange={() => toggleFlow(key, item.idActividadFlujoVersion)} />
                     <span className="request-activity-order">{index + 1}</span>
-                    <span><strong>{activity.nombreActividad}</strong><small>Responsable: {activity.areaResponsable || 'Area no indicada'}{activity.requiereTicketExterno ? ' · Requiere ticket' : ''}</small></span>
-                  </label>)}</div>}
-                  {activities.length > 0 && !activities.some((activity) => (entry.requerimientos ?? []).includes(activity.idRequerimiento)) && <small className="request-person-warning">Selecciona al menos una actividad para esta área.</small>}
-                </section>
-              })}
+                    <span><strong>{item.nombre}</strong><small>{item.esVersionActual === false ? 'Version historica asignada' : automatic ? 'Asignacion automatica' : required ? 'Seleccionado por dependencia de otro flujo' : `${item.pasos?.length ?? 0} actividad(es) en este flujo`}</small></span>
+                  </label> })}</div>
+                </section>)}
             </div>}
             {entry.error && <small className="request-person-error">{entry.error}</small>}
           </article>
@@ -193,8 +237,32 @@ function sourceItemKey(item, usesHtis) {
     : String(item.idPersona ?? '')
 }
 
-function activitiesForArea(activityFlows, idArea) {
-  return activityFlows.find((area) => Number(area.idArea) === Number(idArea))?.pasos ?? []
+function flowsForArea(activityFlows, idArea, selectedFlowIds = []) {
+  const selected = new Set(selectedFlowIds ?? [])
+  const flows = activityFlows.find((area) => Number(area.idArea) === Number(idArea))?.flujos ?? []
+  const selectedLogicalFlows = new Set(flows
+    .filter((flow) => selected.has(flow.idActividadFlujoVersion))
+    .map((flow) => flow.idActividadFlujo))
+  return flows.filter((flow) => selected.has(flow.idActividadFlujoVersion)
+    || (flow.esVersionActual !== false && !selectedLogicalFlows.has(flow.idActividadFlujo)))
+}
+
+function availableFlowGroups(activityFlows, selectedFlowIds, typeCode) {
+  return activityFlows
+    .map((area) => ({
+      area,
+      flows: flowsForArea(activityFlows, area.idArea, selectedFlowIds)
+        .filter((flow) => activityAppliesToType(flow, typeCode)),
+    }))
+    .filter((group) => group.flows.length > 0)
+}
+
+function automaticFlowIds(activityFlows, typeCode) {
+  const automatic = activityFlows
+    .flatMap((area) => area.flujos ?? [])
+    .filter((flow) => flow.esVersionActual !== false && activityIsAutomaticForType(flow, typeCode))
+    .map((flow) => flow.idActividadFlujoVersion)
+  return includeRequiredFlowVersions(automatic, activityFlows)
 }
 
 function editingIdMessage(existingPeople) {

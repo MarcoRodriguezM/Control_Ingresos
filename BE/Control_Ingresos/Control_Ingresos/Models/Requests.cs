@@ -63,14 +63,18 @@ public sealed record AgregarPersonaSolicitudRequest(
     string? ObservacionesRevision,
     IReadOnlyCollection<int>? Areas,
     IReadOnlyCollection<RequerimientoSolicitudRequest>? Requerimientos,
+    IReadOnlyCollection<long>? Flujos,
     [Required, MaxLength(50)] string Usuario);
 
 public sealed record AgregarEmpleadoSolicitudRequest(
     [Required, MaxLength(50)] string CodigoEmpleado,
-    [Required, MinLength(1)] IReadOnlyCollection<int> Areas);
+    [Required] IReadOnlyCollection<int> Areas,
+    IReadOnlyCollection<long>? Flujos = null);
 
 public sealed record AsignarAreasPersonaSolicitudRequest(
-    [Required, MinLength(1)] IReadOnlyCollection<int> Areas);
+    [Required] IReadOnlyCollection<int> Areas,
+    IReadOnlyCollection<RequerimientoSolicitudRequest>? Requerimientos = null,
+    IReadOnlyCollection<long>? Flujos = null);
 
 public sealed record RequerimientoSolicitudRequest(
     int IdRequerimiento,
@@ -98,12 +102,19 @@ public sealed record OpcionFormulario<T>(
     string? Codigo,
     string? Nombre);
 
+public sealed record ProveedorFormularioOpcion(
+    long Id,
+    string? Codigo,
+    string? Nombre,
+    string? ContactoPrincipal,
+    string? CorreoPrincipal);
+
 public sealed record SolicitudFormularioDatos(
     IReadOnlyCollection<OpcionFormulario<short>> TiposIngreso,
     IReadOnlyCollection<OpcionFormulario<short>> EstadosSolicitud,
     IReadOnlyCollection<OpcionFormulario<int>> Areas,
     IReadOnlyCollection<OpcionFormulario<int>> Ubicaciones,
-    IReadOnlyCollection<OpcionFormulario<long>> Proveedores,
+    IReadOnlyCollection<ProveedorFormularioOpcion> Proveedores,
     IReadOnlyCollection<OpcionFormulario<string>> Usuarios);
 
 public sealed record SolicitudResumen(
@@ -238,8 +249,10 @@ public sealed record CompletarActividadRequest(
     [MaxLength(1000)] string? Comentarios);
 
 public sealed record CrearActividadTicketRequest(
-    [Required, MaxLength(100)] string Plataforma,
-    [Required, MaxLength(80)] string NumeroTicket,
+    long? IdTicketExterno,
+    IReadOnlyCollection<long>? IdsActividad,
+    [MaxLength(100)] string? Plataforma,
+    [MaxLength(80)] string? NumeroTicket,
     [MaxLength(500)] string? UrlTicket);
 
 public sealed record ActividadTicketResumen(
@@ -259,6 +272,7 @@ public sealed record TicketSolicitudResumen(
     string? AreaResponsable,
     bool EsEstadoFinal,
     ActividadTicketResumen? Ticket,
+    IReadOnlyCollection<ActividadTicketResumen> Tickets,
     long? IdSolicitudPersona);
 
 public sealed record DecidirActividadRequest(
@@ -266,35 +280,68 @@ public sealed record DecidirActividadRequest(
     [MaxLength(1000)] string? ComentarioDecision);
 
 public sealed record ActividadFlujoPaso(
-    long IdConfigReqArea,
-    int Orden,
+    long IdActividadFlujoPaso,
+    string? ClavePaso,
+    int OrdenVisual,
     int IdRequerimiento,
-    string? Codigo,
     string? NombreActividad,
     int IdAreaResponsable,
     string? AreaResponsable,
     bool RequiereTicketExterno,
     int VigenciaMeses,
-    IReadOnlyCollection<string> TiposIngreso);
+    DateOnly? FechaInicio,
+    DateOnly? FechaFin,
+    IReadOnlyCollection<long> Dependencias,
+    IReadOnlyCollection<ActividadFlujoDependenciaExterna> DependenciasExternas);
+
+public sealed record ActividadFlujoDependenciaExterna(
+    long IdActividadFlujo,
+    [Required, MaxLength(80)] string ClavePaso);
+
+public sealed record ActividadFlujo(
+    long IdActividadFlujo,
+    long IdActividadFlujoVersion,
+    int NumeroVersion,
+    string? Codigo,
+    string? Nombre,
+    string? Descripcion,
+    bool EsVersionActual,
+    IReadOnlyCollection<string> TiposIngreso,
+    IReadOnlyCollection<string> TiposIngresoAutomaticos,
+    IReadOnlyCollection<ActividadFlujoPaso> Pasos);
 
 public sealed record ActividadFlujoArea(
     int IdArea,
     string? Codigo,
     string? Nombre,
-    IReadOnlyCollection<ActividadFlujoPaso> Pasos);
+    IReadOnlyCollection<ActividadFlujo> Flujos);
 
 public sealed record ActividadFlujoConfiguracion(
     IReadOnlyCollection<ActividadFlujoArea> Areas);
 
 public sealed record GuardarActividadFlujoPasoRequest(
+    [Required, MaxLength(80)] string ClavePaso,
+    int? IdRequerimiento,
     [Required, MaxLength(150)] string NombreActividad,
     int IdAreaResponsable,
     bool RequiereTicketExterno,
     [Range(1, 1200)] int VigenciaMeses = 24,
-    IReadOnlyCollection<string>? TiposIngreso = null);
+    DateOnly? FechaInicio = null,
+    DateOnly? FechaFin = null,
+    IReadOnlyCollection<string>? Dependencias = null,
+    IReadOnlyCollection<ActividadFlujoDependenciaExterna>? DependenciasExternas = null);
 
 public sealed record GuardarActividadFlujoRequest(
+    [Required, MaxLength(150)] string Nombre,
+    [MaxLength(40)] string? Codigo,
+    [MaxLength(500)] string? Descripcion,
+    IReadOnlyCollection<string>? TiposIngreso,
+    IReadOnlyCollection<string>? TiposIngresoAutomaticos,
     [Required] IReadOnlyCollection<GuardarActividadFlujoPasoRequest> Pasos);
+
+public sealed record ActividadFlujoGuardadoResponse(
+    long IdActividadFlujo,
+    long IdActividadFlujoVersion);
 
 public sealed record SolicitudDetalle(
     long IdSolicitud,
@@ -331,7 +378,9 @@ public sealed record PersonaSolicitudDetalle(
     int AreasRechazadas,
     string? DetalleRechazos,
     string? CodigoEmpleadoHtis,
-    IReadOnlyCollection<int>? Areas = null);
+    IReadOnlyCollection<int>? Areas = null,
+    IReadOnlyCollection<int>? Requerimientos = null,
+    IReadOnlyCollection<long>? Flujos = null);
 
 
 public sealed record PersonaResumen(

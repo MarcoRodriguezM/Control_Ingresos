@@ -1,4 +1,5 @@
 using Control_Ingresos.Data;
+using Control_Ingresos.Integrations.Freshservice;
 using Control_Ingresos.Models;
 using Control_Ingresos.Services;
 using Microsoft.AspNetCore.Authentication;
@@ -22,10 +23,17 @@ builder.Services.AddScoped<IEmpleadoSingularRepository, EmpleadoSingularReposito
 builder.Services.AddScoped<IActivityWorkflowRepository, ActivityWorkflowRepository>();
 builder.Services.AddSingleton<ApplicationSession>();
 builder.Services.AddSingleton<ICredentialEmailSender, SmtpCredentialEmailSender>();
+builder.Services.Configure<FreshserviceOptions>(
+    builder.Configuration.GetSection(FreshserviceOptions.SectionName));
+builder.Services.AddHttpClient<IFreshserviceReadOnlyClient, FreshserviceReadOnlyClient>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
 
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<HtisExceptionHandler>();
 builder.Services.AddExceptionHandler<SingularExceptionHandler>();
+builder.Services.AddExceptionHandler<FreshserviceExceptionHandler>();
 builder.Services.AddExceptionHandler<SqlExceptionHandler>();
 
 builder.Services
@@ -185,6 +193,9 @@ static bool EsRutaPermitidaParaProveedor(HttpRequest request)
             || request.Path.Equals("/api/personas/fotografia", StringComparison.OrdinalIgnoreCase)
             || request.Path.StartsWithSegments("/api/proveedores/solicitudes", StringComparison.OrdinalIgnoreCase);
     }
+
+    if (HttpMethods.IsDelete(request.Method))
+        return request.Path.StartsWithSegments("/api/proveedores/solicitudes", StringComparison.OrdinalIgnoreCase);
 
     if (!HttpMethods.IsGet(request.Method)) return false;
 

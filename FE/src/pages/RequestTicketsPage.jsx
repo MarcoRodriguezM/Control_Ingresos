@@ -11,7 +11,7 @@ export function RequestTicketsPage({ onBack }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [selected, setSelected] = useState(null)
-  const [form, setForm] = useState({ plataforma: '', numeroTicket: '', urlTicket: '' })
+  const [form, setForm] = useState({ idTicketExterno: '', plataforma: '', numeroTicket: '', urlTicket: '', idsActividad: [] })
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -25,11 +25,13 @@ export function RequestTicketsPage({ onBack }) {
 
   async function saveTicket(event) {
     event.preventDefault()
-    if (!selected || !form.plataforma.trim() || !form.numeroTicket.trim()) return
+    if (!selected || (!form.idTicketExterno && (!form.plataforma.trim() || !form.numeroTicket.trim()))) return
     setSaving(true)
     setError('')
     try {
       await controlIngresosApi.crearTicketActividad(selected.idActividad, {
+        idTicketExterno: form.idTicketExterno ? Number(form.idTicketExterno) : null,
+        idsActividad: form.idsActividad,
         plataforma: form.plataforma.trim(),
         numeroTicket: form.numeroTicket.trim(),
         urlTicket: form.urlTicket.trim() || null,
@@ -44,7 +46,8 @@ export function RequestTicketsPage({ onBack }) {
   }
 
   const visibleItems = personId ? items.filter((item) => String(item.idSolicitudPersona) === personId) : items
-  const pending = visibleItems.filter((item) => !item.ticket && !item.esEstadoFinal && (!item.fechaFin || new Date(`${item.fechaFin.slice(0, 10)}T23:59:59`) >= new Date())).length
+  const existingTickets = [...new Map(items.flatMap((item) => item.tickets ?? (item.ticket ? [item.ticket] : [])).map((ticket) => [ticket.idActividadTicket, ticket])).values()]
+  const pending = visibleItems.filter((item) => (item.tickets?.length ?? (item.ticket ? 1 : 0)) === 0 && !item.esEstadoFinal && (!item.fechaFin || new Date(`${item.fechaFin.slice(0, 10)}T23:59:59`) >= new Date())).length
 
   return <div className="request-tickets-page">
     <div className="page-heading request-tickets-heading">
@@ -58,13 +61,14 @@ export function RequestTicketsPage({ onBack }) {
         ? <p className="activity-empty">Esta solicitud no tiene actividades que requieran ticket. Las actividades aparecen despues de asignar las personas y enviar la solicitud.</p>
         : visibleItems.map((item) => {
           const expired = item.fechaFin && new Date(`${item.fechaFin.slice(0, 10)}T23:59:59`) < new Date()
+          const activityTickets = item.tickets ?? (item.ticket ? [item.ticket] : [])
           return <article className="request-ticket-row" key={item.idActividad}>
             <div><small>{item.persona || 'Persona no indicada'} · {item.areaResponsable || 'Area no indicada'}</small><h2>{item.nombreActividad || `Actividad #${item.idActividad}`}</h2>
-              {item.ticket ? <p>Ticket registrado: <strong>{item.ticket.plataforma} · {item.ticket.numeroTicket}</strong>{item.ticket.urlTicket?.startsWith('https://') && <> · <a href={item.ticket.urlTicket} target="_blank" rel="noopener noreferrer">Abrir enlace</a></>}</p>
+              {activityTickets.length ? <div className="request-ticket-links">{activityTickets.map((ticket) => <p key={ticket.idActividadTicket}>Ticket registrado: <strong>{ticket.plataforma} · {ticket.numeroTicket}</strong>{ticket.urlTicket?.startsWith('https://') && <> · <a href={ticket.urlTicket} target="_blank" rel="noopener noreferrer">Abrir enlace</a></>}</p>)}</div>
                 : <p>{item.esEstadoFinal ? 'Actividad finalizada sin ticket.' : expired ? 'La solicitud ya vencio.' : 'Esta actividad requiere un ticket antes de completarse.'}</p>}
             </div>
-            <span className={`access-status ${item.ticket ? 'approved' : 'pending'}`}>{item.ticket ? 'Registrado' : 'Pendiente'}</span>
-            {!item.ticket && !item.esEstadoFinal && !expired && <button type="button" className="primary-button" onClick={() => { setError(''); setForm({ plataforma: '', numeroTicket: '', urlTicket: '' }); setSelected(item) }}>Creacion de ticket</button>}
+            <span className={`access-status ${activityTickets.length ? 'approved' : 'pending'}`}>{activityTickets.length ? `${activityTickets.length} registrado(s)` : 'Pendiente'}</span>
+            {!item.esEstadoFinal && !expired && <button type="button" className="primary-button" onClick={() => { setError(''); setForm({ idTicketExterno: '', plataforma: '', numeroTicket: '', urlTicket: '', idsActividad: [item.idActividad] }); setSelected(item) }}>{activityTickets.length ? 'Agregar otro ticket' : 'Creacion de ticket'}</button>}
           </article>
         })}
     </section>
@@ -74,9 +78,11 @@ export function RequestTicketsPage({ onBack }) {
         <h2 id="ticket-title" className="approval-modal-title">Creacion de ticket</h2>
         <div className="decision-copy"><div><h3>{selected.nombreActividad}</h3><p>{selected.persona || 'Persona no indicada'}</p></div></div>
         <form className="decision-form activity-ticket-form" onSubmit={saveTicket}>
-          <label>Plataforma<input required maxLength="100" value={form.plataforma} onChange={(event) => setForm({ ...form, plataforma: event.target.value })} placeholder="Ej. Mesa de ayuda" autoFocus /></label>
-          <label>Numero de ticket<input required maxLength="80" value={form.numeroTicket} onChange={(event) => setForm({ ...form, numeroTicket: event.target.value })} placeholder="Ej. INC-12345" /></label>
-          <label>Enlace del ticket (opcional)<input type="url" maxLength="500" value={form.urlTicket} onChange={(event) => setForm({ ...form, urlTicket: event.target.value })} placeholder="https://..." /></label>
+          {existingTickets.length > 0 && <label>Usar ticket existente<select value={form.idTicketExterno} onChange={(event) => setForm({ ...form, idTicketExterno: event.target.value })}><option value="">Crear un ticket nuevo</option>{existingTickets.map((ticket) => <option key={ticket.idActividadTicket} value={ticket.idActividadTicket}>{ticket.plataforma} · {ticket.numeroTicket}</option>)}</select></label>}
+          <label>Plataforma<input required={!form.idTicketExterno} disabled={Boolean(form.idTicketExterno)} maxLength="100" value={form.plataforma} onChange={(event) => setForm({ ...form, plataforma: event.target.value })} placeholder="Ej. Mesa de ayuda" autoFocus /></label>
+          <label>Numero de ticket<input required={!form.idTicketExterno} disabled={Boolean(form.idTicketExterno)} maxLength="80" value={form.numeroTicket} onChange={(event) => setForm({ ...form, numeroTicket: event.target.value })} placeholder="Ej. INC-12345" /></label>
+          <label>Enlace del ticket (opcional)<input type="url" disabled={Boolean(form.idTicketExterno)} maxLength="500" value={form.urlTicket} onChange={(event) => setForm({ ...form, urlTicket: event.target.value })} placeholder="https://..." /></label>
+          <fieldset className="workflow-entry-types"><legend>Actividades cubiertas por este ticket</legend>{items.filter((item) => !item.esEstadoFinal).map((item) => <label key={item.idActividad}><input type="checkbox" checked={form.idsActividad.includes(item.idActividad)} disabled={item.idActividad === selected.idActividad} onChange={(event) => setForm({ ...form, idsActividad: event.target.checked ? [...form.idsActividad, item.idActividad] : form.idsActividad.filter((idActividad) => idActividad !== item.idActividad) })} />{item.persona || 'Persona no indicada'} · {item.nombreActividad}</label>)}<small>Un mismo ticket puede respaldar actividades de varias personas de esta solicitud.</small></fieldset>
           {error && <p className="activity-ticket-error" role="alert">{error}</p>}
           <div className="action-row"><button type="button" className="secondary-button" disabled={saving} onClick={() => setSelected(null)}>Cancelar</button><button type="submit" className="primary-button teal" disabled={saving}>{saving ? 'Guardando…' : 'Guardar ticket'}</button></div>
         </form>

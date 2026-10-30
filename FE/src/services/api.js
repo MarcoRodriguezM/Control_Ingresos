@@ -88,6 +88,17 @@ export const controlIngresosApi = {
     body: JSON.stringify(usuario),
   }),
   listarCatalogo: (catalogo) => request(`/api/catalogos/${encodeURIComponent(catalogo)}`),
+  listarCatalogoFreshservice: ({ page = 1, perPage = 30, workspaceId = null } = {}) => {
+    const params = new URLSearchParams({ page: String(page), perPage: String(perPage) })
+    if (workspaceId) params.set('workspaceId', String(workspaceId))
+    return request(`/api/freshservice/catalogo?${params}`)
+  },
+  obtenerServicioFreshservice: (displayId, workspaceId = null) => {
+    const params = new URLSearchParams()
+    if (workspaceId) params.set('workspaceId', String(workspaceId))
+    const query = params.size ? `?${params}` : ''
+    return request(`/api/freshservice/catalogo/${encodeURIComponent(displayId)}${query}`)
+  },
   crearProveedor: (proveedor) => request('/api/proveedores', {
     method: 'POST',
     body: JSON.stringify(proveedor),
@@ -99,6 +110,12 @@ export const controlIngresosApi = {
   agregarPersonaSolicitudProveedor: (idSolicitud, persona) => request(`/api/proveedores/solicitudes/${idSolicitud}/personas`, {
     method: 'POST',
     body: JSON.stringify(persona),
+  }),
+  eliminarPersonaSolicitudProveedor: (idSolicitud, idSolicitudPersona) => request(`/api/proveedores/solicitudes/${idSolicitud}/personas/${idSolicitudPersona}`, {
+    method: 'DELETE',
+  }),
+  enviarSolicitudProveedor: (idSolicitud) => request(`/api/proveedores/solicitudes/${idSolicitud}/enviar`, {
+    method: 'POST',
   }),
 
   crearPersona: (persona) => request('/api/personas', {
@@ -146,8 +163,8 @@ export const controlIngresosApi = {
   listarMisActividades: () => request('/api/actividades/mias'),
   listarActividades: () => request('/api/actividades'),
   obtenerFlujosActividades: () => request('/api/actividad-flujos'),
-  guardarFlujoActividades: (idArea, flujo) => request(`/api/actividad-flujos/${idArea}`, {
-    method: 'PUT',
+  guardarFlujoActividades: (idArea, idFlujo, flujo) => request(`/api/actividad-flujos/${idArea}${idFlujo ? `/${idFlujo}` : ''}`, {
+    method: idFlujo ? 'PUT' : 'POST',
     body: JSON.stringify(flujo),
   }),
   decidirAprobacion: (idSolicitudPersonaArea, decision) => request(`/api/aprobaciones/${idSolicitudPersonaArea}/decision`, {
@@ -198,9 +215,9 @@ export const controlIngresosApi = {
       method: 'POST',
       body: JSON.stringify(persona),
     }),
-  asignarAreasPersonaSolicitud: (idSolicitud, idSolicitudPersona, areas) =>
+  asignarAreasPersonaSolicitud: (idSolicitud, idSolicitudPersona, areas, requerimientos = [], flujos = []) =>
     request(`/api/solicitudes/${idSolicitud}/personas/${idSolicitudPersona}/areas`, {
       method: 'PUT',
-      body: JSON.stringify({ areas }),
+      body: JSON.stringify({ areas, requerimientos, flujos }),
     }),
 }

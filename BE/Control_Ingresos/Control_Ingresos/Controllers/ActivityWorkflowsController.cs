@@ -17,17 +17,31 @@ public sealed class ActivityWorkflowsController(IActivityWorkflowRepository repo
     public async Task<ActionResult<ActividadFlujoConfiguracion>> Obtener(CancellationToken cancellationToken) =>
         Ok(await repository.ObtenerAsync(cancellationToken));
 
-    [HttpPut("{idAreaAcceso:int}")]
+    [HttpPost("{idAreaAcceso:int}")]
     [Authorize(Roles = "Administrador")]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<IActionResult> Guardar(
+    [ProducesResponseType<ActividadFlujoGuardadoResponse>(StatusCodes.Status201Created)]
+    public async Task<ActionResult<ActividadFlujoGuardadoResponse>> Crear(
         int idAreaAcceso,
         GuardarActividadFlujoRequest request,
         CancellationToken cancellationToken)
     {
         var usuario = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrWhiteSpace(usuario)) return Unauthorized();
-        await repository.GuardarAsync(idAreaAcceso, request, usuario, cancellationToken);
-        return NoContent();
+        var resultado = await repository.GuardarAsync(idAreaAcceso, null, request, usuario, cancellationToken);
+        return CreatedAtAction(nameof(Obtener), resultado);
+    }
+
+    [HttpPut("{idAreaAcceso:int}/{idActividadFlujo:long}")]
+    [Authorize(Roles = "Administrador")]
+    [ProducesResponseType<ActividadFlujoGuardadoResponse>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<ActividadFlujoGuardadoResponse>> Actualizar(
+        int idAreaAcceso,
+        long idActividadFlujo,
+        GuardarActividadFlujoRequest request,
+        CancellationToken cancellationToken)
+    {
+        var usuario = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(usuario)) return Unauthorized();
+        return Ok(await repository.GuardarAsync(idAreaAcceso, idActividadFlujo, request, usuario, cancellationToken));
     }
 }

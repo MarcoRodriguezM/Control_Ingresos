@@ -2,6 +2,7 @@ using Control_Ingresos.Data;
 using Control_Ingresos.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Data.SqlClient;
 using System.Security.Claims;
 
 namespace Control_Ingresos.Controllers;
@@ -132,14 +133,29 @@ public sealed class PersonasController(
             {
                 Usuario = usuario,
                 IdProveedor = proveedor.IdProveedor,
-                EmpresaTexto = proveedor.NombreLegal
+                EmpresaTexto = proveedor.NombreLegal,
+                IdEstadoGeneral = null
             };
         }
         else
         {
-            request = request with { Usuario = usuario };
+            request = request with { Usuario = usuario, IdEstadoGeneral = null };
         }
-        var id = await repository.CrearPersonaAsync(request, cancellationToken);
+
+        long id;
+        try
+        {
+            id = await repository.CrearPersonaAsync(request, cancellationToken);
+        }
+        catch (SqlException exception) when (exception.Number == 50115)
+        {
+            return Conflict(new ProblemDetails
+            {
+                Status = StatusCodes.Status409Conflict,
+                Title = "La persona ya está registrada",
+                Detail = "Ya existe una persona con ese tipo y número de documento."
+            });
+        }
 
         return Created(
             $"/api/personas/{id}",

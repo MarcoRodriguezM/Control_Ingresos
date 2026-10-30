@@ -273,7 +273,14 @@ public sealed class SolicitudesController(
         var existing = await repository.ObtenerSolicitudAsync(id, cancellationToken);
         if (existing is null) return NotFound();
         if (!User.IsInRole("Administrador") && existing.IdUsuarioSolicitante != usuario) return Forbid();
-        await repository.AsignarAreasPersonaAsync(id, idSolicitudPersona, request.Areas, usuario, cancellationToken);
+        await repository.AsignarAreasPersonaAsync(
+            id,
+            idSolicitudPersona,
+            request.Areas,
+            request.Requerimientos,
+            request.Flujos,
+            usuario,
+            cancellationToken);
         return NoContent();
     }
 

@@ -14,12 +14,11 @@ const initialForm = {
   idProveedor: '',
   empresaTexto: '',
   informacionAdicional: '',
-  idEstadoGeneral: '',
 }
 
 export function PersonFormPage({ session, providers = [], providerMode = false, providerCompany = null, onCancel, onCreated, onError }) {
   const [form, setForm] = useState(initialForm)
-  const [catalogs, setCatalogs] = useState({ documentTypes: [], statuses: [] })
+  const [documentTypes, setDocumentTypes] = useState([])
   const [photograph, setPhotograph] = useState(null)
   const [photographPreview, setPhotographPreview] = useState('')
   const [processingPhotograph, setProcessingPhotograph] = useState(false)
@@ -39,18 +38,13 @@ export function PersonFormPage({ session, providers = [], providerMode = false, 
   useEffect(() => {
     let active = true
 
-    Promise.all([
-      controlIngresosApi.listarCatalogo('tipos-documento'),
-      controlIngresosApi.listarCatalogo('estados-generales'),
-    ])
-      .then(([documentTypes, statuses]) => {
+    controlIngresosApi.listarCatalogo('tipos-documento')
+      .then((items) => {
         if (!active) return
-        const activeStatus = statuses.find((item) => item.codigo?.toUpperCase() === 'ACTIVO') ?? statuses[0]
-        setCatalogs({ documentTypes, statuses })
+        setDocumentTypes(items)
         setForm((current) => ({
           ...current,
-          idTipoDocumento: current.idTipoDocumento || String(documentTypes[0]?.id ?? ''),
-          idEstadoGeneral: current.idEstadoGeneral || String(activeStatus?.id ?? ''),
+          idTipoDocumento: current.idTipoDocumento || String(items[0]?.id ?? ''),
         }))
       })
       .catch((error) => active && onError(error.message))
@@ -124,7 +118,7 @@ export function PersonFormPage({ session, providers = [], providerMode = false, 
         idProveedor: numberOrNull(form.idProveedor),
         empresaTexto: textOrNull(form.empresaTexto),
         informacionAdicional: textOrNull(form.informacionAdicional),
-        idEstadoGeneral: numberOrNull(form.idEstadoGeneral),
+        idEstadoGeneral: null,
         usuario: session.idUsuario,
       })
 
@@ -145,7 +139,7 @@ export function PersonFormPage({ session, providers = [], providerMode = false, 
       <div className="section-heading"><h2>Información personal</h2><p>Los campos marcados con * son obligatorios.</p></div>
       <div className="form-grid">
         <Field label="Tipo de documento">
-          <Select name="idTipoDocumento" value={form.idTipoDocumento} onChange={change} items={catalogs.documentTypes} loading={loading} />
+          <Select name="idTipoDocumento" value={form.idTipoDocumento} onChange={change} items={documentTypes} loading={loading} />
         </Field>
         <Field label="Número de documento" required>
           <input name="numeroDocumento" maxLength="60" value={form.numeroDocumento} onChange={change} placeholder="Número de identidad, pasaporte u otro" required />
@@ -161,9 +155,6 @@ export function PersonFormPage({ session, providers = [], providerMode = false, 
         </Field>
         <Field label="Cargo o función">
           <input name="cargoFuncion" maxLength="150" value={form.cargoFuncion} onChange={change} placeholder="Ej. Técnico electricista" />
-        </Field>
-        <Field label="Estado">
-          <Select name="idEstadoGeneral" value={form.idEstadoGeneral} onChange={change} items={catalogs.statuses} loading={loading} />
         </Field>
       </div>
 
