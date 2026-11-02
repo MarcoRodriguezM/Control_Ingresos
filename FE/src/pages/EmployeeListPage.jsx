@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../components/Icon'
+import { PhotoPreviewModal } from '../components/PhotoPreviewModal'
 import { formatDateTime, initials } from '../utils/formatters'
 
 export function EmployeeListPage({ items, statuses = [], selected, loading, photographUrl, photographLoading, singular, singularLoading, singularError, mobileDetailOpen = false, onSelect, onBack, onQr }) {
@@ -11,6 +12,7 @@ export function EmployeeListPage({ items, statuses = [], selected, loading, phot
   const [exitDateFrom, setExitDateFrom] = useState('')
   const [exitDateTo, setExitDateTo] = useState('')
   const [filtersOpen, setFiltersOpen] = useState(false)
+  const [previewPhoto, setPreviewPhoto] = useState(null)
   const listScrollPosition = useRef(0)
   const previousDetailState = useRef(mobileDetailOpen)
   const statusOptions = statuses
@@ -53,6 +55,7 @@ export function EmployeeListPage({ items, statuses = [], selected, loading, phot
   }, [mobileDetailOpen])
 
   function selectEmployee(employee) {
+    setPreviewPhoto(null)
     if (isMobileDirectory()) listScrollPosition.current = window.scrollY
     onSelect(employee)
   }
@@ -110,7 +113,7 @@ export function EmployeeListPage({ items, statuses = [], selected, loading, phot
         {!loading && !selected && <div className="person-placeholder">Selecciona un empleado para consultar su información.</div>}
         {selected && <>
           <div className="person-profile person-profile-with-action employee-profile">
-            <EmployeeAvatar employee={selected} photographUrl={photographUrl} loading={photographLoading} />
+            <EmployeeAvatar employee={selected} photographUrl={photographUrl} loading={photographLoading} onPreview={() => setPreviewPhoto({ src: photographUrl, name: selected.nombreCompleto || 'empleado', id: selected.codigoEmpleado })} />
             <div><div className="profile-title"><h2>{selected.nombreCompleto || 'Empleado sin nombre'}</h2><span className="status-badge">{selected.descripcionStatus || selected.codigoStatus || 'Sin estado'}</span></div><p>{selected.cargoNivel || 'Cargo no indicado'} · {selected.departamento || 'Departamento no indicado'}</p>{photographLoading && <span className="employee-photo-state">Cargando fotografía…</span>}</div>
             <button type="button" className="primary-button person-qr-button" onClick={() => onQr(selected.codigoEmpleado)} disabled={!selected.codigoEmpleado}><Icon name="qr" />Ver QR</button>
           </div>
@@ -167,17 +170,19 @@ export function EmployeeListPage({ items, statuses = [], selected, loading, phot
         </>}
       </section>
     </div>
+    {previewPhoto && selected && previewPhoto.id === selected.codigoEmpleado && <PhotoPreviewModal src={previewPhoto.src} name={previewPhoto.name} onClose={() => setPreviewPhoto(null)} />}
   </div>
 }
 
-function EmployeeAvatar({ employee, photographUrl, loading }) {
+function EmployeeAvatar({ employee, photographUrl, loading, onPreview }) {
   const [failedUrl, setFailedUrl] = useState('')
   const showPhotograph = photographUrl && failedUrl !== photographUrl
 
-  return <span className={`person-avatar large employee-avatar ${loading ? 'loading' : ''}`}>
+  const Avatar = showPhotograph ? 'button' : 'span'
+  return <Avatar type={showPhotograph ? 'button' : undefined} className={`person-avatar large employee-avatar ${loading ? 'loading' : ''} ${showPhotograph ? 'photo-preview-trigger' : ''}`} onClick={showPhotograph ? onPreview : undefined} aria-label={showPhotograph ? `Ampliar fotografia de ${employee.nombreCompleto || 'empleado'}` : undefined}>
     <span>{initials(employee.nombreCompleto)}</span>
     {showPhotograph && <img src={photographUrl} alt={`Fotografía de ${employee.nombreCompleto || 'empleado'}`} onError={() => setFailedUrl(photographUrl)} />}
-  </span>
+  </Avatar>
 }
 
 function DateRangeFilter({ label, from, to, onFromChange, onToChange }) {

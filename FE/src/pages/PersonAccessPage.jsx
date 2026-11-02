@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../components/Icon'
+import { PhotoPreviewModal } from '../components/PhotoPreviewModal'
 import { accessStatusClass, formatDate, formatDateTime, initials } from '../utils/formatters'
 import { preparePhotograph } from '../utils/photographs'
 import { API_URL } from '../services/api'
@@ -8,6 +9,7 @@ export function PersonAccessPage({ items, selected, loading, mobileDetailOpen = 
   const [query, setQuery] = useState('')
   const [updatingPhotograph, setUpdatingPhotograph] = useState(false)
   const [photographError, setPhotographError] = useState('')
+  const [previewPhoto, setPreviewPhoto] = useState(null)
   const listScrollPosition = useRef(0)
   const previousDetailState = useRef(mobileDetailOpen)
   const normalizedQuery = query.trim().toLowerCase()
@@ -32,6 +34,7 @@ export function PersonAccessPage({ items, selected, loading, mobileDetailOpen = 
   }, [mobileDetailOpen])
 
   function selectPerson(idPersona) {
+    setPreviewPhoto(null)
     if (isMobileDirectory()) listScrollPosition.current = window.scrollY
     onSelect(idPersona)
   }
@@ -79,7 +82,7 @@ export function PersonAccessPage({ items, selected, loading, mobileDetailOpen = 
         {loading && !selected && <div className="person-placeholder">Cargando información…</div>}
         {!loading && !selected && <div className="person-placeholder">Selecciona una persona para consultar sus accesos.</div>}
         {selected && <>
-          <div className="person-profile person-profile-with-action"><div className="person-photo-control"><PersonAvatar person={selected} large /><label className="person-photo-button" title={selected.fotografiaUrl ? 'Cambiar fotografía' : 'Agregar fotografía'}><Icon name="file" /><input type="file" accept="image/jpeg,image/png,image/webp" onChange={changePhotograph} disabled={updatingPhotograph} /></label></div><div><div className="profile-title"><h2>{selected.nombreCompleto}</h2><span className="status-badge success">{selected.estado || 'Sin estado'}</span></div><p>{selected.cargoFuncion || 'Cargo no indicado'} · {selected.empresa || 'Empresa no indicada'}</p><span className={`person-photo-help ${photographError ? 'error' : ''}`}>{photographError || (updatingPhotograph ? 'Procesando fotografía…' : selected.fotografiaUrl ? 'Haz clic en el ícono para cambiar la foto' : 'Haz clic en el ícono para agregar una foto')}</span></div><button type="button" className="primary-button person-qr-button" onClick={() => onQr(selected.idPersona)}><Icon name="qr" />Ver QR</button></div>
+          <div className="person-profile person-profile-with-action"><div className="person-photo-control"><PersonAvatar person={selected} large onPreview={(src) => setPreviewPhoto({ src, name: selected.nombreCompleto || 'la persona', id: selected.idPersona })} /><label className="person-photo-button" title={selected.fotografiaUrl ? 'Cambiar fotografía' : 'Agregar fotografía'}><Icon name="file" /><input type="file" accept="image/jpeg,image/png,image/webp" onChange={changePhotograph} disabled={updatingPhotograph} /></label></div><div><div className="profile-title"><h2>{selected.nombreCompleto}</h2><span className="status-badge success">{selected.estado || 'Sin estado'}</span></div><p>{selected.cargoFuncion || 'Cargo no indicado'} · {selected.empresa || 'Empresa no indicada'}</p><span className={`person-photo-help ${photographError ? 'error' : ''}`}>{photographError || (updatingPhotograph ? 'Procesando fotografía…' : selected.fotografiaUrl ? 'Haz clic en el ícono para cambiar la foto' : 'Haz clic en el ícono para agregar una foto')}</span></div><button type="button" className="primary-button person-qr-button" onClick={() => onQr(selected.idPersona)}><Icon name="qr" />Ver QR</button></div>
           <div className="person-data-grid"><InfoValue label="Documento" value={selected.numeroDocumento} /><InfoValue label="Teléfono" value={selected.telefono} /><InfoValue label="Correo" value={selected.correo} /><InfoValue label="Accesos vigentes" value={String(activeAccesses)} /></div>
           <div className="access-heading"><div><h3>Accesos asignados</h3><p>El estado se calcula con la vigencia actual de cada solicitud.</p></div><span>{activeAccesses} vigentes · {assignedAccesses} asignados</span></div>
           <div className="access-list">
@@ -89,6 +92,7 @@ export function PersonAccessPage({ items, selected, loading, mobileDetailOpen = 
         </>}
       </section>
     </div>
+    {previewPhoto && selected && previewPhoto.id === selected.idPersona && <PhotoPreviewModal src={previewPhoto.src} name={previewPhoto.name} onClose={() => setPreviewPhoto(null)} />}
   </div>
 }
 
@@ -96,19 +100,20 @@ function InfoValue({ label, value }) {
   return <div className="info-value"><span>{label}</span><strong>{value || '—'}</strong></div>
 }
 
-function PersonAvatar({ person, large = false }) {
+function PersonAvatar({ person, large = false, onPreview }) {
   const photographUrl = resolvePhotographUrl(person.fotografiaUrl)
   const [failedUrl, setFailedUrl] = useState('')
   const showPhotograph = photographUrl && failedUrl !== photographUrl
 
-  return <div className={`person-avatar ${large ? 'large' : ''}`}>
+  const Avatar = showPhotograph ? 'button' : 'div'
+  return <Avatar type={showPhotograph ? 'button' : undefined} className={`person-avatar ${large ? 'large' : ''} ${showPhotograph ? 'photo-preview-trigger' : ''}`} onClick={showPhotograph ? () => onPreview(photographUrl) : undefined} aria-label={showPhotograph ? `Ampliar fotografia de ${person.nombreCompleto || 'la persona'}` : undefined}>
     <span>{initials(person.nombreCompleto)}</span>
     {showPhotograph && <img
       src={photographUrl}
       alt={`Fotografía de ${person.nombreCompleto || 'la persona'}`}
       onError={() => setFailedUrl(photographUrl)}
     />}
-  </div>
+  </Avatar>
 }
 
 function resolvePhotographUrl(value) {
