@@ -177,6 +177,89 @@ public sealed class ActivityWorkflowRepository(IConfiguration configuration) : I
         }
     }
 
+    public async Task<bool> EliminarAsync(int idAreaAcceso, long idActividadFlujo, string usuario, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        try
+        {
+            await using var command = new SqlCommand("""
+            DECLARE @Inactivo SMALLINT =
+                (SELECT TOP (1) IdEstadoGeneral FROM dbo.Cat_Estado_General WHERE Codigo = 'INACTIVO');
+            DECLARE @Resultado TINYINT;
+
+            IF NOT EXISTS
+            (
+                SELECT 1
+                FROM dbo.Actividad_Flujo AS flujo WITH (UPDLOCK, HOLDLOCK)
+                LEFT JOIN dbo.Cat_Estado_General AS estado ON estado.IdEstadoGeneral = flujo.IdEstadoGeneral
+                WHERE flujo.IdActividadFlujo = @IdActividadFlujo
+                  AND flujo.IdAreaAcceso = @IdAreaAcceso
+                  AND ISNULL(estado.EsActivo, 1) = 1
+            ) SET @Resultado = 0;
+            ELSE IF EXISTS
+            (
+                SELECT 1
+                FROM dbo.Solicitud_Persona_Area_Flujo AS asignacion
+                LEFT JOIN dbo.Actividad_Flujo_Version AS version
+                    ON version.IdActividadFlujoVersion = asignacion.IdActividadFlujoVersion
+                WHERE asignacion.IdActividadFlujo = @IdActividadFlujo
+                   OR version.IdActividadFlujo = @IdActividadFlujo
+            ) SET @Resultado = 2;
+            ELSE IF EXISTS
+            (
+                SELECT 1
+                FROM dbo.Actividad_Flujo_Paso_Dependencia_Externa AS dependencia
+                INNER JOIN dbo.Actividad_Flujo_Paso AS paso
+                    ON paso.IdActividadFlujoPaso = dependencia.IdActividadFlujoPaso
+                INNER JOIN dbo.Actividad_Flujo AS origen
+                    ON origen.IdActividadFlujoVersionActual = paso.IdActividadFlujoVersion
+                LEFT JOIN dbo.Cat_Estado_General AS estadoOrigen
+                    ON estadoOrigen.IdEstadoGeneral = origen.IdEstadoGeneral
+                LEFT JOIN dbo.Cat_Estado_General AS estadoDependencia
+                    ON estadoDependencia.IdEstadoGeneral = dependencia.IdEstadoGeneral
+                WHERE dependencia.IdActividadFlujoRequerido = @IdActividadFlujo
+                  AND origen.IdActividadFlujo <> @IdActividadFlujo
+                  AND ISNULL(estadoOrigen.EsActivo, 1) = 1
+                  AND ISNULL(estadoDependencia.EsActivo, 1) = 1
+            ) SET @Resultado = 3;
+            ELSE IF @Inactivo IS NULL SET @Resultado = 4;
+            ELSE
+            BEGIN
+                UPDATE dbo.Actividad_Flujo
+                   SET IdEstadoGeneral = @Inactivo,
+                       IdActividadFlujoVersionActual = NULL,
+                       FechaModificacion = SYSDATETIME(),
+                       UsuarioModificacion = @Usuario
+                 WHERE IdActividadFlujo = @IdActividadFlujo
+                   AND IdAreaAcceso = @IdAreaAcceso;
+                SET @Resultado = 1;
+            END;
+
+            SELECT @Resultado;
+            """, connection, transaction);
+            Add(command, "@IdAreaAcceso", SqlDbType.Int, idAreaAcceso);
+            Add(command, "@IdActividadFlujo", SqlDbType.BigInt, idActividadFlujo);
+            Add(command, "@Usuario", SqlDbType.VarChar, usuario, 50);
+
+            var result = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
+            await transaction.CommitAsync(cancellationToken);
+            return result switch
+            {
+                0 => false,
+                1 => true,
+                2 => throw new InvalidOperationException("No se puede eliminar el flujo porque ya esta asignado a una solicitud."),
+                3 => throw new InvalidOperationException("No se puede eliminar el flujo porque otra actividad depende de el."),
+                _ => throw new InvalidOperationException("No existe el estado general INACTIVO para eliminar el flujo."),
+            };
+        }
+        catch
+        {
+            if (transaction.Connection is not null) await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
     public async Task SincronizarActividadesAsync(
         long idSolicitud,
         long idSolicitudPersona,

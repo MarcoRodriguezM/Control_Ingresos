@@ -167,6 +167,7 @@ export const controlIngresosApi = {
     method: idFlujo ? 'PUT' : 'POST',
     body: JSON.stringify(flujo),
   }),
+  eliminarFlujoActividades: (idArea, idFlujo) => request(`/api/actividad-flujos/${idArea}/${idFlujo}`, { method: 'DELETE' }),
   decidirAprobacion: (idSolicitudPersonaArea, decision) => request(`/api/aprobaciones/${idSolicitudPersonaArea}/decision`, {
     method: 'PUT',
     body: JSON.stringify(decision),

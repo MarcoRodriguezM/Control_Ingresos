@@ -6,6 +6,7 @@ public interface IActivityWorkflowRepository
 {
     Task<ActividadFlujoConfiguracion> ObtenerAsync(CancellationToken cancellationToken);
     Task<ActividadFlujoGuardadoResponse> GuardarAsync(int idAreaAcceso, long? idActividadFlujo, GuardarActividadFlujoRequest request, string usuario, CancellationToken cancellationToken);
+    Task<bool> EliminarAsync(int idAreaAcceso, long idActividadFlujo, string usuario, CancellationToken cancellationToken);
     Task SincronizarActividadesAsync(long idSolicitud, long idSolicitudPersona, IReadOnlyCollection<long> flujos, string usuario, CancellationToken cancellationToken);
     Task ValidarActividadDesbloqueadaAsync(long idActividad, string idUsuarioResponsable, CancellationToken cancellationToken);
     Task<IReadOnlySet<long>> ObtenerAccesosBloqueadosAsync(IReadOnlyCollection<long> idsSolicitudPersonaArea, CancellationToken cancellationToken);

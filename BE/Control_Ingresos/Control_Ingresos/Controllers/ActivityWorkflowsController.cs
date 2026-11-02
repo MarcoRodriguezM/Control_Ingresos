@@ -44,4 +44,23 @@ public sealed class ActivityWorkflowsController(IActivityWorkflowRepository repo
         if (string.IsNullOrWhiteSpace(usuario)) return Unauthorized();
         return Ok(await repository.GuardarAsync(idAreaAcceso, idActividadFlujo, request, usuario, cancellationToken));
     }
+
+    [HttpDelete("{idAreaAcceso:int}/{idActividadFlujo:long}")]
+    [Authorize(Roles = "Administrador")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> Eliminar(int idAreaAcceso, long idActividadFlujo, CancellationToken cancellationToken)
+    {
+        var usuario = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(usuario)) return Unauthorized();
+        try
+        {
+            return await repository.EliminarAsync(idAreaAcceso, idActividadFlujo, usuario, cancellationToken)
+                ? NoContent()
+                : NotFound();
+        }
+        catch (InvalidOperationException error)
+        {
+            return Conflict(new ProblemDetails { Status = StatusCodes.Status409Conflict, Detail = error.Message });
+        }
+    }
 }

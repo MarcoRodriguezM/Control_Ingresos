@@ -68,6 +68,16 @@ export function confirmDeleteRequest(number) {
   })
 }
 
+export function confirmDeleteFlow(name) {
+  return confirmAction({
+    icon: 'warning',
+    title: 'Eliminar flujo',
+    text: `El flujo ${name || 'seleccionado'} dejara de estar disponible para nuevas solicitudes. Esta accion no se puede deshacer.`,
+    confirmButtonText: 'Si, eliminar flujo',
+    confirmButtonColor: '#dc2626',
+  })
+}
+
 export function confirmProviderSend(number, peopleCount) {
   return confirmAction({
     title: 'Enviar personas registradas',

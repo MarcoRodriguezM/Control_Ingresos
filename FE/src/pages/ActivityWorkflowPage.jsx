@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Icon } from '../components/Icon'
 import { controlIngresosApi } from '../services/api'
+import { confirmDeleteFlow, showSuccessAlert } from '../utils/alerts'
 import { ACTIVITY_ENTRY_TYPES } from '../utils/activityTypes'
 
 const newKey = () => `step-${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -35,6 +36,7 @@ export function ActivityWorkflowPage({ onError }) {
   const [flow, setFlow] = useState(emptyFlow())
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
@@ -202,6 +204,29 @@ export function ActivityWorkflowPage({ onError }) {
     }
   }
 
+  async function deleteFlow() {
+    if (!selectedArea || !flow.idActividadFlujo || deleting) return
+    const current = selectedArea.flujos?.find((item) => item.idActividadFlujo === flow.idActividadFlujo && item.esVersionActual !== false)
+    if (!await confirmDeleteFlow(current?.nombre || flow.nombre)) return
+
+    setDeleting(true)
+    try {
+      await controlIngresosApi.eliminarFlujoActividades(selectedArea.idArea, flow.idActividadFlujo)
+      const result = await controlIngresosApi.obtenerFlujosActividades()
+      const refreshedAreas = result.areas ?? []
+      const refreshedArea = refreshedAreas.find((area) => area.idArea === selectedArea.idArea)
+      const nextFlow = refreshedArea?.flujos?.find((item) => item.esVersionActual !== false)
+      setAreas(refreshedAreas)
+      setFlow(nextFlow ? mapFlow(nextFlow) : emptyFlow(selectedArea.idArea))
+      setSaved(false)
+      showSuccessAlert('Flujo eliminado correctamente.')
+    } catch (error) {
+      onError(error.message)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   const configuredAreas = areas.filter((area) => area.flujos?.some((item) => item.esVersionActual !== false)).length
 
   return <div className="workflow-page">
@@ -225,7 +250,10 @@ export function ActivityWorkflowPage({ onError }) {
         <section className="panel workflow-editor">
           <div className="workflow-editor-heading">
             <div><p className="eyebrow">Area de acceso</p><h2>{selectedArea?.nombre || 'Area'}</h2><p>Una persona puede recibir uno o varios flujos de esta area, pero cada flujo solo una vez.</p></div>
-            <button type="button" className="secondary-button" onClick={() => selectFlow('')}>Crear flujo</button>
+            <div className="workflow-editor-actions">
+              {flow.idActividadFlujo && <button type="button" className="secondary-button workflow-delete-button" onClick={deleteFlow} disabled={deleting || saving}>{deleting ? 'Eliminando...' : 'Eliminar flujo'}</button>}
+              <button type="button" className="secondary-button" onClick={() => selectFlow('')}>Crear flujo</button>
+            </div>
           </div>
 
           <div className="workflow-flow-header">
@@ -250,22 +278,14 @@ export function ActivityWorkflowPage({ onError }) {
                 <label><span>Vigencia (meses)</span><input type="number" min="1" max="1200" value={step.vigenciaMeses} onChange={(event) => updateStep(index, 'vigenciaMeses', event.target.value)} /></label>
                 <label><span>Disponible desde</span><input type="date" value={step.fechaInicio} onChange={(event) => updateStep(index, 'fechaInicio', event.target.value)} /></label>
                 <label><span>Disponible hasta</span><input type="date" min={step.fechaInicio || undefined} value={step.fechaFin} onChange={(event) => updateStep(index, 'fechaFin', event.target.value)} /></label>
-                <div className="workflow-dependencies">
-                  <div className="workflow-dependencies-heading"><span>Depende de</span>{dependencyCount(step) > 0 && <button type="button" onClick={() => clearDependencies(index)}>Quitar todas</button>}</div>
-                  <div className="workflow-dependency-list">
-                    {dependencyCandidates(areas, flow, step).length === 0
-                      ? <span className="workflow-dependency-empty">No hay otras actividades disponibles.</span>
-                      : dependencyCandidates(areas, flow, step).map((candidate) => {
-                        const selected = dependencyIsSelected(step, candidate)
-                        const createsCycle = candidate.kind === 'local' && !selected && wouldCreateDependencyCycle(flow.pasos, step.key, candidate.clavePaso)
-                        return <label className={`workflow-dependency-option ${selected ? 'selected' : ''} ${createsCycle ? 'disabled' : ''}`} key={candidate.key}>
-                          <input type="checkbox" checked={selected} disabled={createsCycle} onChange={() => toggleDependency(index, candidate)} />
-                          <span><strong>{candidate.nombre}</strong><small>{createsCycle ? 'No disponible: crearia una dependencia circular' : candidate.contexto}</small></span>
-                        </label>
-                      })}
-                  </div>
-                  <small className="workflow-dependency-help">{dependencyCount(step) === 0 ? 'Esta actividad puede comenzar sin esperar otra.' : `${dependencyCount(step)} dependencia(s) seleccionada(s). Los flujos requeridos se seleccionaran automaticamente para la persona.`}</small>
-                </div>
+                <WorkflowDependencyPicker
+                  key={`${flow.idActividadFlujoVersion ?? 'new'}:${step.key}`}
+                  areas={areas}
+                  flow={flow}
+                  step={step}
+                  onToggle={(candidate) => toggleDependency(index, candidate)}
+                  onClear={() => clearDependencies(index)}
+                />
                 <label className="workflow-ticket"><input type="checkbox" checked={Boolean(step.requiereTicketExterno)} onChange={(event) => updateStep(index, 'requiereTicketExterno', event.target.checked)} /><span>Requiere comprobante o ticket externo</span></label>
               </div>
               <div className="workflow-step-actions"><button type="button" className="remove" onClick={() => removeStep(index)} aria-label="Eliminar actividad">×</button></div>
@@ -306,6 +326,32 @@ function mapFlow(flow) {
   }
 }
 
+function WorkflowDependencyPicker({ areas, flow, step, onToggle, onClear }) {
+  const [areaId, setAreaId] = useState('')
+  const candidates = dependencyCandidates(areas, flow, step)
+  const selected = candidates.filter((candidate) => dependencyIsSelected(step, candidate))
+  const available = candidates.filter((candidate) => String(candidate.idArea) === areaId)
+
+  return <div className="workflow-dependencies">
+    <div className="workflow-dependencies-heading"><span>Depende de</span>{dependencyCount(step) > 0 && <button type="button" onClick={onClear}>Quitar todas</button>}</div>
+    <label className="workflow-dependency-area"><span>Primero selecciona el area</span><select value={areaId} onChange={(event) => setAreaId(event.target.value)}><option value="">Selecciona un area</option>{areas.map((area) => <option key={area.idArea} value={area.idArea}>{area.nombre || area.codigo}</option>)}</select></label>
+    {selected.length > 0 && <div className="workflow-dependency-selected"><span>Dependencias elegidas</span><div>{selected.map((candidate) => <button type="button" key={candidate.key} onClick={() => onToggle(candidate)} aria-label={`Quitar ${candidate.nombre}`}><strong>{candidate.nombre}</strong><small>{areas.find((area) => Number(area.idArea) === candidate.idArea)?.nombre || candidate.contexto}</small><span aria-hidden="true">×</span></button>)}</div></div>}
+    {areaId && <div className="workflow-dependency-list">
+      {available.length === 0
+        ? <span className="workflow-dependency-empty">No hay otras actividades en esta area.</span>
+        : available.map((candidate) => {
+          const isSelected = dependencyIsSelected(step, candidate)
+          const createsCycle = candidate.kind === 'local' && !isSelected && wouldCreateDependencyCycle(flow.pasos, step.key, candidate.clavePaso)
+          return <label className={`workflow-dependency-option ${isSelected ? 'selected' : ''} ${createsCycle ? 'disabled' : ''}`} key={candidate.key}>
+            <input type="checkbox" checked={isSelected} disabled={createsCycle} onChange={() => onToggle(candidate)} />
+            <span><strong>{candidate.nombre}</strong><small>{createsCycle ? 'No disponible: crearia una dependencia circular' : candidate.contexto}</small></span>
+          </label>
+        })}
+    </div>}
+    <small className="workflow-dependency-help">{dependencyCount(step) === 0 ? 'Esta actividad puede comenzar sin esperar otra.' : `${dependencyCount(step)} dependencia(s) seleccionada(s). Los flujos requeridos se seleccionaran automaticamente para la persona.`}</small>
+  </div>
+}
+
 function dependencyCandidates(areas, flow, step) {
   const local = (flow.pasos ?? [])
     .filter((candidate) => candidate.key !== step.key)
@@ -314,6 +360,7 @@ function dependencyCandidates(areas, flow, step) {
       return {
         kind: 'local',
         key: `local:${candidate.key}`,
+        idArea: Number(candidate.idAreaResponsable),
         clavePaso: candidate.key,
         nombre: candidate.nombreActividad || `Actividad ${candidateIndex + 1}`,
         contexto: `Este flujo · Actividad ${candidateIndex + 1}`,
@@ -326,6 +373,7 @@ function dependencyCandidates(areas, flow, step) {
     .flatMap((candidateFlow) => (candidateFlow.pasos ?? []).map((candidateStep, candidateIndex) => ({
       kind: 'external',
       key: `external:${candidateFlow.idActividadFlujo}:${candidateStep.clavePaso}`,
+      idArea: Number(candidateStep.idAreaResponsable || area.idArea),
       idActividadFlujo: Number(candidateFlow.idActividadFlujo),
       clavePaso: candidateStep.clavePaso,
       nombre: candidateStep.nombreActividad || `Actividad ${candidateIndex + 1}`,
