@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Icon } from '../components/Icon'
 import { formatDateTime, initials } from '../utils/formatters'
+import { permissionsFromRoles, roleNames } from '../utils/permissions'
 
 export function UserManagementPage({ items, loading, onNew, onSelect }) {
   const [query, setQuery] = useState('')
@@ -36,7 +37,7 @@ export function UserManagementPage({ items, loading, onNew, onSelect }) {
             <td><div className="user-cell"><span className="person-avatar">{initials(item.nombreCompleto)}</span><span><strong>{item.nombreCompleto || item.idUsuario}</strong><small>{item.idUsuario}</small></span></div></td>
             <td>{item.correo || '—'}<span className="cell-sub">{item.telefono || 'Sin teléfono'}</span></td>
             <td>{item.area || 'Sin área'}<span className="cell-sub">{item.puesto || 'Sin puesto'}</span></td>
-            <td><div className="user-role-list">{(item.roles?.split(',') ?? []).map((role) => <span key={role}>{role}</span>)}{!item.roles && <span className="muted">Usuario</span>}</div></td>
+            <td><div className="user-role-list">{roleNames(item.roles).filter((role) => !role.startsWith('PERM_') && !role.includes('_')).map((role) => <span key={role}>{role}</span>)}<span>{permissionsFromRoles(item.roles).length} permisos</span></div></td>
             <td><span className={`access-status ${item.activo ? 'approved' : 'rejected'}`}>{item.activo ? 'Activo' : 'Inactivo'}</span></td>
             <td>{formatDateTime(item.fechaCreacion)}</td>
           </tr>)}

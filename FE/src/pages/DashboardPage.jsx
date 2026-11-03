@@ -3,7 +3,7 @@ import { formatDate } from '../utils/formatters'
 
 const normalize = (value) => (value ?? '').trim().toLocaleLowerCase('es')
 
-export function DashboardPage({ session, requests, approvals, loading, approvalsLoading, onNew, onRequests, onRequest, onApprovals, onPersons }) {
+export function DashboardPage({ session, requests, approvals, loading, approvalsLoading, canCreateRequests, canViewRequests, canViewPersons, onNew, onRequests, onRequest, onApprovals, onPersons }) {
   const today = new Date().toLocaleDateString('en-CA')
   const pendingApprovals = approvals.filter((item) => item.codigoEstado === 'PENDIENTE').length
   const sent = requests.filter((item) => normalize(item.estado).includes('enviad')).length
@@ -18,7 +18,7 @@ export function DashboardPage({ session, requests, approvals, loading, approvals
   return <div className="dashboard-page">
     <div className="page-heading dashboard-heading">
       <div><p className="eyebrow">Panel principal</p><h1>Bienvenido, {session.nombreCompleto?.split(/\s+/)[0] || session.idUsuario}</h1><p>Consulta el estado de los ingresos y continúa con tus tareas.</p></div>
-      <button type="button" className="primary-button" onClick={onNew}><span className="plus-sign">+</span>Nueva solicitud</button>
+      {canCreateRequests && <button type="button" className="primary-button" onClick={onNew}><span className="plus-sign">+</span>Nueva solicitud</button>}
     </div>
 
     <section className="dashboard-stats" aria-label="Resumen de solicitudes">
@@ -32,7 +32,7 @@ export function DashboardPage({ session, requests, approvals, loading, approvals
 
     <div className="dashboard-grid">
       <section className="panel dashboard-panel dashboard-recent">
-        <div className="dashboard-panel-head"><div><h2>Solicitudes recientes</h2><p>Últimos registros disponibles</p></div><button type="button" className="dashboard-link" onClick={onRequests}>Ver todas <Icon name="arrow" /></button></div>
+        <div className="dashboard-panel-head"><div><h2>Solicitudes recientes</h2><p>Últimos registros disponibles</p></div>{canViewRequests && <button type="button" className="dashboard-link" onClick={onRequests}>Ver todas <Icon name="arrow" /></button>}</div>
         {loading ? <p className="dashboard-empty">Cargando solicitudes…</p> : recent.length === 0 ? <p className="dashboard-empty">Todavía no hay solicitudes. Crea la primera para verla aquí.</p> :
           <div className="dashboard-request-list">{recent.map((item) => <button type="button" className="dashboard-request" key={item.idSolicitud} onClick={() => onRequest(item.idSolicitud)}>
             <span className="dashboard-request-icon"><Icon name="file" /></span>
@@ -52,8 +52,8 @@ export function DashboardPage({ session, requests, approvals, loading, approvals
 
         <section className="panel dashboard-panel dashboard-shortcuts">
           <div className="dashboard-panel-head"><div><h2>Accesos rápidos</h2><p>Ve directamente a lo que necesitas</p></div></div>
-          <button type="button" onClick={onNew}><Icon name="file" /><span>Crear solicitud</span><Icon name="arrow" /></button>
-          <button type="button" onClick={onPersons}><Icon name="users" /><span>Personas y accesos</span><Icon name="arrow" /></button>
+          {canCreateRequests && <button type="button" onClick={onNew}><Icon name="file" /><span>Crear solicitud</span><Icon name="arrow" /></button>}
+          {canViewPersons && <button type="button" onClick={onPersons}><Icon name="users" /><span>Personas y accesos</span><Icon name="arrow" /></button>}
           {session.esAprobador && <button type="button" onClick={onApprovals}><Icon name="shield" /><span>Mis aprobaciones</span><Icon name="arrow" /></button>}
         </section>
       </div>

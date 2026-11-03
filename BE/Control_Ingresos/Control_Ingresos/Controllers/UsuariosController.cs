@@ -1,13 +1,14 @@
 using System.Security.Claims;
 using Control_Ingresos.Data;
 using Control_Ingresos.Models;
+using Control_Ingresos.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Control_Ingresos.Controllers;
 
 [ApiController]
-[Authorize(Roles = "Administrador")]
+[Authorize]
 [Route("api/usuarios")]
 public sealed class UsuariosController(ISolicitudesRepository repository) : ControllerBase
 {
@@ -31,6 +32,8 @@ public sealed class UsuariosController(ISolicitudesRepository repository) : Cont
     [ProducesResponseType(StatusCodes.Status201Created)]
     public async Task<ActionResult<object>> Crear(CrearUsuarioRequest request, CancellationToken cancellationToken)
     {
+        if (request.Permisos?.Any(permission => !AppPermissions.IsKnown(permission)) == true)
+            return BadRequest("La lista de permisos contiene un valor no valido.");
         var idUsuarioActual = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrWhiteSpace(idUsuarioActual)) return Unauthorized();
         var idUsuario = await repository.CrearUsuarioAsync(request, idUsuarioActual, cancellationToken);
@@ -45,6 +48,8 @@ public sealed class UsuariosController(ISolicitudesRepository repository) : Cont
         ActualizarUsuarioRequest request,
         CancellationToken cancellationToken)
     {
+        if (request.Permisos?.Any(permission => !AppPermissions.IsKnown(permission)) == true)
+            return BadRequest("La lista de permisos contiene un valor no valido.");
         var idUsuarioActual = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrWhiteSpace(idUsuarioActual)) return Unauthorized();
 

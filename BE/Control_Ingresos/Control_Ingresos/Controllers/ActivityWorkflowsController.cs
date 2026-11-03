@@ -12,13 +12,13 @@ namespace Control_Ingresos.Controllers;
 public sealed class ActivityWorkflowsController(IActivityWorkflowRepository repository) : ControllerBase
 {
     [HttpGet]
-    [Authorize(Roles = "Solicitante,Administrador")]
+    [Authorize]
     [ProducesResponseType<ActividadFlujoConfiguracion>(StatusCodes.Status200OK)]
     public async Task<ActionResult<ActividadFlujoConfiguracion>> Obtener(CancellationToken cancellationToken) =>
         Ok(await repository.ObtenerAsync(cancellationToken));
 
     [HttpPost("{idAreaAcceso:int}")]
-    [Authorize(Roles = "Administrador")]
+    [Authorize]
     [ProducesResponseType<ActividadFlujoGuardadoResponse>(StatusCodes.Status201Created)]
     public async Task<ActionResult<ActividadFlujoGuardadoResponse>> Crear(
         int idAreaAcceso,
@@ -32,7 +32,7 @@ public sealed class ActivityWorkflowsController(IActivityWorkflowRepository repo
     }
 
     [HttpPut("{idAreaAcceso:int}/{idActividadFlujo:long}")]
-    [Authorize(Roles = "Administrador")]
+    [Authorize]
     [ProducesResponseType<ActividadFlujoGuardadoResponse>(StatusCodes.Status200OK)]
     public async Task<ActionResult<ActividadFlujoGuardadoResponse>> Actualizar(
         int idAreaAcceso,
@@ -46,7 +46,7 @@ public sealed class ActivityWorkflowsController(IActivityWorkflowRepository repo
     }
 
     [HttpDelete("{idAreaAcceso:int}/{idActividadFlujo:long}")]
-    [Authorize(Roles = "Administrador")]
+    [Authorize]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> Eliminar(int idAreaAcceso, long idActividadFlujo, CancellationToken cancellationToken)
     {

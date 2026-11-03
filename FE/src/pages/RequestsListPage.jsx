@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Icon } from '../components/Icon'
 import { formatDate } from '../utils/formatters'
 
-export function RequestsListPage({ items, loading, canOpenAll, onNew, onOpen, onEdit }) {
+export function RequestsListPage({ items, loading, canOpenAll, canCreate, canEdit, onNew, onOpen, onEdit }) {
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState('')
   const activeItems = items.filter((item) => item.estado?.toLowerCase() !== 'cancelada')
@@ -17,7 +17,7 @@ export function RequestsListPage({ items, loading, canOpenAll, onNew, onOpen, on
   return <>
     <div className="page-heading requests-heading">
       <div><p className="eyebrow">Gestión</p><h1>Listado Solicitudes</h1><p>Crea, consulta y da seguimiento a las solicitudes de ingreso.</p></div>
-      <button type="button" className="primary-button" onClick={onNew}><span className="plus-sign">+</span>Nueva solicitud</button>
+      {canCreate && <button type="button" className="primary-button" onClick={onNew}><span className="plus-sign">+</span>Nueva solicitud</button>}
     </div>
     <div className="filters">
       <div className="search-box"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por número, actividad o solicitante" /></div>
@@ -28,7 +28,7 @@ export function RequestsListPage({ items, loading, canOpenAll, onNew, onOpen, on
         <tbody>
           {loading && <tr><td colSpan="7" className="empty-table">Cargando solicitudes…</td></tr>}
           {!loading && filtered.length === 0 && <tr><td colSpan="7" className="empty-table">No se encontraron solicitudes.</td></tr>}
-          {filtered.map((item) => <tr key={item.idSolicitud}><td><strong>{item.numeroSolicitud}</strong><span className="cell-sub">{item.nombreActividad}</span></td><td>{item.tipoIngreso ?? '—'}</td><td>{formatDate(item.fechaInicio)}</td><td>{formatDate(item.fechaFin)}</td><td>{item.cantidadPersonas}</td><td><span className="status-badge">{item.estado ?? 'Sin estado'}</span></td><td><div className="row-actions">{(item.esPropia || canOpenAll) && <button type="button" onClick={() => item.esPropia ? onEdit(item.idSolicitud) : onOpen(item.idSolicitud)}>Ver Detalles</button>}</div></td></tr>)}
+          {filtered.map((item) => <tr key={item.idSolicitud}><td><strong>{item.numeroSolicitud}</strong><span className="cell-sub">{item.nombreActividad}</span></td><td>{item.tipoIngreso ?? '—'}</td><td>{formatDate(item.fechaInicio)}</td><td>{formatDate(item.fechaFin)}</td><td>{item.cantidadPersonas}</td><td><span className="status-badge">{item.estado ?? 'Sin estado'}</span></td><td><div className="row-actions">{(item.esPropia || canOpenAll) && <button type="button" onClick={() => onOpen(item.idSolicitud)}>Ver detalles</button>}{item.esPropia && canEdit && <button type="button" onClick={() => onEdit(item.idSolicitud)}>Editar</button>}</div></td></tr>)}
         </tbody>
       </table></div>
     </article>

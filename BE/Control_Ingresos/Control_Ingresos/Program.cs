@@ -2,6 +2,7 @@ using Control_Ingresos.Data;
 using Control_Ingresos.Integrations.Freshservice;
 using Control_Ingresos.Models;
 using Control_Ingresos.Services;
+using Control_Ingresos.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Mvc;
@@ -22,6 +23,7 @@ builder.Services.AddScoped<IEmpleadosRepository, EmpleadosRepository>();
 builder.Services.AddScoped<IEmpleadoSingularRepository, EmpleadoSingularRepository>();
 builder.Services.AddScoped<IActivityWorkflowRepository, ActivityWorkflowRepository>();
 builder.Services.AddSingleton<ApplicationSession>();
+builder.Services.AddScoped<CurrentUserAccessValidator>();
 builder.Services.AddSingleton<ICredentialEmailSender, SmtpCredentialEmailSender>();
 builder.Services.Configure<FreshserviceOptions>(
     builder.Configuration.GetSection(FreshserviceOptions.SectionName));
@@ -63,7 +65,13 @@ builder.Services
             if (string.Equals(
                 cookieInstanceId,
                 applicationSession.InstanceId,
-                StringComparison.Ordinal)) return;
+                StringComparison.Ordinal))
+            {
+                var accessValidator = context.HttpContext.RequestServices
+                    .GetRequiredService<CurrentUserAccessValidator>();
+                if (context.Principal is not null && await accessValidator.IsCurrentAsync(
+                    context.Principal, context.HttpContext.RequestAborted)) return;
+            }
 
             context.RejectPrincipal();
             await context.HttpContext.SignOutAsync(
@@ -156,6 +164,7 @@ app.Use(async (context, next) =>
     await next();
 });
 
+app.Use(PermissionGate.Invoke);
 app.UseAuthorization();
 
 app.MapControllers();

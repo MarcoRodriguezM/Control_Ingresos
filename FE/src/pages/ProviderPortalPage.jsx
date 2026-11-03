@@ -7,8 +7,8 @@ export function ProviderPortalPage({ session, requests = [], onCreatePerson, onR
     </div>
 
     <section className="provider-feature-grid" aria-label="Herramientas del portal">
-      <FeatureCard icon="file" tone="blue" title="Solicitudes recibidas" description="Consulta las solicitudes enviadas a tu empresa y registra las personas requeridas." actionLabel={`Ver solicitudes${requests.length ? ` (${requests.length})` : ''}`} onAction={onRequests} />
-      <FeatureCard icon="users" tone="teal" title="Personas del proveedor" description="Registra las personas que participarán en cada ingreso." actionLabel="Registrar persona" onAction={onCreatePerson} />
+      <FeatureCard icon="file" tone="blue" title="Solicitudes recibidas" description={onCreatePerson ? 'Consulta las solicitudes enviadas a tu empresa y registra las personas requeridas.' : 'Consulta las solicitudes enviadas a tu empresa.'} actionLabel={`Ver solicitudes${requests.length ? ` (${requests.length})` : ''}`} onAction={onRequests} />
+      {onCreatePerson && <FeatureCard icon="users" tone="teal" title="Personas del proveedor" description="Registra las personas que participarán en cada ingreso." actionLabel="Registrar persona" onAction={onCreatePerson} />}
       <FeatureCard icon="check" tone="green" title="Seguimiento" description="Conoce el avance de las validaciones y el estado de cada acceso." actionLabel="Ver seguimiento" onAction={onTracking} />
     </section>
 

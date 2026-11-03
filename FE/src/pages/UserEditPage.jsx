@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Icon } from '../components/Icon'
 import { controlIngresosApi } from '../services/api'
+import { PermissionPicker } from '../components/PermissionPicker'
+import { permissionsFromRoles } from '../utils/permissions'
 
 const emptyForm = {
   nombreCompleto: '',
@@ -14,12 +16,14 @@ const emptyForm = {
   esGuardia: false,
   esProveedor: false,
   activo: true,
+  permisos: [],
 }
 
 export function UserEditPage({ idUsuario, areas = [], onUpdate, onCancel, onError }) {
   const [form, setForm] = useState(emptyForm)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [isAdministrator, setIsAdministrator] = useState(false)
   const areaRequired = form.puedeSolicitar || form.esAprobador
 
   useEffect(() => {
@@ -34,6 +38,7 @@ export function UserEditPage({ idUsuario, areas = [], onUpdate, onCancel, onErro
           ?? user.areas?.find((area) => area.esAreaPrincipal)
           ?? user.areas?.[0]
         const roles = user.roles?.split(',').map((role) => role.trim().toUpperCase()) ?? []
+        setIsAdministrator(roles.includes('ADMINISTRADOR'))
         setForm({
           nombreCompleto: user.nombreCompleto ?? '',
           correo: user.correo ?? '',
@@ -46,6 +51,7 @@ export function UserEditPage({ idUsuario, areas = [], onUpdate, onCancel, onErro
           esGuardia: roles.includes('GUARDIA'),
           esProveedor: roles.includes('PROVEEDOR'),
           activo: Boolean(user.activo),
+          permisos: permissionsFromRoles(user.roles),
         })
       })
       .catch((error) => active && onError(error.status === 404 ? 'El usuario seleccionado no existe.' : error.message))
@@ -67,6 +73,7 @@ export function UserEditPage({ idUsuario, areas = [], onUpdate, onCancel, onErro
           esSeguridad: false,
           esGuardia: name === 'esGuardia',
           esProveedor: name === 'esProveedor',
+          permisos: permissionsFromRoles([name === 'esGuardia' ? 'Guardia' : 'Proveedor']),
         }
       }
       if (checked && ['puedeSolicitar', 'esAprobador', 'esSeguridad'].includes(name)) {
@@ -93,6 +100,7 @@ export function UserEditPage({ idUsuario, areas = [], onUpdate, onCancel, onErro
         esGuardia: form.esGuardia,
         esProveedor: form.esProveedor,
         activo: form.activo,
+        permisos: form.permisos,
       })
     } finally {
       setSaving(false)
@@ -120,15 +128,21 @@ export function UserEditPage({ idUsuario, areas = [], onUpdate, onCancel, onErro
         </Field>
       </div>
 
-      <div className="section-heading user-permissions-heading"><h2>Permisos y estado</h2><p>Los cambios se aplicarán al guardar.</p></div>
+      <div className="section-heading user-permissions-heading"><h2>Tipo de cuenta y estado</h2><p>Los cambios se aplicaran al guardar.</p></div>
       <div className="user-permissions">
-        <Check name="puedeSolicitar" checked={form.puedeSolicitar} onChange={change} label="Puede crear solicitudes" description="Permite registrar solicitudes de ingreso para el área seleccionada." />
-        <Check name="esAprobador" checked={form.esAprobador} onChange={change} label="Aprobador del área" description="Permite revisar y decidir accesos del área seleccionada." />
+        <Check name="puedeSolicitar" checked={form.puedeSolicitar} onChange={change} label="Rol solicitante" description="Vincula la cuenta al area. La creacion de solicitudes requiere su permiso aparte." />
+        <Check name="esAprobador" checked={form.esAprobador} onChange={change} label="Rol aprobador del area" description="Vincula la cuenta al area. Las decisiones requieren su permiso aparte." />
         <Check name="esSeguridad" checked={form.esSeguridad} onChange={change} label="Personal de seguridad" description="Asigna o retira el rol de seguridad." />
         <Check name="esGuardia" checked={form.esGuardia} onChange={change} label="Guardia de acceso" description="Restringe la cuenta al escáner QR y la consulta de resultados." />
         <Check name="esProveedor" checked={form.esProveedor} onChange={change} label="Usuario proveedor" description="Asigna el acceso exclusivo al portal de proveedores." />
         <Check name="activo" checked={form.activo} onChange={change} label="Usuario activo" description="Permite que la cuenta continúe iniciando sesión." />
       </div>
+
+      <div className="section-heading user-permissions-heading"><h2>Permisos de la aplicacion</h2><p>Controla por separado las vistas y acciones disponibles para este usuario.</p></div>
+      {isAdministrator && <p className="field-help">La cuenta Administrador siempre tiene acceso completo. Para restringirla se debe retirar ese rol fuera de este formulario.</p>}
+      <p className="field-help">Crear, editar, enviar y eliminar solicitudes o tickets requiere el rol Solicitante. Aprobar accesos y gestionar actividades requiere el rol Aprobador. Asigna tambien el area correspondiente.</p>
+      {(form.esGuardia || form.esProveedor) && <p className="field-help">Este tipo de cuenta solo utiliza los permisos de su portal.</p>}
+      <PermissionPicker selected={form.permisos} allowed={form.esGuardia ? ['ESCANEAR_QR'] : form.esProveedor ? ['VER_PORTAL_PROVEEDOR', 'REGISTRAR_PERSONAS_PROVEEDOR'] : null} onChange={(permisos) => setForm((current) => ({ ...current, permisos }))} />
 
       {form.esProveedor && <p className="provider-account-help">El correo de esta cuenta debe coincidir con el correo principal registrado para el proveedor.</p>}
 

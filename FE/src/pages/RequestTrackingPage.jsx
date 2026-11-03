@@ -18,7 +18,7 @@ function Status({ code, children }) {
   return <span className={`access-status ${tone}`}>{children || 'Pendiente'}</span>
 }
 
-export function RequestTrackingPage({ session, options, onBack, onTickets, onChanged }) {
+export function RequestTrackingPage({ session, options, canCreateTickets = false, canResend = false, onBack, onTickets, onChanged }) {
   const { id } = useParams()
   const [tracking, setTracking] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -81,7 +81,7 @@ export function RequestTrackingPage({ session, options, onBack, onTickets, onCha
     <div className="page-heading tracking-heading"><div><p className="eyebrow">Seguimiento de solicitud</p><h1>{solicitud.numeroSolicitud || `Solicitud #${id}`}</h1><p>Consulta los accesos, actividades y decisiones de cada persona.</p></div><button type="button" className="secondary-button" onClick={onBack}><Icon name="back" />Volver</button></div>
     {error && <p className="activity-ticket-error" role="alert">{error}</p>}
     <section className="panel tracking-overview">
-      <div className="tracking-overview-top"><div><span className="tracking-overline">Estado actual</span><h2>{tracking.estado}</h2><p>{solicitud.nombreActividad || 'Solicitud de ingreso'}</p></div>{own && tracking.ticketsPendientes > 0 && <button type="button" className="primary-button" onClick={() => onTickets(id)}>Crear tickets ({tracking.ticketsPendientes})</button>}</div>
+      <div className="tracking-overview-top"><div><span className="tracking-overline">Estado actual</span><h2>{tracking.estado}</h2><p>{solicitud.nombreActividad || 'Solicitud de ingreso'}</p></div>{own && canCreateTickets && tracking.ticketsPendientes > 0 && <button type="button" className="primary-button" onClick={() => onTickets(id)}>Crear tickets ({tracking.ticketsPendientes})</button>}</div>
       <ol className="tracking-steps" aria-label="Flujo de la solicitud">{stages.map((stage, index) => <li key={stage.code} className={index < currentStage ? 'done' : index === currentStage ? 'current' : ''}><span>{index + 1}</span>{stage.label}</li>)}</ol>
       {tracking.codigoEstado === 'EN_REVISION' && <p className="tracking-review-note">Hay accesos rechazados. Revisa el motivo y solicita una nueva aprobacion si corresponde.</p>}
     </section>
@@ -105,7 +105,7 @@ export function RequestTrackingPage({ session, options, onBack, onTickets, onCha
       {people.map((person) => {
         const personAreas = areas.filter((area) => area.idSolicitudPersona === person.idSolicitudPersona)
         const personActivities = actividades.filter((activity) => activity.idSolicitudPersona === person.idSolicitudPersona)
-        const personNeedsTicket = own && tracking.ticketsPendientes > 0 && personActivities.some((activity) => activity.ticketPendiente)
+        const personNeedsTicket = own && canCreateTickets && tracking.ticketsPendientes > 0 && personActivities.some((activity) => activity.ticketPendiente)
         return <article className="panel tracking-person" key={person.idSolicitudPersona}><header><div><h3>{person.nombreCompleto || personAreas[0]?.persona || person.codigoEmpleadoHtis || 'Persona sin nombre'}</h3><p>{person.numeroDocumento || person.codigoEmpleadoHtis || 'Sin documento'}</p></div><div className="tracking-person-actions"><span>{personAreas.length} area(s)</span>{personNeedsTicket && <button type="button" className="secondary-button" onClick={() => onTickets(id, person.idSolicitudPersona)}>Crear ticket</button>}</div></header>
           <div className="tracking-person-body"><div><h4>Accesos por area</h4>{personAreas.length === 0 && <p className="tracking-muted">Sin areas asignadas.</p>}{personAreas.map((area) => {
             const history = decisiones.filter((decision) => decision.idSolicitudPersonaArea === area.idSolicitudPersonaArea)
@@ -115,7 +115,7 @@ export function RequestTrackingPage({ session, options, onBack, onTickets, onCha
               {area.comentarioDecision && <p className="tracking-reason">Motivo: {area.comentarioDecision}</p>}
               {(history.length > 1 || (history.length > 0 && area.codigoEstado === 'PENDIENTE')) && <details><summary>Ver historial de decisiones ({history.length})</summary><ul>{history.map((decision, index) => <li key={`${decision.fecha}-${index}`}>{decision.codigoEstado} · {formatDateTime(decision.fecha)}{decision.usuarioDecision ? ` · ${decision.usuarioDecision}` : ''}{decision.comentario ? ` — ${decision.comentario}` : ''}</li>)}</ul></details>}
               {resendHistory.length > 0 && <details><summary>Ver solicitudes de nueva aprobacion ({resendHistory.length})</summary><ul>{resendHistory.map((resend, index) => <li key={`${resend.fecha}-${index}`}>{formatDateTime(resend.fecha)} · {resend.usuario}: {resend.justificacion}</li>)}</ul></details>}
-              {own && area.codigoEstado === 'RECHAZADA' && <button type="button" className="secondary-button tracking-resend" onClick={() => { setError(''); setJustification(''); setSelectedArea(area) }}>Solicitar nueva aprobacion</button>}
+              {own && canResend && area.codigoEstado === 'RECHAZADA' && <button type="button" className="secondary-button tracking-resend" onClick={() => { setError(''); setJustification(''); setSelectedArea(area) }}>Solicitar nueva aprobacion</button>}
             </div>
           })}</div><div><h4>Actividades</h4>{personActivities.length === 0 && <p className="tracking-muted">Sin actividades asignadas.</p>}{personActivities.map((activity) => <div className="tracking-activity" key={activity.idActividad}><div><strong>{activity.nombreActividad || 'Actividad'}</strong><small>{activity.areaResponsable || 'Area responsable sin indicar'}</small>{activity.fechaDecision && <small>Decision: {formatDateTime(activity.fechaDecision)}{activity.usuarioDecision ? ` · ${activity.usuarioDecision}` : ''}</small>}</div><Status code={activity.codigoEstado}>{activity.estado}</Status>{activity.requiereTicket && <p>{activity.numeroTicket ? `Ticket: ${activity.numeroTicket}` : 'Ticket pendiente'}</p>}{activity.comentarioDecision && <p className="tracking-reason">{activity.comentarioDecision}</p>}</div>)}</div></div>
         </article>

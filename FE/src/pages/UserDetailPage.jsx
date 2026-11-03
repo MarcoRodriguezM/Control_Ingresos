@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Icon } from '../components/Icon'
 import { controlIngresosApi } from '../services/api'
 import { formatDate, formatDateTime, initials } from '../utils/formatters'
+import { permissionGroups, permissionsFromRoles } from '../utils/permissions'
 
 export function UserDetailPage({ idUsuario, onBack, onEdit, onError }) {
   const [user, setUser] = useState(null)
@@ -24,7 +25,8 @@ export function UserDetailPage({ idUsuario, onBack, onEdit, onError }) {
   if (loading) return <div className="panel profile-placeholder">Cargando información del usuario…</div>
   if (!user) return <div className="panel profile-placeholder"><button type="button" className="secondary-button" onClick={onBack}><Icon name="back" />Volver al listado</button></div>
 
-  const roles = user.roles?.split(',').map((role) => role.trim()).filter(Boolean) ?? []
+  const roles = user.roles?.split(',').map((role) => role.trim()).filter((role) => role && !role.startsWith('PERM_') && !role.includes('_')) ?? []
+  const permissions = permissionsFromRoles(user.roles)
 
   return <>
     <div className="page-heading user-detail-heading">
@@ -78,6 +80,15 @@ export function UserDetailPage({ idUsuario, onBack, onEdit, onError }) {
             {area.esAprobador && <span>{area.esAprobadorPrincipal ? 'Aprobador principal' : 'Aprobador'}</span>}
           </div>
         </div>)}</div>}
+    </section>
+
+    <section className="panel profile-section user-areas-section">
+      <div className="profile-section-head"><Icon name="shield" /><h2>Permisos de la aplicacion</h2></div>
+      <div className="permission-summary">{permissionGroups.flatMap((group) => group.items)
+        .filter(([code]) => permissions.includes(code))
+        .map(([code, label]) => <span key={code}>{label}</span>)}
+        {permissions.length === 0 && <span>Sin permisos asignados</span>}
+      </div>
     </section>
   </>
 }

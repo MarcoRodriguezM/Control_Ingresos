@@ -9,7 +9,7 @@ const isOverdue = (item) => {
   return limit < new Date()
 }
 
-export function MyActivitiesPage({ items, loading, onRequest, onComplete }) {
+export function MyActivitiesPage({ items, loading, canComplete = false, canOpenRequest = false, onRequest, onComplete }) {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('pendientes')
   const [completion, setCompletion] = useState(null)
@@ -76,8 +76,8 @@ export function MyActivitiesPage({ items, loading, onRequest, onComplete }) {
             {item.comentarios && <p className="activity-comment">{item.comentarios}</p>}
           </div>
           <div className="activity-row-actions">
-            {!item.esEstadoFinal && <button type="button" className="primary-button teal activity-complete" disabled={item.requiereTicketExterno && !item.ticket} onClick={() => beginCompletion(item)}>{item.codigoEstado === 'PENDIENTE_APROBACION' ? 'Finalizar actividad' : 'Registrar como realizada'}</button>}
-            {item.idSolicitud && <button type="button" className="secondary-button activity-open" onClick={() => onRequest(item.idSolicitud, item.idSolicitudPersona)}>Abrir solicitud <Icon name="arrow" /></button>}
+            {canComplete && !item.esEstadoFinal && <button type="button" className="primary-button teal activity-complete" disabled={item.requiereTicketExterno && !item.ticket} onClick={() => beginCompletion(item)}>{item.codigoEstado === 'PENDIENTE_APROBACION' ? 'Finalizar actividad' : 'Registrar como realizada'}</button>}
+            {canOpenRequest && item.idSolicitud && <button type="button" className="secondary-button activity-open" onClick={() => onRequest(item.idSolicitud, item.idSolicitudPersona)}>Abrir solicitud <Icon name="arrow" /></button>}
           </div>
         </article>)}
     </section>

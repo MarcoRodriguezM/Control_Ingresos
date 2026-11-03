@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { Icon } from '../components/Icon'
+import { PermissionPicker } from '../components/PermissionPicker'
+import { permissionsFromRoles } from '../utils/permissions'
 
 const initialForm = {
   idUsuario: '',
@@ -9,12 +11,13 @@ const initialForm = {
   puesto: '',
   contrasena: '',
   idArea: '',
-  puedeSolicitar: true,
+  puedeSolicitar: false,
   esAprobador: false,
   esSeguridad: false,
   esGuardia: false,
   esProveedor: false,
   activo: true,
+  permisos: [],
 }
 
 export function UserFormPage({ areas = [], onCreate, onCancel }) {
@@ -36,6 +39,7 @@ export function UserFormPage({ areas = [], onCreate, onCancel }) {
           esSeguridad: false,
           esGuardia: name === 'esGuardia',
           esProveedor: name === 'esProveedor',
+          permisos: permissionsFromRoles([name === 'esGuardia' ? 'Guardia' : 'Proveedor']),
         }
       }
       if (checked && ['puedeSolicitar', 'esAprobador', 'esSeguridad'].includes(name)) {
@@ -65,6 +69,7 @@ export function UserFormPage({ areas = [], onCreate, onCancel }) {
         esGuardia: form.esGuardia,
         esProveedor: form.esProveedor,
         activo: form.activo,
+        permisos: form.permisos,
       })
     } finally {
       setSaving(false)
@@ -91,15 +96,20 @@ export function UserFormPage({ areas = [], onCreate, onCancel }) {
         <Field label="Contraseña inicial" required full><input type="password" name="contrasena" minLength="8" maxLength="200" value={form.contrasena} onChange={change} required autoComplete="new-password" /></Field>
       </div>
 
-      <div className="section-heading user-permissions-heading"><h2>Permisos iniciales</h2><p>Selecciona las funciones que tendrá la nueva cuenta.</p></div>
+      <div className="section-heading user-permissions-heading"><h2>Tipo de cuenta y estado</h2><p>Define el area de trabajo y la clase de cuenta.</p></div>
       <div className="user-permissions">
-        <Check name="puedeSolicitar" checked={form.puedeSolicitar} onChange={change} label="Puede crear solicitudes" description="Permite registrar solicitudes de ingreso para su área." />
-        <Check name="esAprobador" checked={form.esAprobador} onChange={change} label="Aprobador del área" description="Permite revisar y decidir accesos correspondientes al área seleccionada." />
+        <Check name="puedeSolicitar" checked={form.puedeSolicitar} onChange={change} label="Rol solicitante" description="Vincula la cuenta al area. La creacion de solicitudes requiere su permiso aparte." />
+        <Check name="esAprobador" checked={form.esAprobador} onChange={change} label="Rol aprobador del area" description="Vincula la cuenta al area. Las decisiones requieren su permiso aparte." />
         <Check name="esSeguridad" checked={form.esSeguridad} onChange={change} label="Personal de seguridad" description="Permite validar autorizaciones y registrar entradas y salidas." />
         <Check name="esGuardia" checked={form.esGuardia} onChange={change} label="Guardia de acceso" description="Solo permite escanear códigos QR y consultar la información presentada." />
         <Check name="esProveedor" checked={form.esProveedor} onChange={change} label="Usuario proveedor" description="Asigna el acceso exclusivo al portal y las futuras vistas para proveedores." />
         <Check name="activo" checked={form.activo} onChange={change} label="Usuario activo" description="Permite iniciar sesión inmediatamente después de crear la cuenta." />
       </div>
+
+      <div className="section-heading user-permissions-heading"><h2>Permisos de la aplicacion</h2><p>Selecciona las vistas y acciones que esta cuenta podra utilizar.</p></div>
+      <p className="field-help">Crear, editar, enviar y eliminar solicitudes o tickets requiere el rol Solicitante. Aprobar accesos y gestionar actividades requiere el rol Aprobador. Asigna tambien el area correspondiente.</p>
+      {(form.esGuardia || form.esProveedor) && <p className="field-help">Este tipo de cuenta solo utiliza los permisos de su portal.</p>}
+      <PermissionPicker selected={form.permisos} allowed={form.esGuardia ? ['ESCANEAR_QR'] : form.esProveedor ? ['VER_PORTAL_PROVEEDOR', 'REGISTRAR_PERSONAS_PROVEEDOR'] : null} onChange={(permisos) => setForm((current) => ({ ...current, permisos }))} />
 
       {form.esProveedor && <p className="provider-account-help">El correo de esta cuenta debe coincidir con el correo principal registrado para el proveedor.</p>}
 

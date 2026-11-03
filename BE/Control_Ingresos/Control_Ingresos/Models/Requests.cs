@@ -625,7 +625,8 @@ public sealed record CrearUsuarioRequest(
     bool EsSeguridad,
     bool EsGuardia,
     bool EsProveedor,
-    bool Activo);
+    bool Activo,
+    IReadOnlyCollection<string>? Permisos = null);
 
 public sealed record ActualizarUsuarioRequest(
     [Required, MaxLength(200)] string NombreCompleto,
@@ -638,4 +639,5 @@ public sealed record ActualizarUsuarioRequest(
     bool EsSeguridad,
     bool EsGuardia,
     bool EsProveedor,
-    bool Activo);
+    bool Activo,
+    IReadOnlyCollection<string>? Permisos = null);

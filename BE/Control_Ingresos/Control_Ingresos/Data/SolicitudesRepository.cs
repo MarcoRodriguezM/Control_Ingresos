@@ -1,6 +1,7 @@
 using System.Data;
 using System.Text.Json;
 using Control_Ingresos.Models;
+using Control_Ingresos.Security;
 using Microsoft.Data.SqlClient;
 
 namespace Control_Ingresos.Data;
@@ -190,6 +191,8 @@ public sealed class SolicitudesRepository(
                 await roleCommand.ExecuteNonQueryAsync(cancellationToken);
             }
 
+            await SavePermissionsAsync(connection, transaction, idUsuario, request.Permisos, usuarioCreacion, cancellationToken);
+
             await transaction.CommitAsync(cancellationToken);
             return idUsuario;
         }
@@ -207,7 +210,8 @@ public sealed class SolicitudesRepository(
         CancellationToken cancellationToken)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
-        await using var command = StoredProcedure(connection, "dbo.usp_Usuario_Actualizar");
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        await using var command = StoredProcedure(connection, "dbo.usp_Usuario_Actualizar", transaction);
         Add(command, "@IdUsuario", SqlDbType.VarChar, idUsuario, 50);
         Add(command, "@NombreCompleto", SqlDbType.NVarChar, request.NombreCompleto, 200);
         Add(command, "@Correo", SqlDbType.VarChar, request.Correo, 254);
@@ -221,7 +225,82 @@ public sealed class SolicitudesRepository(
         Add(command, "@EsProveedor", SqlDbType.Bit, request.EsProveedor);
         Add(command, "@Activo", SqlDbType.Bit, request.Activo);
         Add(command, "@UsuarioModificacion", SqlDbType.VarChar, usuarioModificacion, 50);
-        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken)) > 0;
+        try
+        {
+            var updated = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken)) > 0;
+            if (updated)
+                await SavePermissionsAsync(connection, transaction, idUsuario, request.Permisos, usuarioModificacion, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return updated;
+        }
+        catch
+        {
+            if (transaction.Connection is not null)
+                await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    private static async Task SavePermissionsAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string idUsuario,
+        IReadOnlyCollection<string>? requested,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        if (requested is null) return;
+
+        var selected = requested.Append(AppPermissions.Configured)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        foreach (var code in selected)
+        {
+            if (code != AppPermissions.Configured && !AppPermissions.IsKnown(code))
+                throw new ArgumentException("Permiso no valido.", nameof(requested));
+
+            await using var ensure = new SqlCommand("""
+                IF NOT EXISTS (SELECT 1 FROM dbo.Rol WITH (UPDLOCK, HOLDLOCK) WHERE Codigo = @Codigo)
+                BEGIN
+                    DECLARE @IdRol SMALLINT;
+                    SELECT @IdRol = CONVERT(SMALLINT, ISNULL(MAX(IdRol), 0) + 1)
+                    FROM dbo.Rol WITH (TABLOCKX, HOLDLOCK);
+                    INSERT dbo.Rol (IdRol, Codigo, Nombre, Descripcion, Activo)
+                    VALUES (@IdRol, @Codigo, @Codigo, N'Permiso de la aplicacion', 1);
+                END
+                """, connection, transaction);
+            Add(ensure, "@Codigo", SqlDbType.VarChar, code, 30);
+            await ensure.ExecuteNonQueryAsync(cancellationToken);
+
+            await using var normalize = new SqlCommand("""
+                UPDATE dbo.Rol SET Nombre = @Codigo, Activo = 1
+                WHERE Codigo = @Codigo AND (Nombre <> @Codigo OR Activo = 0);
+                """, connection, transaction);
+            Add(normalize, "@Codigo", SqlDbType.VarChar, code, 30);
+            await normalize.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        var codes = string.Join(",", AppPermissions.All.Append(AppPermissions.Configured)
+            .Select(code => $"'{code}'"));
+        await using var replace = new SqlCommand($"""
+            DELETE ur FROM dbo.Usuario_Rol AS ur
+            INNER JOIN dbo.Rol AS r ON r.IdRol = ur.IdRol
+            WHERE ur.IdUsuario = @IdUsuario AND r.Codigo IN ({codes});
+            """, connection, transaction);
+        Add(replace, "@IdUsuario", SqlDbType.VarChar, idUsuario, 50);
+        await replace.ExecuteNonQueryAsync(cancellationToken);
+
+        foreach (var code in selected)
+        {
+            await using var assign = new SqlCommand("""
+                INSERT dbo.Usuario_Rol (IdUsuario, IdRol, FechaAsignacion, UsuarioAsignacion)
+                SELECT @IdUsuario, IdRol, SYSDATETIME(), @Actor
+                FROM dbo.Rol WHERE Codigo = @Codigo AND Activo = 1;
+                """, connection, transaction);
+            Add(assign, "@IdUsuario", SqlDbType.VarChar, idUsuario, 50);
+            Add(assign, "@Codigo", SqlDbType.VarChar, code, 30);
+            Add(assign, "@Actor", SqlDbType.VarChar, actor, 50);
+            await assign.ExecuteNonQueryAsync(cancellationToken);
+        }
     }
 
     public async Task<ProveedorUsuario?> ObtenerProveedorUsuarioAsync(

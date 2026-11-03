@@ -3,9 +3,9 @@ import { Icon } from '../components/Icon'
 import { accessStatusClass, formatDate } from '../utils/formatters'
 import { activityAppliesToType, activityIsAutomaticForType, flowIsRequiredBySelection, includeRequiredFlowVersions } from '../utils/activityTypes'
 
-export function RequestFormPage({ form, options, activityFlows = [], people, employees = [], employeesLoading = false, employeesError = '', requestPeople, existingPeople, peopleEntryMode, loading, saving, editingId, step, selected, canSend, onPeopleEntryModeChange, onPeopleChange, onExistingPeopleChange, onChange, onStepChange, onNext, onBack, onCancel, onSubmit, onDelete }) {
+export function RequestFormPage({ form, options, activityFlows = [], people, employees = [], employeesLoading = false, employeesError = '', requestPeople, existingPeople, peopleEntryMode, loading, saving, editingId, step, selected, canSend, allowSend = false, allowDelete = false, onPeopleEntryModeChange, onPeopleChange, onExistingPeopleChange, onChange, onStepChange, onNext, onBack, onCancel, onSubmit, onDelete }) {
   const typeCode = normalizeTypeCode(selected.tipo)
-  const canDelete = editingId && ['BORRADOR', 'PENDIENTE_PROVEEDOR'].includes(selected.estado?.codigo)
+  const canDelete = allowDelete && editingId && ['BORRADOR', 'PENDIENTE_PROVEEDOR'].includes(selected.estado?.codigo)
   return <>
     <div className="page-heading"><div><p className="eyebrow">{editingId ? form.numeroSolicitud || `Solicitud #${editingId}` : 'Nueva solicitud'}</p><h1>{editingId ? 'Actualizar solicitud de ingreso' : 'Registrar solicitud de ingreso'}</h1><p>Completa los datos e indica quién registrará a las personas que ingresarán.</p>{editingId && <span className="status-badge">{selected.estado?.nombre || selected.estado?.codigo || 'Sin estado'}</span>}</div></div>
     <Progress step={step} onStepChange={onStepChange} />
@@ -22,7 +22,7 @@ export function RequestFormPage({ form, options, activityFlows = [], people, emp
             ? <button type="button" className="primary-button" onClick={onNext}>Siguiente <Icon name="arrow" /></button>
             : <>
               <button type="button" className="primary-button teal" disabled={saving} onClick={() => onSubmit(false)}>{saving ? 'Guardando…' : editingId ? 'Guardar cambios' : 'Crear solicitud'}</button>
-              {editingId && selected.estado?.codigo === 'BORRADOR' && <button type="button" className="primary-button" disabled={saving || !canSend} onClick={() => onSubmit(true)}><Icon name="send" />Enviar solicitud</button>}
+              {allowSend && editingId && selected.estado?.codigo === 'BORRADOR' && <button type="button" className="primary-button" disabled={saving || !canSend} onClick={() => onSubmit(true)}><Icon name="send" />Enviar solicitud</button>}
             </>}
         </div>
       </div>

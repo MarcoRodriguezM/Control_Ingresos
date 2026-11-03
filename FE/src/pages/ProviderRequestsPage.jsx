@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Icon } from '../components/Icon'
 import { formatDate } from '../utils/formatters'
 
-export function ProviderRequestsPage({ items = [], loading, onOpen }) {
+export function ProviderRequestsPage({ items = [], loading, canRegisterPerson = false, onOpen }) {
   const pending = items.filter((item) => item.codigoEstado === 'PENDIENTE_PROVEEDOR')
 
   return <div className="provider-requests-page">
@@ -26,7 +26,7 @@ export function ProviderRequestsPage({ items = [], loading, onOpen }) {
               <td><span className="provider-table-date"><Icon name="calendar" />{formatDate(item.fechaInicio)} – {formatDate(item.fechaFin)}</span><span className="provider-request-cell-sub"><Icon name="location" />{item.ubicacion || 'Pendiente'}</span></td>
               <td><div className="provider-table-progress"><div><strong>{item.cantidadPersonas}</strong><span> de {item.cantidadEstimada}</span></div><div className="provider-progress-track"><span style={{ width: `${progress}%` }} /></div></div></td>
               <td><span className={`provider-request-status ${editable ? 'pending' : 'complete'}`}>{item.estado || item.codigoEstado}</span></td>
-              <td><button type="button" className="provider-table-action" onClick={() => onOpen(item.idSolicitud)}>{editable ? 'Completar' : 'Ver'} <Icon name="arrow" /></button></td>
+              <td><button type="button" className="provider-table-action" onClick={() => onOpen(item.idSolicitud)}>{editable && canRegisterPerson ? 'Completar' : 'Ver'} <Icon name="arrow" /></button></td>
             </tr>
           })}</tbody>
         </table>
@@ -35,7 +35,7 @@ export function ProviderRequestsPage({ items = [], loading, onOpen }) {
   </div>
 }
 
-export function ProviderRequestDetailPage({ request, people = [], loading, saving, onBack, onNewPerson, onAddPerson, onRemovePerson, onSend }) {
+export function ProviderRequestDetailPage({ request, people = [], loading, saving, canRegisterPerson = false, onBack, onNewPerson, onAddPerson, onRemovePerson, onSend }) {
   const [personId, setPersonId] = useState('')
   const assignedIds = useMemo(() => new Set((request?.personas ?? []).map((item) => Number(item.idPersona))), [request])
   const availablePeople = people.filter((person) => !assignedIds.has(Number(person.idPersona)))
@@ -68,7 +68,7 @@ export function ProviderRequestDetailPage({ request, people = [], loading, savin
       <Info label="Contrato" value={request.numeroContrato} />
     </section>
 
-    {editable && <section className="panel provider-person-assignment">
+    {editable && canRegisterPerson && <section className="panel provider-person-assignment">
       <div className="provider-card-heading"><span className="provider-card-icon"><Icon name="users" /></span><div><h2>Agregar personas a la solicitud</h2><p>Faltan {remaining} persona(s). Tu responsabilidad es únicamente registrar las personas.</p></div></div>
       <div className="provider-person-toolbar">
         <div className="field"><label>Persona del proveedor</label><select value={personId} onChange={(event) => setPersonId(event.target.value)}><option value="">Selecciona una persona</option>{availablePeople.map((person) => <option value={person.idPersona} key={person.idPersona}>{person.nombreCompleto} · {person.numeroDocumento || 'Sin documento'}</option>)}</select></div>
@@ -83,7 +83,7 @@ export function ProviderRequestDetailPage({ request, people = [], loading, savin
       <div className="provider-card-heading"><span className="provider-card-icon"><Icon name="check" /></span><div><h2>Personas registradas</h2><p>Personas que ya forman parte de esta solicitud.</p></div></div>
       {(request.personas ?? []).length === 0
         ? <div className="provider-inline-empty">Aún no se han agregado personas.</div>
-        : <div className="provider-assigned-list">{request.personas.map((person) => <article key={person.idSolicitudPersona}><span className="provider-person-avatar">{initials(person.nombreCompleto)}</span><div><strong>{person.nombreCompleto}</strong><small>{person.numeroDocumento || 'Sin documento'}</small></div><span className={`provider-person-result ${personStatusClass(person.codigoEstadoAprobacion)}`}>{person.estadoAprobacion || 'Pendiente'}</span>{editable && <button type="button" className="remove-person-button" disabled={saving} onClick={() => onRemovePerson(person)}>Quitar</button>}</article>)}</div>}
+        : <div className="provider-assigned-list">{request.personas.map((person) => <article key={person.idSolicitudPersona}><span className="provider-person-avatar">{initials(person.nombreCompleto)}</span><div><strong>{person.nombreCompleto}</strong><small>{person.numeroDocumento || 'Sin documento'}</small></div><span className={`provider-person-result ${personStatusClass(person.codigoEstadoAprobacion)}`}>{person.estadoAprobacion || 'Pendiente'}</span>{editable && canRegisterPerson && <button type="button" className="remove-person-button" disabled={saving} onClick={() => onRemovePerson(person)}>Quitar</button>}</article>)}</div>}
     </section>
   </div>
 }

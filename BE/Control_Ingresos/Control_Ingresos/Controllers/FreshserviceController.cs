@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Control_Ingresos.Controllers;
 
 [ApiController]
-[Authorize(Roles = "Administrador")]
+[Authorize]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 [Route("api/freshservice")]
 public sealed class FreshserviceController(IFreshserviceReadOnlyClient client) : ControllerBase

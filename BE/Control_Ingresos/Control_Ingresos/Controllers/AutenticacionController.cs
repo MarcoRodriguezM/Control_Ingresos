@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
+using Control_Ingresos.Security;
 
 namespace Control_Ingresos.Controllers;
 
@@ -24,7 +25,10 @@ public sealed class AutenticacionController(
         var idUsuario = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrWhiteSpace(idUsuario)) return Unauthorized();
         var perfil = await repository.ObtenerPerfilAsync(idUsuario, cancellationToken);
-        return perfil is null ? NotFound() : Ok(perfil);
+        if (perfil is null) return NotFound();
+        return Ok(AppPermissions.Has(User, "VER_SOLICITUDES")
+            ? perfil
+            : perfil with { Solicitudes = [] });
     }
 
     [HttpPost("login")]
