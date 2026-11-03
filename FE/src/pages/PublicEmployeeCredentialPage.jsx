@@ -3,6 +3,7 @@ import QRCode from 'qrcode'
 import { Icon } from '../components/Icon'
 import { controlIngresosApi } from '../services/api'
 import { formatDateTime, initials } from '../utils/formatters'
+import { isTrainingValidityExpired } from '../utils/trainingValidity'
 import auraLogo from '../assets/aura-logo-default.png'
 
 const qrPattern = /^[a-f0-9]{64}$/i
@@ -89,7 +90,7 @@ export function PublicEmployeeCredentialPage({ authenticated = false, onLogin })
         <section className="panel public-training-panel">
           <div className="employee-section-heading"><Icon name="tasks" /><h2>Entrenamientos</h2><span>{employee.entrenamientos?.length ?? 0}</span></div>
           {employee.entrenamientos?.length
-            ? <div className="public-training-list">{employee.entrenamientos.map((training, index) => <article key={`${training.entrenamiento}-${index}`}><strong>{training.entrenamiento || 'Entrenamiento sin nombre'}</strong><span>Validez: {training.validez || 'No indicada'}</span></article>)}</div>
+            ? <div className="public-training-list">{employee.entrenamientos.map((training, index) => <article key={`${training.entrenamiento}-${index}`}><strong>{training.entrenamiento || 'Entrenamiento sin nombre'}</strong><span className="training-validity">Validez: {training.validez || 'No indicada'}{isTrainingValidityExpired(training.validez) && <em>Validez vencida</em>}</span></article>)}</div>
             : <p className="public-training-empty">No hay entrenamientos disponibles para mostrar.</p>}
           <div className="public-credential-qr">
             {qrImage && <img src={qrImage} alt="Código validador de la credencial" />}

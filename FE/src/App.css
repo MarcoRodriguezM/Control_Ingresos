@@ -287,6 +287,26 @@
   color: #536a82;
 }
 
+.training-validity {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.public-training-list .training-validity em,
+.employee-training-list .training-validity em {
+  display: inline-block;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: #fff0f1;
+  color: #bd3344;
+  font-size: .65rem;
+  font-style: normal;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 .public-credential-qr {
   display: grid;
   place-items: center;

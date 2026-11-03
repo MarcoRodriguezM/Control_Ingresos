@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../components/Icon'
 import { PhotoPreviewModal } from '../components/PhotoPreviewModal'
 import { formatDateTime, initials } from '../utils/formatters'
+import { isTrainingValidityExpired } from '../utils/trainingValidity'
 
 export function EmployeeListPage({ items, statuses = [], selected, loading, photographUrl, photographLoading, singular, singularLoading, singularError, mobileDetailOpen = false, onSelect, onBack, onQr }) {
   const [query, setQuery] = useState('')
@@ -164,7 +165,7 @@ export function EmployeeListPage({ items, statuses = [], selected, loading, phot
             {singularLoading && <p className="employee-supplement-message">Consultando entrenamientos…</p>}
             {!singularLoading && singularError && <p className="employee-supplement-message error">{singularError}</p>}
             {!singularLoading && !singularError && (singular?.entrenamientos?.length
-              ? <div className="employee-training-list">{singular.entrenamientos.map((training, index) => <article key={`${training.entrenamiento}-${index}`}><strong>{training.entrenamiento || 'Entrenamiento sin nombre'}</strong><span>Validez: {training.validez || 'No indicada'}</span><small>Realizado: {training.fechaEntrenamiento || 'No indicado'}{training.cargaHoraria ? ` · ${training.cargaHoraria}` : ''}</small></article>)}</div>
+              ? <div className="employee-training-list">{singular.entrenamientos.map((training, index) => <article key={`${training.entrenamiento}-${index}`}><strong>{training.entrenamiento || 'Entrenamiento sin nombre'}</strong><span className="training-validity">Validez: {training.validez || 'No indicada'}{isTrainingValidityExpired(training.validez) && <em>Validez vencida</em>}</span><small>Realizado: {training.fechaEntrenamiento || 'No indicado'}{training.cargaHoraria ? ` · ${training.cargaHoraria}` : ''}</small></article>)}</div>
               : <p className="employee-supplement-message">No hay entrenamientos disponibles.</p>)}
           </section>
         </>}
