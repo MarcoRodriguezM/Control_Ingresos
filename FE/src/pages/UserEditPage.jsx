@@ -19,16 +19,22 @@ const emptyForm = {
   permisos: [],
 }
 
-export function UserEditPage({ idUsuario, areas = [], onUpdate, onCancel, onError }) {
+export function UserEditPage({ idUsuario, areas = [], areasError = '', onUpdate, onCancel, onError }) {
   const [form, setForm] = useState(emptyForm)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [saving, setSaving] = useState(false)
   const [isAdministrator, setIsAdministrator] = useState(false)
+  const [assignedArea, setAssignedArea] = useState(null)
   const areaRequired = form.puedeSolicitar || form.esAprobador
+  const availableAreas = assignedArea && !areas.some((area) => String(area.id) === String(assignedArea.idArea))
+    ? [{ id: assignedArea.idArea, nombre: assignedArea.nombre ?? assignedArea.codigo ?? `Area ${assignedArea.idArea}` }, ...areas]
+    : areas
 
   useEffect(() => {
     let active = true
     setLoading(true)
+    setLoadError('')
     onError('')
 
     controlIngresosApi.obtenerUsuario(idUsuario)
@@ -37,6 +43,7 @@ export function UserEditPage({ idUsuario, areas = [], onUpdate, onCancel, onErro
         const assignedArea = user.areas?.find((area) => area.esAprobadorPrincipal)
           ?? user.areas?.find((area) => area.esAreaPrincipal)
           ?? user.areas?.[0]
+        setAssignedArea(assignedArea ?? null)
         const roles = user.roles?.split(',').map((role) => role.trim().toUpperCase()) ?? []
         setIsAdministrator(roles.includes('ADMINISTRADOR'))
         setForm({
@@ -54,7 +61,9 @@ export function UserEditPage({ idUsuario, areas = [], onUpdate, onCancel, onErro
           permisos: permissionsFromRoles(user.roles),
         })
       })
-      .catch((error) => active && onError(error.status === 404 ? 'El usuario seleccionado no existe.' : error.message))
+      .catch((error) => {
+        if (active) setLoadError(error.status === 404 ? 'El usuario seleccionado no existe.' : error.message)
+      })
       .finally(() => active && setLoading(false))
 
     return () => { active = false }
@@ -108,6 +117,7 @@ export function UserEditPage({ idUsuario, areas = [], onUpdate, onCancel, onErro
   }
 
   if (loading) return <div className="panel profile-placeholder">Cargando usuario…</div>
+  if (loadError) return <div className="panel profile-placeholder" role="alert">{loadError}<div><button type="button" className="ghost-button" onClick={onCancel}>Volver</button></div></div>
 
   return <>
     <div className="page-heading">
@@ -123,8 +133,9 @@ export function UserEditPage({ idUsuario, areas = [], onUpdate, onCancel, onErro
         <Field label="Teléfono"><input type="tel" name="telefono" maxLength="30" value={form.telefono} onChange={change} /></Field>
         <Field label="Puesto"><input name="puesto" maxLength="150" value={form.puesto} onChange={change} /></Field>
         <Field label="Área principal" required={areaRequired}>
-          <Select name="idArea" value={form.idArea} onChange={change} items={areas} required={areaRequired} />
+          <Select name="idArea" value={form.idArea} onChange={change} items={availableAreas} required={areaRequired} />
           {areaRequired && <small className="field-help">El área es obligatoria para solicitantes y aprobadores.</small>}
+          {areasError && <small className="field-help" role="alert">No se pudo actualizar la lista de areas. Se conserva el area asignada. {areasError}</small>}
         </Field>
       </div>
 
@@ -139,7 +150,7 @@ export function UserEditPage({ idUsuario, areas = [], onUpdate, onCancel, onErro
       </div>
 
       <div className="section-heading user-permissions-heading"><h2>Permisos de la aplicacion</h2><p>Controla por separado las vistas y acciones disponibles para este usuario.</p></div>
-      {isAdministrator && <p className="field-help">La cuenta Administrador siempre tiene acceso completo. Para restringirla se debe retirar ese rol fuera de este formulario.</p>}
+      {isAdministrator && <p className="field-help">El rol Administrador conserva su alcance administrativo. Los permisos marcados abajo determinan que vistas y acciones puede usar esta cuenta.</p>}
       <p className="field-help">Crear, editar, enviar y eliminar solicitudes o tickets requiere el rol Solicitante. Aprobar accesos y gestionar actividades requiere el rol Aprobador. Asigna tambien el area correspondiente.</p>
       {(form.esGuardia || form.esProveedor) && <p className="field-help">Este tipo de cuenta solo utiliza los permisos de su portal.</p>}
       <PermissionPicker selected={form.permisos} allowed={form.esGuardia ? ['ESCANEAR_QR'] : form.esProveedor ? ['VER_PORTAL_PROVEEDOR', 'REGISTRAR_PERSONAS_PROVEEDOR'] : null} onChange={(permisos) => setForm((current) => ({ ...current, permisos }))} />

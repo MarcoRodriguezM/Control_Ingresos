@@ -6,6 +6,7 @@ using Control_Ingresos.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -56,21 +57,31 @@ builder.Services
 
         options.Events.OnValidatePrincipal = async context =>
         {
-            var applicationSession = context.HttpContext.RequestServices
-                .GetRequiredService<ApplicationSession>();
-            var cookieInstanceId = context.Principal?
-                .FindFirst(ApplicationSession.ClaimType)?
-                .Value;
-
-            if (string.Equals(
-                cookieInstanceId,
-                applicationSession.InstanceId,
-                StringComparison.Ordinal))
+            if (context.Principal is not null)
             {
                 var accessValidator = context.HttpContext.RequestServices
                     .GetRequiredService<CurrentUserAccessValidator>();
-                if (context.Principal is not null && await accessValidator.IsCurrentAsync(
-                    context.Principal, context.HttpContext.RequestAborted)) return;
+                var currentRoles = await accessValidator.GetCurrentRolesAsync(
+                    context.Principal, context.HttpContext.RequestAborted);
+                if (currentRoles is not null)
+                {
+                    context.HttpContext.Items[CurrentUserAccessValidator.CurrentRolesItemKey] = currentRoles;
+                    var cookieRoles = context.Principal.FindAll(ClaimTypes.Role)
+                        .Select(claim => claim.Value)
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    if (!cookieRoles.SetEquals(currentRoles))
+                    {
+                        var claims = context.Principal.Claims
+                            .Where(claim => claim.Type != ClaimTypes.Role)
+                            .Concat(currentRoles.Select(role => new Claim(ClaimTypes.Role, role)));
+                        var renewedPrincipal = new ClaimsPrincipal(new ClaimsIdentity(
+                            claims, CookieAuthenticationDefaults.AuthenticationScheme));
+                        context.ReplacePrincipal(renewedPrincipal);
+                        context.HttpContext.User = renewedPrincipal;
+                        context.ShouldRenew = true;
+                    }
+                    return;
+                }
             }
 
             context.RejectPrincipal();

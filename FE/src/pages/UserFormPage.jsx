@@ -20,7 +20,7 @@ const initialForm = {
   permisos: [],
 }
 
-export function UserFormPage({ areas = [], onCreate, onCancel }) {
+export function UserFormPage({ areas = [], areasError = '', onCreate, onCancel }) {
   const [form, setForm] = useState(initialForm)
   const [saving, setSaving] = useState(false)
 
@@ -92,6 +92,7 @@ export function UserFormPage({ areas = [], onCreate, onCancel }) {
         <Field label="Área principal" required={areaRequired}>
           <Select name="idArea" value={form.idArea} onChange={change} items={areas} required={areaRequired} />
           {areaRequired && <small className="field-help">El área es obligatoria para solicitantes y aprobadores.</small>}
+          {areasError && <small className="field-help" role="alert">No se pudo cargar la lista de areas. {areasError}</small>}
         </Field>
         <Field label="Contraseña inicial" required full><input type="password" name="contrasena" minLength="8" maxLength="200" value={form.contrasena} onChange={change} required autoComplete="new-password" /></Field>
       </div>
@@ -113,7 +114,7 @@ export function UserFormPage({ areas = [], onCreate, onCancel }) {
 
       {form.esProveedor && <p className="provider-account-help">El correo de esta cuenta debe coincidir con el correo principal registrado para el proveedor.</p>}
 
-      <div className="form-footer"><button type="button" className="ghost-button" onClick={onCancel}>Cancelar</button><button type="submit" className="primary-button teal" disabled={saving}><Icon name="users" />{saving ? 'Guardando…' : 'Crear usuario'}</button></div>
+      <div className="form-footer"><button type="button" className="ghost-button" onClick={onCancel}>Cancelar</button><button type="submit" className="primary-button teal" disabled={saving || (areaRequired && areas.length === 0)}><Icon name="users" />{saving ? 'Guardando…' : 'Crear usuario'}</button></div>
     </form>
   </>
 }

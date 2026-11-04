@@ -3,7 +3,7 @@ import { formatDate } from '../utils/formatters'
 
 const normalize = (value) => (value ?? '').trim().toLocaleLowerCase('es')
 
-export function DashboardPage({ session, requests, approvals, loading, approvalsLoading, canCreateRequests, canViewRequests, canViewPersons, onNew, onRequests, onRequest, onApprovals, onPersons }) {
+export function DashboardPage({ session, requests, approvals, loading, loadError, approvalsLoading, canCreateRequests, canViewRequests, canViewPersons, onNew, onRequests, onRequest, onApprovals, onPersons }) {
   const today = new Date().toLocaleDateString('en-CA')
   const pendingApprovals = approvals.filter((item) => item.codigoEstado === 'PENDIENTE').length
   const sent = requests.filter((item) => normalize(item.estado).includes('enviad')).length
@@ -20,6 +20,7 @@ export function DashboardPage({ session, requests, approvals, loading, approvals
       <div><p className="eyebrow">Panel principal</p><h1>Bienvenido, {session.nombreCompleto?.split(/\s+/)[0] || session.idUsuario}</h1><p>Consulta el estado de los ingresos y continúa con tus tareas.</p></div>
       {canCreateRequests && <button type="button" className="primary-button" onClick={onNew}><span className="plus-sign">+</span>Nueva solicitud</button>}
     </div>
+    {loadError && <div className="panel dashboard-panel" role="status"><p>{loadError}</p></div>}
 
     <section className="dashboard-stats" aria-label="Resumen de solicitudes">
       <StatCard icon="file" label="Solicitudes" value={requests.length} loading={loading} hint="Registradas en el sistema" tone="blue" />

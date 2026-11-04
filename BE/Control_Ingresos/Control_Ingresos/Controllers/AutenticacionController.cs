@@ -13,8 +13,33 @@ namespace Control_Ingresos.Controllers;
 [Route("api/autenticacion")]
 public sealed class AutenticacionController(
     ISolicitudesRepository repository,
-    ApplicationSession applicationSession) : ControllerBase
+    ApplicationSession applicationSession,
+    CurrentUserAccessValidator accessValidator) : ControllerBase
 {
+    [Authorize]
+    [HttpGet("sesion")]
+    [ProducesResponseType<SesionUsuario>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<SesionUsuario>> Sesion(CancellationToken cancellationToken)
+    {
+        var idUsuario = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(idUsuario)) return Unauthorized();
+        var roles = await accessValidator.GetCurrentRolesAsync(User, cancellationToken);
+        if (roles is null) return Unauthorized();
+        var perfil = await repository.ObtenerPerfilAsync(idUsuario, cancellationToken);
+        if (perfil is null) return Unauthorized();
+        var area = perfil.Areas.FirstOrDefault(item => item.EsAreaPrincipal) ?? perfil.Areas.FirstOrDefault();
+        return Ok(new SesionUsuario(
+            perfil.IdUsuario,
+            perfil.NombreCompleto,
+            perfil.Correo,
+            perfil.Puesto,
+            area?.IdArea,
+            area?.Nombre,
+            perfil.EsAprobador,
+            perfil.PuedeSolicitar,
+            roles));
+    }
+
     [Authorize]
     [HttpGet("perfil")]
     [ProducesResponseType<PerfilUsuario>(StatusCodes.Status200OK)]

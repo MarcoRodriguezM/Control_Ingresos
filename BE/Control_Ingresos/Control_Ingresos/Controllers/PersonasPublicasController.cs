@@ -2,6 +2,7 @@ using Control_Ingresos.Data;
 using Control_Ingresos.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Control_Ingresos.Services;
 
 namespace Control_Ingresos.Controllers;
 
@@ -22,7 +23,7 @@ public sealed class PersonasPublicasController(
         if (!EsCodigoQrValido(codigoQr)) return NotFound();
 
         var persona = await repository.ConsultarPersonaQrAsync(codigoQr, cancellationToken);
-        return persona is null ? NotFound() : Ok(persona);
+        return persona is null ? NotFound() : Ok(persona with { FotografiaUrl = PersonPhotoAvailability.AvailableUrl(persona.FotografiaUrl, environment.ContentRootPath) });
     }
 
     [HttpGet("qr/{codigoQr}/fotografia")]

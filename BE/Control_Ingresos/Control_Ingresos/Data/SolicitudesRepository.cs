@@ -28,7 +28,7 @@ public sealed class SolicitudesRepository(
         if (!await reader.ReadAsync(cancellationToken))
             return null;
 
-        return new(
+        var usuario = new SesionUsuario(
             reader.GetString(0),
             GetNullableString(reader, 1),
             GetNullableString(reader, 2),
@@ -39,6 +39,8 @@ public sealed class SolicitudesRepository(
             reader.GetBoolean(7),
             (GetNullableString(reader, 8) ?? string.Empty)
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        await reader.CloseAsync();
+        return usuario with { Roles = await ReadUserRolesAsync(connection, usuario.IdUsuario, cancellationToken) };
     }
 
     public async Task<PerfilUsuario?> ObtenerPerfilAsync(string idUsuario, CancellationToken cancellationToken)
@@ -141,7 +143,28 @@ public sealed class SolicitudesRepository(
             }
         }
 
-        return usuario with { Areas = areas };
+        await reader.CloseAsync();
+        var roles = await ReadUserRolesAsync(connection, idUsuario, cancellationToken);
+        return usuario with { Areas = areas, Roles = string.Join(", ", roles) };
+    }
+
+    private static async Task<string[]> ReadUserRolesAsync(
+        SqlConnection connection,
+        string idUsuario,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new SqlCommand("""
+            SELECT r.Nombre
+            FROM dbo.Usuario_Rol AS ur
+            INNER JOIN dbo.Rol AS r ON r.IdRol = ur.IdRol
+            WHERE ur.IdUsuario = @IdUsuario AND r.Activo = 1;
+            """, connection);
+        Add(command, "@IdUsuario", SqlDbType.VarChar, idUsuario, 50);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var roles = new List<string>();
+        while (await reader.ReadAsync(cancellationToken))
+            roles.Add(reader.GetString(0).Trim());
+        return roles.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     }
 
     public async Task<string> CrearUsuarioAsync(CrearUsuarioRequest request, string usuarioCreacion, CancellationToken cancellationToken)

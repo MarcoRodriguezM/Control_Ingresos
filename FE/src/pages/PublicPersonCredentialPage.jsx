@@ -23,14 +23,13 @@ export function PublicPersonCredentialPage({ authenticated = false, onLogin }) {
     let localPhotographUrl = ''
     Promise.allSettled([
       controlIngresosApi.consultarCredencialPublicaPersona(codigoQr),
-      controlIngresosApi.obtenerFotografiaPublicaPersona(codigoQr),
       QRCode.toDataURL(window.location.href, {
         width: 260,
         margin: 2,
         errorCorrectionLevel: 'H',
         color: { dark: '#0a2035', light: '#ffffff' },
       }),
-    ]).then(([personResult, photoResult, qrResult]) => {
+    ]).then(async ([personResult, qrResult]) => {
       if (!active) return
       if (personResult.status === 'rejected') {
         setError(personResult.reason?.status === 404
@@ -40,11 +39,17 @@ export function PublicPersonCredentialPage({ authenticated = false, onLogin }) {
       }
 
       setPersona(personResult.value)
-      if (photoResult.status === 'fulfilled' && photoResult.value) {
-        localPhotographUrl = URL.createObjectURL(photoResult.value)
-        setPhotographUrl(localPhotographUrl)
-      }
       if (qrResult.status === 'fulfilled') setQrImage(qrResult.value)
+      if (!personResult.value.fotografiaUrl) return
+      try {
+        const photo = await controlIngresosApi.obtenerFotografiaPublicaPersona(codigoQr)
+        if (active && photo) {
+          localPhotographUrl = URL.createObjectURL(photo)
+          setPhotographUrl(localPhotographUrl)
+        }
+      } catch {
+        // La credencial sigue disponible aunque no se pueda cargar la foto.
+      }
     }).finally(() => active && setLoading(false))
 
     return () => {

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Data.SqlClient;
 using System.Security.Claims;
+using Control_Ingresos.Services;
 
 namespace Control_Ingresos.Controllers;
 
@@ -45,7 +46,7 @@ public sealed class PersonasController(
 
         return persona is null
             ? NotFound()
-            : Ok(persona);
+            : Ok(persona with { FotografiaUrl = PersonPhotoAvailability.AvailableUrl(persona.FotografiaUrl, environment.ContentRootPath) });
     }
 
     [HttpGet("{id:long}/qr")]
@@ -114,7 +115,7 @@ public sealed class PersonasController(
             return NotFound();
 
         var persona = await repository.ConsultarPersonaQrAsync(codigoQr, cancellationToken);
-        return persona is null ? NotFound() : Ok(persona);
+        return persona is null ? NotFound() : Ok(persona with { FotografiaUrl = PersonPhotoAvailability.AvailableUrl(persona.FotografiaUrl, environment.ContentRootPath) });
     }
 
     [HttpPost]
@@ -281,8 +282,7 @@ public sealed class PersonasController(
         }
 
         var rutaPublica = $"/uploads/personas/{nombreArchivo}";
-        var url = $"{Request.Scheme}://{Request.Host}{Request.PathBase}{rutaPublica}";
-        return new FotografiaGuardada(url, rutaPublica, rutaArchivo);
+        return new FotografiaGuardada(rutaPublica, rutaPublica, rutaArchivo);
     }
 
     private sealed record FotografiaGuardada(string Url, string RutaPublica, string RutaArchivo);

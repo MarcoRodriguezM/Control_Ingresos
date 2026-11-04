@@ -44,8 +44,8 @@ export function roleNames(value) {
 
 export function permissionsFromRoles(value) {
   const roles = roleNames(value)
-  if (roles.includes('ADMINISTRADOR')) return [...allPermissions]
   if (roles.includes('PERM_CONFIGURADO')) return allPermissions.filter((code) => roles.includes(code))
+  if (roles.includes('ADMINISTRADOR')) return [...allPermissions]
 
   const granted = new Set()
   const add = (...codes) => codes.forEach((code) => granted.add(code))

@@ -32,6 +32,8 @@ public sealed class UsuariosController(ISolicitudesRepository repository) : Cont
     [ProducesResponseType(StatusCodes.Status201Created)]
     public async Task<ActionResult<object>> Crear(CrearUsuarioRequest request, CancellationToken cancellationToken)
     {
+        if ((request.PuedeSolicitar || request.EsAprobador) && request.IdArea is null or <= 0)
+            return BadRequest(new ProblemDetails { Detail = "Selecciona un area principal para el solicitante o aprobador." });
         if (request.Permisos?.Any(permission => !AppPermissions.IsKnown(permission)) == true)
             return BadRequest("La lista de permisos contiene un valor no valido.");
         var idUsuarioActual = User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -48,6 +50,8 @@ public sealed class UsuariosController(ISolicitudesRepository repository) : Cont
         ActualizarUsuarioRequest request,
         CancellationToken cancellationToken)
     {
+        if ((request.PuedeSolicitar || request.EsAprobador) && request.IdArea is null or <= 0)
+            return BadRequest(new ProblemDetails { Detail = "Selecciona un area principal para el solicitante o aprobador." });
         if (request.Permisos?.Any(permission => !AppPermissions.IsKnown(permission)) == true)
             return BadRequest("La lista de permisos contiene un valor no valido.");
         var idUsuarioActual = User.FindFirstValue(ClaimTypes.NameIdentifier);

@@ -75,6 +75,7 @@ export const controlIngresosApi = {
     method: 'POST',
     body: JSON.stringify(credentials),
   }),
+  obtenerSesion: () => request('/api/autenticacion/sesion', {}, false),
   cerrarSesion: () => request('/api/autenticacion/logout', { method: 'POST' }),
   obtenerMiPerfil: () => request('/api/autenticacion/perfil'),
   listarUsuarios: () => request('/api/usuarios'),

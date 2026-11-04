@@ -5,13 +5,14 @@ namespace Control_Ingresos.Security;
 
 public sealed class CurrentUserAccessValidator(IConfiguration configuration)
 {
+    public const string CurrentRolesItemKey = "ControlIngresos.CurrentRoles";
     private readonly string _connectionString = configuration.GetConnectionString("ControlIngresos")
         ?? throw new InvalidOperationException("No se configuro ConnectionStrings:ControlIngresos.");
 
-    public async Task<bool> IsCurrentAsync(ClaimsPrincipal principal, CancellationToken cancellationToken)
+    public async Task<IReadOnlyCollection<string>?> GetCurrentRolesAsync(ClaimsPrincipal principal, CancellationToken cancellationToken)
     {
         var idUsuario = principal.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrWhiteSpace(idUsuario)) return false;
+        if (string.IsNullOrWhiteSpace(idUsuario)) return null;
 
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
@@ -29,16 +30,13 @@ public sealed class CurrentUserAccessValidator(IConfiguration configuration)
         command.Parameters.Add("@IdUsuario", System.Data.SqlDbType.VarChar, 50).Value = idUsuario;
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken) || !reader.GetBoolean(0)) return false;
+        if (!await reader.ReadAsync(cancellationToken) || !reader.GetBoolean(0)) return null;
 
         var currentRoles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (await reader.NextResultAsync(cancellationToken))
             while (await reader.ReadAsync(cancellationToken))
                 currentRoles.Add(reader.GetString(0).Trim());
 
-        var cookieRoles = principal.FindAll(ClaimTypes.Role)
-            .Select(claim => claim.Value)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return currentRoles.SetEquals(cookieRoles);
+        return currentRoles.ToArray();
     }
 }

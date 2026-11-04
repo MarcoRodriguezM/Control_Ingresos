@@ -14,7 +14,10 @@ public static class PermissionGate
         }
 
         var required = Required(context.Request);
-        if (required.Length == 0 || required.Any(permission => AppPermissions.Has(context.User, permission)))
+        var currentRoles = context.Items[CurrentUserAccessValidator.CurrentRolesItemKey] as IReadOnlyCollection<string>;
+        if (required.Length == 0 || required.Any(permission => currentRoles is not null
+            ? AppPermissions.Has(currentRoles, permission)
+            : AppPermissions.Has(context.User, permission)))
         {
             await next(context);
             return;

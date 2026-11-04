@@ -62,6 +62,70 @@ function App() {
   const navigate = useNavigate()
   const location = useLocation()
   const [session, setSession] = useState(readSession)
+  const [sessionReady, setSessionReady] = useState(() => !readSession()?.idUsuario)
+  const [sessionRestoreError, setSessionRestoreError] = useState('')
+  const [sessionValidationAttempt, setSessionValidationAttempt] = useState(0)
+
+  useEffect(() => {
+    if (sessionReady || !session?.idUsuario) return undefined
+    let active = true
+    controlIngresosApi.obtenerSesion()
+      .then((current) => {
+        if (!active) return
+        localStorage.setItem(sessionKey, JSON.stringify(current))
+        setSession(current)
+        setSessionRestoreError('')
+        setSessionReady(true)
+      })
+      .catch((error) => {
+        if (!active) return
+        if (error.status === 401) {
+          localStorage.removeItem(sessionKey)
+          setSession(null)
+          setSessionReady(true)
+          navigate('/login', { replace: true })
+          return
+        }
+        setSessionRestoreError(error.message || 'No se pudo validar la sesion.')
+      })
+    return () => { active = false }
+  }, [sessionReady, session?.idUsuario, sessionValidationAttempt, navigate])
+
+  async function refreshSession() {
+    const current = await controlIngresosApi.obtenerSesion()
+    localStorage.setItem(sessionKey, JSON.stringify(current))
+    setSession((previous) => JSON.stringify(previous) === JSON.stringify(current) ? previous : current)
+    return current
+  }
+
+  useEffect(() => {
+    if (!sessionReady || !session?.idUsuario) return undefined
+    let active = true
+    const synchronize = async () => {
+      try {
+        const current = await controlIngresosApi.obtenerSesion()
+        if (!active) return
+        localStorage.setItem(sessionKey, JSON.stringify(current))
+        setSession((previous) => JSON.stringify(previous) === JSON.stringify(current) ? previous : current)
+      } catch (error) {
+        if (!active || error.status !== 401) return
+        localStorage.removeItem(sessionKey)
+        setSession(null)
+        navigate('/login', { replace: true })
+      }
+    }
+    const onFocus = () => { if (!document.hidden) synchronize() }
+    synchronize()
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onFocus)
+    const timer = window.setInterval(synchronize, 60_000)
+    return () => {
+      active = false
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onFocus)
+      window.clearInterval(timer)
+    }
+  }, [sessionReady, session?.idUsuario, navigate])
 
   useEffect(() => {
     if (!session && location.pathname !== '/login') {
@@ -70,7 +134,8 @@ function App() {
   }, [session, location.pathname, location.search])
 
   async function login(credentials) {
-    const authenticatedUser = await controlIngresosApi.iniciarSesion(credentials)
+    await controlIngresosApi.iniciarSesion(credentials)
+    const authenticatedUser = await controlIngresosApi.obtenerSesion()
     localStorage.setItem(sessionKey, JSON.stringify(authenticatedUser))
     setSession(authenticatedUser)
     const returnTo = isGuardSession(authenticatedUser)
@@ -94,6 +159,8 @@ function App() {
     }
   }
 
+  if (!sessionReady) return <main className="permission-empty-page"><section className="panel permission-empty-card"><h1>Validando sesion</h1>{sessionRestoreError ? <><p>{sessionRestoreError}</p><button type="button" className="primary-button" onClick={() => { setSessionRestoreError(''); setSessionValidationAttempt((attempt) => attempt + 1) }}>Reintentar</button></> : <p>Consultando los permisos actuales de tu cuenta...</p>}</section></main>
+
   if (!session) {
     return <Routes>
       <Route path="/login" element={<LoginPage onLogin={login} />} />
@@ -111,7 +178,7 @@ function App() {
     return <ProviderApp session={session} onLogout={logout} />
   }
 
-  return <AuthenticatedApp session={session} onLogout={logout} />
+  return <AuthenticatedApp session={session} onLogout={logout} onSessionRefresh={refreshSession} />
 }
 
 function NoPermissionPage({ onLogout }) {
@@ -404,7 +471,7 @@ function GuardWorkspace({ session, onLogout }) {
   </div>
 }
 
-function AuthenticatedApp({ session, onLogout }) {
+function AuthenticatedApp({ session, onLogout, onSessionRefresh }) {
   const location = useLocation()
   const navigate = useNavigate()
   const isAdministrator = hasRole(session, 'Administrador')
@@ -481,6 +548,9 @@ function AuthenticatedApp({ session, onLogout }) {
   const [activitiesLoading, setActivitiesLoading] = useState(false)
   const [usuarios, setUsuarios] = useState([])
   const [usersLoading, setUsersLoading] = useState(false)
+  const [userAreas, setUserAreas] = useState([])
+  const [userAreasError, setUserAreasError] = useState('')
+  const [dashboardLoadError, setDashboardLoadError] = useState('')
   const [profile, setProfile] = useState(null)
   const [profileLoading, setProfileLoading] = useState(true)
   const [approvalsLoading, setApprovalsLoading] = useState(false)
@@ -502,23 +572,49 @@ function AuthenticatedApp({ session, onLogout }) {
 
   useEffect(() => {
     let active = true
-    const needsOptions = canViewRequests || canCreateRequests || canEditRequests || canApprove || canManageUsers || canCreatePersons
-    Promise.all([
+    const needsOptions = canViewRequests || canCreateRequests || canEditRequests || canApprove || canCreatePersons
+    Promise.allSettled([
       needsOptions ? controlIngresosApi.obtenerDatosFormularioSolicitud() : Promise.resolve(null),
       canViewRequests ? controlIngresosApi.listarSolicitudes() : Promise.resolve([]),
       canViewPersons ? controlIngresosApi.listarPersonas() : Promise.resolve([]),
     ])
-      .then(([data, records, people]) => {
+      .then(([optionsResult, requestsResult, peopleResult]) => {
         if (!active) return
-        setOptions(data)
-        setSolicitudes(records)
-        setPersonas(people)
-        if (data) setForm((current) => withDefaults(current, data, session.idUsuario))
+        if (optionsResult.status === 'fulfilled') {
+          setOptions(optionsResult.value)
+          if (optionsResult.value) setForm((current) => withDefaults(current, optionsResult.value, session.idUsuario))
+        }
+        if (requestsResult.status === 'fulfilled') setSolicitudes(requestsResult.value)
+        if (peopleResult.status === 'fulfilled') setPersonas(peopleResult.value)
+        const failed = [optionsResult, requestsResult, peopleResult].find((result) => result.status === 'rejected')
+        if (failed) {
+          if (isDashboardRoute && failed.reason?.status === 403) {
+            setDashboardLoadError('Algunos datos del panel no estan disponibles con los permisos actuales de esta cuenta.')
+          } else {
+            setError(failed.reason?.message || 'No se pudieron cargar los datos.')
+          }
+        } else {
+          setDashboardLoadError('')
+        }
       })
-      .catch((requestError) => active && setError(requestError.message))
       .finally(() => active && setLoading(false))
     return () => { active = false }
-  }, [session.idUsuario, canViewRequests, canCreateRequests, canEditRequests, canApprove, canManageUsers, canCreatePersons, canViewPersons])
+  }, [session.idUsuario, canViewRequests, canCreateRequests, canEditRequests, canApprove, canCreatePersons, canViewPersons, isDashboardRoute])
+
+  useEffect(() => {
+    if (!canManageUsers) return undefined
+    let active = true
+    controlIngresosApi.listarCatalogo('areas')
+      .then((areas) => {
+        if (!active) return
+        setUserAreas(areas)
+        setUserAreasError('')
+      })
+      .catch((requestError) => {
+        if (active) setUserAreasError(requestError.message || 'No se pudieron cargar las areas.')
+      })
+    return () => { active = false }
+  }, [canManageUsers])
 
   useEffect(() => {
     if (requestUsesEmployees && peopleEntryMode !== 'manual') setPeopleEntryMode('manual')
@@ -668,7 +764,13 @@ function AuthenticatedApp({ session, onLogout }) {
         const records = await controlIngresosApi.listarAprobaciones()
         if (active) setAprobaciones(records)
       } catch (requestError) {
-        if (active) setError(requestError.message)
+        if (active) {
+          if (isDashboardRoute && requestError.status === 403) {
+            setDashboardLoadError('Las aprobaciones no estan disponibles con los permisos actuales de esta cuenta.')
+          } else {
+            setError(requestError.message)
+          }
+        }
       } finally {
         if (active) setApprovalsLoading(false)
       }
@@ -1231,7 +1333,17 @@ function AuthenticatedApp({ session, onLogout }) {
     setError('')
     try {
       await controlIngresosApi.actualizarUsuario(idUsuario, user)
-      setUsuarios(await controlIngresosApi.listarUsuarios())
+      if (idUsuario === session.idUsuario) {
+        const current = await onSessionRefresh()
+        await showSuccessAlert('Tus permisos fueron actualizados correctamente.')
+        navigate(isGuardSession(current) ? '/escanear-qr' : isProviderSession(current) ? '/portal-proveedor' : '/dashboard')
+        return { success: true }
+      }
+      try {
+        setUsuarios(await controlIngresosApi.listarUsuarios())
+      } catch {
+        // El cambio ya fue guardado; la lista se recargara al volver a usuarios.
+      }
       await showSuccessAlert('El usuario fue actualizado correctamente.')
       navigate(`/usuarios/${encodeURIComponent(idUsuario)}`)
       return { success: true }
@@ -1424,16 +1536,16 @@ function AuthenticatedApp({ session, onLogout }) {
         <section className="content">
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/dashboard" element={<DashboardPage session={{ ...session, esAprobador: canApprove }} requests={solicitudes} approvals={aprobaciones} loading={loading} approvalsLoading={approvalsLoading} canCreateRequests={canCreateRequests} canViewRequests={canViewRequests} canViewPersons={canViewPersons} onNew={openNew} onRequests={() => navigate('/solicitudes')} onRequest={(id) => navigate(`/solicitudes/${id}`)} onApprovals={() => navigate('/aprobaciones')} onPersons={openPersons} />} />
+            <Route path="/dashboard" element={<DashboardPage session={{ ...session, esAprobador: canApprove }} requests={solicitudes} approvals={aprobaciones} loading={loading} loadError={dashboardLoadError} approvalsLoading={approvalsLoading} canCreateRequests={canCreateRequests} canViewRequests={canViewRequests} canViewPersons={canViewPersons} onNew={openNew} onRequests={() => navigate('/solicitudes')} onRequest={(id) => navigate(`/solicitudes/${id}`)} onApprovals={() => navigate('/aprobaciones')} onPersons={openPersons} />} />
             <Route path="/mis-actividades" element={canViewActivities ? <MyActivitiesPage items={actividades} canComplete={canCompleteActivities} canOpenRequest={canViewRequestDetails} loading={activitiesLoading} onRequest={openActivityRequest} onComplete={completeActivity} /> : <Navigate to={homePath} replace />} />
             <Route path="/mis-actividades/solicitudes/:idSolicitud" element={canViewActivities && canViewRequestDetails ? <ActivityRequestDetailPage request={activityRequestDetail} activities={actividades.filter((item) => Number(item.idSolicitud) === Number(activityRequestRoute?.params.idSolicitud))} options={options} loading={activityRequestLoading} onBack={() => navigate('/mis-actividades')} /> : <Navigate to={homePath} replace />} />
             <Route path="/mis-actividades/solicitudes/:idSolicitud/personas/:idSolicitudPersona" element={canViewActivities && canViewRequestDetails ? <ActivityRequestDetailPage request={activityRequestDetail} activities={actividades.filter((item) => Number(item.idSolicitud) === Number(activityRequestRoute?.params.idSolicitud) && Number(item.idSolicitudPersona) === Number(activityRequestRoute?.params.idSolicitudPersona))} options={options} loading={activityRequestLoading} onBack={() => navigate('/mis-actividades')} /> : <Navigate to={homePath} replace />} />
             <Route path="/configuracion/actividades" element={canManageWorkflows ? <ActivityWorkflowPage onError={setError} /> : <Navigate to={homePath} replace />} />
             <Route path="/configuracion/freshservice" element={canViewFreshservice ? <FreshserviceIntegrationPage /> : <Navigate to={homePath} replace />} />
             <Route path="/usuarios" element={canManageUsers ? <UserManagementPage items={usuarios} loading={usersLoading} onNew={() => { setError(''); navigate('/usuarios/nuevo') }} onSelect={(idUsuario) => { setError(''); navigate(`/usuarios/${encodeURIComponent(idUsuario)}`) }} /> : <Navigate to={homePath} replace />} />
-            <Route path="/usuarios/nuevo" element={canManageUsers ? <UserFormPage areas={options?.areas ?? []} onCreate={createUser} onCancel={() => { setError(''); navigate('/usuarios') }} /> : <Navigate to={homePath} replace />} />
+            <Route path="/usuarios/nuevo" element={canManageUsers ? <UserFormPage areas={userAreas} areasError={userAreasError} onCreate={createUser} onCancel={() => { setError(''); navigate('/usuarios') }} /> : <Navigate to={homePath} replace />} />
             <Route path="/usuarios/:idUsuario" element={canManageUsers ? <UserDetailPage idUsuario={userDetailRoute?.params.idUsuario ?? ''} onBack={() => { setError(''); navigate('/usuarios') }} onEdit={() => { setError(''); navigate(`/usuarios/${encodeURIComponent(userDetailRoute?.params.idUsuario ?? '')}/editar`) }} onError={setError} /> : <Navigate to={homePath} replace />} />
-            <Route path="/usuarios/:idUsuario/editar" element={canManageUsers ? <UserEditPage idUsuario={userEditRoute?.params.idUsuario ?? ''} areas={options?.areas ?? []} onUpdate={(user) => updateUser(userEditRoute?.params.idUsuario ?? '', user)} onCancel={() => { setError(''); navigate(`/usuarios/${encodeURIComponent(userEditRoute?.params.idUsuario ?? '')}`) }} onError={setError} /> : <Navigate to={homePath} replace />} />
+            <Route path="/usuarios/:idUsuario/editar" element={canManageUsers ? <UserEditPage idUsuario={userEditRoute?.params.idUsuario ?? ''} areas={userAreas} areasError={userAreasError} onUpdate={(user) => updateUser(userEditRoute?.params.idUsuario ?? '', user)} onCancel={() => { setError(''); navigate(`/usuarios/${encodeURIComponent(userEditRoute?.params.idUsuario ?? '')}`) }} onError={setError} /> : <Navigate to={homePath} replace />} />
             <Route path="/perfil" element={<ProfilePage profile={profile} loading={profileLoading} onOpenRequest={openEdit} />} />
             <Route path="/solicitudes" element={canViewRequests ? <RequestsListPage items={solicitudes} loading={loading} canOpenAll={canApprove} canCreate={canCreateRequests} canEdit={canEditRequests} onNew={openNew} onOpen={(id) => navigate(`/solicitudes/${id}`)} onEdit={openEdit} /> : <Navigate to={homePath} replace />} />
             <Route path="/solicitudes/:id" element={canViewRequests ? <RequestTrackingPage session={session} options={options} canCreateTickets={canCreateTickets} canResend={canEditRequests} onBack={() => navigate('/solicitudes')} onTickets={(id, personId) => navigate(`/solicitudes/${id}/tickets${personId ? `?persona=${personId}` : ''}`)} onChanged={async () => setSolicitudes(await controlIngresosApi.listarSolicitudes())} /> : <Navigate to={homePath} replace />} />
