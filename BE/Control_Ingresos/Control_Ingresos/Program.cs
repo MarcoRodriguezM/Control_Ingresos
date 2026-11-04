@@ -24,6 +24,7 @@ builder.Services.AddScoped<IEmpleadosRepository, EmpleadosRepository>();
 builder.Services.AddScoped<IEmpleadoSingularRepository, EmpleadoSingularRepository>();
 builder.Services.AddScoped<IActivityWorkflowRepository, ActivityWorkflowRepository>();
 builder.Services.AddSingleton<ApplicationSession>();
+builder.Services.AddSingleton<AuditLogService>();
 builder.Services.AddScoped<CurrentUserAccessValidator>();
 builder.Services.AddSingleton<ICredentialEmailSender, SmtpCredentialEmailSender>();
 builder.Services.Configure<FreshserviceOptions>(
@@ -119,6 +120,13 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+await AuditSchemaInstaller.EnsureInstalledAsync(app.Configuration, app.Logger,
+    app.Lifetime.ApplicationStopping);
+var legacyAuditCount = await app.Services.GetRequiredService<AuditLogService>()
+    .ImportLegacyFilesAsync(app.Lifetime.ApplicationStopping);
+if (legacyAuditCount > 0)
+    app.Logger.LogInformation("Se importaron {Count} registros de auditoria previos.", legacyAuditCount);
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
@@ -138,6 +146,7 @@ app.UseCors("Frontend");
 app.UseStaticFiles();
 
 app.UseAuthentication();
+app.Use(AuditLogMiddleware.Invoke);
 
 app.Use(async (context, next) =>
 {
