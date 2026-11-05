@@ -44,6 +44,8 @@ export function FreshserviceIntegrationPage() {
       })
       setCatalog(result)
       setPage(targetPage)
+      setSearch('')
+      if (result.items?.length) await selectService(result.items[0])
     } catch (requestError) {
       setError(requestError.message)
     } finally {
@@ -123,8 +125,8 @@ export function FreshserviceIntegrationPage() {
     {catalog && <div className="freshservice-layout">
       <section className="panel freshservice-catalog">
         <header>
-          <div><p className="eyebrow">Página {catalog.page}</p><h2>Servicios disponibles</h2></div>
-          <span>{catalog.items?.length ?? 0}</span>
+          <div><p className="eyebrow">Catalogo de servicios</p><h2>Servicios</h2></div>
+          <span title="Servicios en esta pagina">{catalog.items?.length ?? 0}</span>
         </header>
         <div className="freshservice-search"><Icon name="search" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filtrar esta página" /></div>
         <div className="freshservice-service-list">

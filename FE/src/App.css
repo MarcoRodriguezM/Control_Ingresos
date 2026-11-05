@@ -508,3 +508,14 @@
 .audit-action.updated,.audit-status.updated{--audit-bg:#fff3d7;--audit-fg:#946200}
 .audit-action.deleted,.audit-status.deleted,.audit-status.failed{--audit-bg:#fff0f1;--audit-fg:#b13242}
 .access-matrix-page{display:grid;gap:16px}.access-matrix-intro{padding:20px 24px}.access-matrix-intro p{margin:8px 0 0;line-height:1.55}.access-matrix-notice{margin:0;color:#087f65}.access-matrix-area{padding:22px 24px}.access-matrix-area-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}.access-matrix-area-head h2{margin:0;font-size:18px}.access-matrix-area-head p{margin:6px 0 0;color:#60758a}.access-matrix-users{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:18px}.access-matrix-users label{display:flex;align-items:center;gap:10px;border:1px solid #dce6ee;border-radius:10px;padding:10px 12px;cursor:pointer}.access-matrix-users label span{display:flex;flex-direction:column}.access-matrix-users label small{color:#60758a}.access-matrix-actions{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:18px}@media(max-width:640px){.access-matrix-area-head,.access-matrix-actions{flex-direction:column;align-items:stretch}}
+
+.freshservice-layout{grid-template-columns:minmax(280px,350px) minmax(0,1fr);gap:20px}
+.freshservice-catalog{display:flex;flex-direction:column;height:clamp(420px,calc(100vh - 345px),600px)}
+.freshservice-catalog>header{align-items:center;padding:16px 18px}
+.freshservice-catalog h2{font-size:1.08rem;line-height:1.2}
+.freshservice-search{margin:12px 14px}
+.freshservice-service-list{flex:1;min-height:0;max-height:none;overscroll-behavior:contain;scrollbar-width:thin}
+.freshservice-service{padding:12px 14px}
+.freshservice-pagination{flex:none}
+.freshservice-detail>.freshservice-empty{min-height:clamp(420px,calc(100vh - 345px),600px)}
+@media(max-width:1050px){.freshservice-layout{grid-template-columns:1fr}.freshservice-catalog{height:auto}.freshservice-service-list{flex:none;max-height:340px}.freshservice-detail>.freshservice-empty{min-height:240px}}
