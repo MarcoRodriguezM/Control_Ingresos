@@ -3,6 +3,7 @@ export const ACTIVITY_ENTRY_TYPES = [
   { code: 'VISITA', label: 'Visitas' },
   { code: 'PRACTICANTE', label: 'Practicantes' },
   { code: 'SERV_PROF', label: 'Servicios profesionales' },
+  { code: 'PROVEEDOR', label: 'Proveedores' },
 ]
 
 export function activityAppliesToType(activity, typeCode) {

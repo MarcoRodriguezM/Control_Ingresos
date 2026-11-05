@@ -30,3 +30,7 @@ BE/Control_Ingresos/Control_Ingresos/App_Data/audit/
 
 # Script de instalacion incluido en el backend
 !BE/Control_Ingresos/Control_Ingresos/Sql/001_Auditoria_Registro.sql
+!BE/Control_Ingresos/Control_Ingresos/Sql/002_Tipo_Ingreso_Proveedor.sql
+!BE/Control_Ingresos/Control_Ingresos/Sql/003_Matriz_Areas.sql
+!BE/Control_Ingresos/Control_Ingresos/Sql/004_Matriz_Aprobaciones.sql
+!BE/Control_Ingresos/Control_Ingresos/Sql/005_Matriz_Usuario_Actualizar.sql

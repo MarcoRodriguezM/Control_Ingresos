@@ -87,6 +87,8 @@ public sealed record IdCreadoResponse(
     long Id,
     string? Numero = null);
 
+public sealed record DecisionAprobacionResponse(long Id, bool AccesoAprobado);
+
 public sealed record FotografiaSubidaResponse(string Url);
 
 public sealed record FotografiaContenidoResponse(string DataUrl);

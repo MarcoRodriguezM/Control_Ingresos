@@ -52,7 +52,8 @@ export function RequestApprovalDetailPage({ request, options, approvalItems, loa
     const isApproval = decision.codigoEstado === 'APROBADA'
     setDecision(null)
     setComment('')
-    showSuccessAlert(isApproval ? 'El acceso fue aprobado.' : 'El acceso fue rechazado.')
+    showSuccessAlert(!isApproval ? 'El acceso fue rechazado.'
+      : result.accesoAprobado ? 'El acceso fue aprobado.' : 'Tu aprobacion fue registrada. Faltan otras decisiones para habilitar el acceso.')
   }
 
   return <>

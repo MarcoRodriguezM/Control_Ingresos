@@ -66,7 +66,8 @@ export function ApprovalsPage({ items, loading, onDecide, onDecideMany, onViewDe
       }
       setDecision(null)
       setComment('')
-      showSuccessAlert(decision.codigoEstado === 'APROBADA' ? 'El acceso fue aprobado.' : 'El acceso fue rechazado.')
+      showSuccessAlert(decision.codigoEstado === 'RECHAZADA' ? 'El acceso fue rechazado.'
+        : result.accesoAprobado ? 'El acceso fue aprobado.' : 'Tu aprobacion fue registrada. Faltan otras decisiones para habilitar el acceso.')
       return
     }
 
@@ -75,6 +76,7 @@ export function ApprovalsPage({ items, loading, onDecide, onDecideMany, onViewDe
     const successIds = result.successIds ?? []
     const successIdSet = new Set(successIds)
     const successes = decision.items.filter((item) => successIdSet.has(item.idSolicitudPersonaArea))
+      .map((item) => ({ ...item, accesoAprobado: result.results?.find((entry) => entry.idSolicitudPersonaArea === item.idSolicitudPersonaArea)?.accesoAprobado ?? false }))
     const failures = (result.failures ?? []).map((failure) => ({
       ...failure,
       item: decision.items.find((candidate) => candidate.idSolicitudPersonaArea === failure.idSolicitudPersonaArea),
@@ -132,7 +134,7 @@ function DecisionModal({ decision, comment, saving, error, onCommentChange, onCa
 
 function BatchResultModal({ summary, onClose }) {
   const isApproval = summary.codigoEstado === 'APROBADA'
-  const actionLabel = isApproval ? 'Aprobaciones realizadas' : 'Rechazos realizados'
+  const actionLabel = isApproval ? 'Decisiones registradas' : 'Rechazos realizados'
   return <div className="approval-modal-backdrop" role="presentation" onMouseDown={onClose}>
     <section className={`approval-modal bulk-result-modal ${isApproval ? 'approve' : 'reject'}`} role="dialog" aria-modal="true" aria-labelledby="batch-result-title" onMouseDown={(event) => event.stopPropagation()}>
       <h2 id="batch-result-title" className="approval-modal-title">Resultado de {isApproval ? 'aprobacion' : 'rechazo'}</h2>
@@ -143,5 +145,5 @@ function BatchResultModal({ summary, onClose }) {
 }
 
 function ResultGroup({ label, items, failed }) {
-  return <section className={`bulk-result-group ${failed ? 'failed' : 'successful'}`}><strong>{label} ({items.length})</strong><div className="decision-copy multiple bulk-result-list">{items.map((item, index) => <div className="decision-person" key={item.idSolicitudPersonaArea ?? index}><h3>{item.persona || 'Sin nombre'}</h3><p>{item.area || 'Sin area'}</p>{item.message && <small>{item.message}</small>}</div>)}</div></section>
+  return <section className={`bulk-result-group ${failed ? 'failed' : 'successful'}`}><strong>{label} ({items.length})</strong><div className="decision-copy multiple bulk-result-list">{items.map((item, index) => <div className="decision-person" key={item.idSolicitudPersonaArea ?? index}><h3>{item.persona || 'Sin nombre'}</h3><p>{item.area || 'Sin area'}</p>{item.message && <small>{item.message}</small>}{!failed && item.codigoEstado === 'PENDIENTE' && item.accesoAprobado === false && <small>Tu decision quedo registrada. Faltan otras aprobaciones.</small>}</div>)}</div></section>
 }

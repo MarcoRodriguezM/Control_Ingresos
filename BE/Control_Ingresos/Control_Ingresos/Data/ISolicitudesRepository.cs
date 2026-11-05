@@ -28,7 +28,7 @@ public interface ISolicitudesRepository
     Task<string?> ObtenerCodigoQrPersonaAsync(long idPersona, string idUsuario, CancellationToken cancellationToken);
     Task<PersonaQrDetalle?> ConsultarPersonaQrAsync(string codigoQr, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<AprobacionResumen>> ListarAprobacionesAsync(string idUsuarioAprobador, CancellationToken cancellationToken);
-    Task<long> DecidirAprobacionAsync(long idSolicitudPersonaArea, string idUsuarioAprobador, DecidirAprobacionRequest request, CancellationToken cancellationToken);
+    Task<(long Id, bool AccesoAprobado)> DecidirAprobacionAsync(long idSolicitudPersonaArea, string idUsuarioAprobador, DecidirAprobacionRequest request, CancellationToken cancellationToken);
     Task<IdCreadoResponse> CrearSolicitudAsync(CrearSolicitudRequest request, CancellationToken cancellationToken);
     Task<IdCreadoResponse> CrearSolicitudCompletaAsync(CrearSolicitudCompletaRequest request, CancellationToken cancellationToken);
     Task<bool> ActualizarSolicitudAsync(long idSolicitud, CrearSolicitudRequest request, CancellationToken cancellationToken);

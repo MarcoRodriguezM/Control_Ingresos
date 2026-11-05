@@ -57,8 +57,8 @@ public sealed class AprobacionesController(
     }
 
     [HttpPut("{idSolicitudPersonaArea:long}/decision")]
-    [ProducesResponseType<IdCreadoResponse>(StatusCodes.Status200OK)]
-    public async Task<ActionResult<IdCreadoResponse>> Decidir(
+    [ProducesResponseType<DecisionAprobacionResponse>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<DecisionAprobacionResponse>> Decidir(
         long idSolicitudPersonaArea,
         DecidirAprobacionRequest request,
         CancellationToken cancellationToken)
@@ -66,7 +66,7 @@ public sealed class AprobacionesController(
         var idUsuarioAprobador = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrWhiteSpace(idUsuarioAprobador)) return Unauthorized();
 
-        var id = await repository.DecidirAprobacionAsync(idSolicitudPersonaArea, idUsuarioAprobador, request, cancellationToken);
-        return Ok(new IdCreadoResponse(id));
+        var result = await repository.DecidirAprobacionAsync(idSolicitudPersonaArea, idUsuarioAprobador, request, cancellationToken);
+        return Ok(new DecisionAprobacionResponse(result.Id, result.AccesoAprobado));
     }
 }

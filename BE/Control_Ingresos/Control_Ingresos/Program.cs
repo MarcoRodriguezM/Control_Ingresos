@@ -122,6 +122,8 @@ var app = builder.Build();
 
 await AuditSchemaInstaller.EnsureInstalledAsync(app.Configuration, app.Logger,
     app.Lifetime.ApplicationStopping);
+await IngresoTypeCatalogInstaller.EnsureInstalledAsync(app.Configuration, app.Logger,
+    app.Lifetime.ApplicationStopping);
 var legacyAuditCount = await app.Services.GetRequiredService<AuditLogService>()
     .ImportLegacyFilesAsync(app.Lifetime.ApplicationStopping);
 if (legacyAuditCount > 0)

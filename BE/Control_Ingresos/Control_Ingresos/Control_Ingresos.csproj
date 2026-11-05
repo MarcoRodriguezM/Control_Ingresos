@@ -19,6 +19,10 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Sql\001_Auditoria_Registro.sql" />
+    <EmbeddedResource Include="Sql\002_Tipo_Ingreso_Proveedor.sql" />
+    <EmbeddedResource Include="Sql\003_Matriz_Areas.sql" />
+    <EmbeddedResource Include="Sql\004_Matriz_Aprobaciones.sql" />
+    <EmbeddedResource Include="Sql\005_Matriz_Usuario_Actualizar.sql" />
   </ItemGroup>
 
   <ProjectExtensions><VisualStudio><UserProperties appsettings_1development_1json__JsonSchema="" /></VisualStudio></ProjectExtensions>

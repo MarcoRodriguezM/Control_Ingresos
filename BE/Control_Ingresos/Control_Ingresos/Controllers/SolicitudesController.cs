@@ -119,6 +119,8 @@ public sealed class SolicitudesController(
             request.Solicitud with { IdEstadoSolicitud = null, IdUsuarioSolicitante = idUsuario, Usuario = idUsuario },
             cancellationToken);
         await ValidarIntegrantesAsync(solicitudNormalizada.IdTipoIngreso, request.Personas, cancellationToken);
+        foreach (var persona in request.Personas ?? [])
+            await ValidarAreasAsync(solicitudNormalizada.IdTipoIngreso, persona.Areas, cancellationToken);
 
         if (!ModelState.IsValid)
             return ValidationProblem(ModelState);
@@ -160,6 +162,9 @@ public sealed class SolicitudesController(
         };
         request = await NormalizarYValidarSolicitudAsync(request, cancellationToken);
         await ValidarCambioDeTipoAsync(request.IdTipoIngreso, existing.Personas, cancellationToken);
+        if (request.IdTipoIngreso != existing.IdTipoIngreso)
+            foreach (var persona in existing.Personas)
+                await ValidarAreasAsync(request.IdTipoIngreso, persona.Areas, cancellationToken);
         if (request.FechaInicio.HasValue &&
             request.FechaFin.HasValue &&
             request.FechaFin < request.FechaInicio)
@@ -217,6 +222,7 @@ public sealed class SolicitudesController(
         if (!User.IsInRole("Administrador") && existing.IdUsuarioSolicitante != usuario) return Forbid();
         request = request with { Usuario = usuario };
         await ValidarIntegrantesAsync(existing.IdTipoIngreso, [request], cancellationToken);
+        await ValidarAreasAsync(existing.IdTipoIngreso, request.Areas, cancellationToken);
         if (!ModelState.IsValid) return ValidationProblem(ModelState);
         var idSolicitudPersona = await repository.AgregarPersonaAsync(
             id,
@@ -248,6 +254,8 @@ public sealed class SolicitudesController(
         var empleado = (await empleadosRepository.ListarAsync(cancellationToken)).FirstOrDefault(item =>
             string.Equals(item.CodigoEmpleado?.Trim(), codigo, StringComparison.OrdinalIgnoreCase));
         if (empleado is null) return NotFound();
+        await ValidarAreasAsync(existing.IdTipoIngreso, request.Areas, cancellationToken);
+        if (!ModelState.IsValid) return ValidationProblem(ModelState);
 
         var idSolicitudPersona = await repository.AgregarEmpleadoAsync(
             id,
@@ -273,6 +281,8 @@ public sealed class SolicitudesController(
         var existing = await repository.ObtenerSolicitudAsync(id, cancellationToken);
         if (existing is null) return NotFound();
         if (!User.IsInRole("Administrador") && existing.IdUsuarioSolicitante != usuario) return Forbid();
+        await ValidarAreasAsync(existing.IdTipoIngreso, request.Areas, cancellationToken);
+        if (!ModelState.IsValid) return ValidationProblem(ModelState);
         await repository.AsignarAreasPersonaAsync(
             id,
             idSolicitudPersona,
@@ -326,6 +336,10 @@ public sealed class SolicitudesController(
         if (esEmpleado || esNuevoEmpleado)
             request = request with { IdProveedor = null };
 
+        if (EsTipo(codigoTipo, "PROVEEDOR") && !request.IdProveedor.HasValue)
+            ModelState.AddModelError(nameof(request.IdProveedor),
+                "Selecciona el proveedor responsable de la solicitud.");
+
         if (esEmpleado)
             return request with { ContactoProveedor = null, CorreoProveedor = null };
 
@@ -378,6 +392,23 @@ public sealed class SolicitudesController(
         if (noDisponibles.Length > 0)
             ModelState.AddModelError(nameof(integrantes),
                 $"Los siguientes empleados no existen o no están activos en HTIS: {string.Join(", ", noDisponibles)}.");
+    }
+
+    private async Task ValidarAreasAsync(
+        short? idTipoIngreso,
+        IReadOnlyCollection<int>? areas,
+        CancellationToken cancellationToken)
+    {
+        if (areas is null || areas.Count == 0) return;
+        var datos = await repository.ObtenerDatosFormularioSolicitudAsync(cancellationToken);
+        var tipo = datos.TiposIngreso.FirstOrDefault(item => item.Id == idTipoIngreso)?.Codigo;
+        var codigos = datos.Areas.ToDictionary(item => item.Id, item => item.Codigo);
+        foreach (var idArea in areas.Distinct())
+        {
+            if (!codigos.TryGetValue(idArea, out var codigo) || !AccessMatrixPolicy.Allows(tipo, codigo))
+                ModelState.AddModelError(nameof(areas),
+                    $"El area {idArea} no esta disponible para este tipo de ingreso.");
+        }
     }
 
     private async Task ValidarCambioDeTipoAsync(

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Icon } from '../components/Icon'
 import { accessStatusClass, formatDate } from '../utils/formatters'
 import { activityAppliesToType, activityIsAutomaticForType, flowIsRequiredBySelection, includeRequiredFlowVersions } from '../utils/activityTypes'
+import { areaAvailableForEntry, areaRequiresApproval, availableAreasForEntry } from '../utils/accessMatrix'
 
 export function RequestFormPage({ form, options, activityFlows = [], people, employees = [], employeesLoading = false, employeesError = '', requestPeople, existingPeople, peopleEntryMode, loading, saving, editingId, step, selected, canSend, allowSend = false, allowDelete = false, onPeopleEntryModeChange, onPeopleChange, onExistingPeopleChange, onChange, onStepChange, onNext, onBack, onCancel, onSubmit, onDelete }) {
   const typeCode = normalizeTypeCode(selected.tipo)
@@ -61,6 +62,7 @@ function PeopleStep({ typeCode, mode, provider, estimatedCount, people, employee
   const isNewEmployee = typeCode === 'NUEVO_EMPLEADO'
   const effectiveMode = usesHtis ? 'employee' : isNewEmployee ? 'manual' : mode
   const sourceItems = usesHtis ? employees : people
+  const accessAreas = availableAreasForEntry(typeCode, areas)
   const selectedKeys = new Set([...selectedPeople, ...existingPeople].map((item) => requestEntryKey(item, usesHtis)))
   const available = sourceItems.filter((item) => !selectedKeys.has(sourceItemKey(item, usesHtis)))
   const maximum = Number(estimatedCount) || 0
@@ -159,11 +161,14 @@ function PeopleStep({ typeCode, mode, provider, estimatedCount, people, employee
       {existingPeople.length > 0 && <section className="existing-request-people"><h3>{usesHtis ? 'Empleados ya asociados' : 'Personas ya asociadas'}</h3><div>{existingPeople.map((person) => {
         const key = requestEntryKey(person, usesHtis)
         const selectedAreas = person.areas ?? []
+        const obsoleteAreas = areas.filter((area) => selectedAreas.includes(Number(area.id))
+          && !areaAvailableForEntry(typeCode, area.codigo))
         const selectedFlows = includeRequiredFlowVersions(person.flujos, activityFlows)
         const flowGroups = availableFlowGroups(activityFlows, selectedFlows, typeCode)
         return <article className={`request-person-card existing-person-status ${person.codigoEstadoAprobacion?.toLowerCase() ?? 'pendiente'}`} key={person.idSolicitudPersona ?? key}>
           <div className="request-person-head"><div><strong>{person.nombreCompleto || person.codigoEmpleadoHtis || person.numeroDocumento || `Persona #${person.idPersona}`}</strong><span>{person.codigoEmpleadoHtis || person.numeroDocumento || 'Sin documento'}</span></div><span className={`access-status ${accessStatusClass(person.codigoEstadoAprobacion)}`}>{person.estadoAprobacion || 'Pendiente'}</span></div>
-          <div className="request-area-options"><p>Áreas requeridas</p>{areas.map((area) => <label key={area.id}><input type="checkbox" checked={selectedAreas.includes(Number(area.id))} onChange={() => toggleExistingArea(key, Number(area.id))} /><span>{area.nombre ?? area.codigo}</span></label>)}</div>
+          <div className="request-area-options"><p>Areas de acceso</p>{accessAreas.map((area) => <label key={area.id}><input type="checkbox" checked={selectedAreas.includes(Number(area.id))} onChange={() => toggleExistingArea(key, Number(area.id))} /><span>{area.nombre ?? area.codigo}{areaRequiresApproval(typeCode, area.codigo) ? ' · Requiere aprobacion' : ''}</span></label>)}</div>
+          {obsoleteAreas.length > 0 && <div className="request-person-warning"><strong>Accesos anteriores no disponibles para este tipo de ingreso:</strong> {obsoleteAreas.map((area) => <button type="button" className="secondary-button" key={area.id} onClick={() => toggleExistingArea(key, Number(area.id))}>Quitar {area.nombre ?? area.codigo}</button>)}</div>}
           {selectedAreas.length === 0 && (person.flujos ?? []).length === 0 && automaticFlowIds(activityFlows, typeCode).length === 0 && <small className="request-person-warning">Selecciona al menos un área o un flujo de actividades.</small>}
           {flowGroups.length > 0 && <div className="request-activity-selection">
             <div className="request-activity-selection-heading"><strong>Actividades previas al ingreso</strong><span>Son independientes de las áreas de acceso solicitadas.</span></div>
@@ -185,7 +190,7 @@ function PeopleStep({ typeCode, mode, provider, estimatedCount, people, employee
           const flowGroups = availableFlowGroups(activityFlows, selectedFlows, typeCode)
           return <article className="request-person-card" key={key}>
             <div className="request-person-head"><div><strong>{source?.nombreCompleto || entry.codigoEmpleadoHtis || `Persona #${entry.idPersona}`}</strong><span>{usesHtis ? source?.codigoEmpleado || entry.codigoEmpleadoHtis : source?.numeroDocumento || source?.empresa || 'Sin información adicional'}</span></div><button type="button" className="remove-person-button" onClick={() => onChange(selectedPeople.filter((item) => requestEntryKey(item, usesHtis) !== key))}>Quitar</button></div>
-            <div className="request-area-options"><p>Áreas autorizadas</p>{areas.map((area) => <label key={area.id}><input type="checkbox" checked={entry.areas.includes(Number(area.id))} onChange={() => toggleArea(key, Number(area.id))} /><span>{area.nombre ?? area.codigo}</span></label>)}</div>
+            <div className="request-area-options"><p>Areas de acceso</p>{accessAreas.map((area) => <label key={area.id}><input type="checkbox" checked={entry.areas.includes(Number(area.id))} onChange={() => toggleArea(key, Number(area.id))} /><span>{area.nombre ?? area.codigo}{areaRequiresApproval(typeCode, area.codigo) ? ' · Requiere aprobacion' : ''}</span></label>)}</div>
             {entry.areas.length === 0 && (entry.flujos ?? []).length === 0 && automaticFlowIds(activityFlows, typeCode).length === 0 && <small className="request-person-warning">Selecciona al menos un área o un flujo de actividades.</small>}
             {flowGroups.length > 0 && <div className="request-activity-selection">
               <div className="request-activity-selection-heading"><strong>Actividades previas al ingreso</strong><span>Son independientes de las áreas de acceso solicitadas.</span></div>

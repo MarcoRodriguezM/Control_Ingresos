@@ -35,6 +35,7 @@ import {
   UserEditPage,
   UserFormPage,
   UserManagementPage,
+  AccessMatrixPage,
 } from './pages'
 import { controlIngresosApi } from './services/api'
 import {
@@ -47,6 +48,7 @@ import {
 } from './utils/alerts'
 import { initials } from './utils/formatters'
 import { activityAppliesToType, activityIsAutomaticForType, includeRequiredFlowVersions } from './utils/activityTypes'
+import { areaAvailableForEntry } from './utils/accessMatrix'
 import { hasPermission } from './utils/permissions'
 import './App.css'
 
@@ -551,6 +553,7 @@ function AuthenticatedApp({ session, onLogout, onSessionRefresh }) {
     ?? matchPath('/mis-actividades/solicitudes/:idSolicitud', location.pathname)
   const isActivitiesRoute = location.pathname.startsWith('/mis-actividades')
   const isActivityWorkflowsRoute = location.pathname === '/configuracion/actividades'
+  const isAccessMatrixRoute = location.pathname === '/configuracion/matriz-accesos'
   const isFreshserviceRoute = location.pathname === '/configuracion/freshservice'
   const isUsersRoute = location.pathname.startsWith('/usuarios')
   const isAuditRoute = location.pathname === '/auditoria'
@@ -1024,6 +1027,14 @@ function AuthenticatedApp({ session, onLogout, onSessionRefresh }) {
         setError('No puedes cambiar el tipo de ingreso mientras la solicitud tenga integrantes asociados de otro origen.')
         return
       }
+      const availableIds = new Set((options?.areas ?? [])
+        .filter((area) => areaAvailableForEntry(nextTypeCode, area.codigo))
+        .map((area) => Number(area.id)))
+      if (existingRequestPeople.some((person) => (person.areas ?? [])
+        .some((id) => !availableIds.has(Number(id))))) {
+        setError('Quita las areas no disponibles de las personas antes de cambiar el tipo de ingreso.')
+        return
+      }
 
       setForm((current) => ({
         ...current,
@@ -1052,7 +1063,11 @@ function AuthenticatedApp({ session, onLogout, onSessionRefresh }) {
             && !retainedLogicalFlows.has(flow.idActividadFlujo)
             && activityIsAutomaticForType(flow, nextTypeCode))
           .map((flow) => flow.idActividadFlujoVersion)
-        return { ...person, flujos: includeRequiredFlowVersions([...new Set([...retainedFlows, ...automaticFlows])], flujosActividades) }
+        const allowedAreaIds = new Set((options?.areas ?? [])
+          .filter((area) => areaAvailableForEntry(nextTypeCode, area.codigo))
+          .map((area) => Number(area.id)))
+        return { ...person, areas: (person.areas ?? []).filter((id) => allowedAreaIds.has(Number(id))),
+          flujos: includeRequiredFlowVersions([...new Set([...retainedFlows, ...automaticFlows])], flujosActividades) }
       }))
       setPeopleEntryMode(nextTypeCode === 'EMPLEADO' ? 'employee' : nextTypeCode === 'NUEVO_EMPLEADO' ? 'manual' : '')
       setEmployeesError('')
@@ -1231,21 +1246,26 @@ function AuthenticatedApp({ session, onLogout, onSessionRefresh }) {
   async function decideApproval(idSolicitudPersonaArea, codigoEstado, comentarioDecision) {
     const result = await decideApprovals([idSolicitudPersonaArea], codigoEstado, comentarioDecision)
     const failure = result.failures.find((item) => item.idSolicitudPersonaArea === idSolicitudPersonaArea)
-    return failure ? { success: false, message: failure.message } : { success: true }
+    return failure ? { success: false, message: failure.message } : {
+      success: true,
+      accesoAprobado: result.results.find((item) => item.idSolicitudPersonaArea === idSolicitudPersonaArea)?.accesoAprobado ?? false,
+    }
   }
 
   async function decideApprovals(idSolicitudPersonaAreas, codigoEstado, comentarioDecision) {
     setError('')
     const successIds = []
+    const results = []
     const failures = []
     for (const idSolicitudPersonaArea of [...new Set(idSolicitudPersonaAreas)]) {
       try {
-        await controlIngresosApi.decidirAprobacion(idSolicitudPersonaArea, {
+        const decisionResult = await controlIngresosApi.decidirAprobacion(idSolicitudPersonaArea, {
           idUsuarioAprobador: session.idUsuario,
           codigoEstado,
           comentarioDecision: comentarioDecision.trim() || null,
         })
         successIds.push(idSolicitudPersonaArea)
+        results.push({ idSolicitudPersonaArea, accesoAprobado: decisionResult.accesoAprobado === true })
       } catch (requestError) {
         failures.push({ idSolicitudPersonaArea, message: requestError.message })
       }
@@ -1261,7 +1281,7 @@ function AuthenticatedApp({ session, onLogout, onSessionRefresh }) {
     } catch (requestError) {
       setError(requestError.message)
     }
-    return { successIds, failures }
+    return { successIds, results, failures }
   }
 
   async function completeActivity(idActividad, comentarios = null) {
@@ -1543,6 +1563,7 @@ function AuthenticatedApp({ session, onLogout, onSessionRefresh }) {
           {canApprove && <Nav icon="check" label="Mis aprobaciones" count={aprobaciones.filter((item) => item.codigoEstado === 'PENDIENTE').length || undefined} active={isApprovalsRoute} onClick={() => { navigate('/aprobaciones'); setMenuOpen(false); setError('') }} />}
           {canViewActivities && <Nav icon="tasks" label="Mis actividades" count={(actividades.filter((item) => !item.esEstadoFinal).length + (canApproveActivities ? actividadesPorAprobar.filter((item) => item.codigoEstado === 'PENDIENTE_APROBACION').length : 0)) || undefined} active={isActivitiesRoute} onClick={() => { navigate('/mis-actividades'); setMenuOpen(false); setError('') }} />}
           {canManageWorkflows && <Nav icon="settings" label="Flujos de acceso" active={isActivityWorkflowsRoute} onClick={() => { navigate('/configuracion/actividades'); setMenuOpen(false); setError('') }} />}
+          {isAdministrator && <Nav icon="shield" label="Matriz de accesos" active={isAccessMatrixRoute} onClick={() => { navigate('/configuracion/matriz-accesos'); setMenuOpen(false); setError('') }} />}
           {canViewFreshservice && <Nav icon="integration" label="Pruebas Freshservice" active={isFreshserviceRoute} onClick={() => { navigate('/configuracion/freshservice'); setMenuOpen(false); setError('') }} />}
           {(canViewPersons || canCreatePersons) && <Nav icon="users" label={canViewPersons ? 'Personas' : 'Nueva persona'} count={canViewPersons ? personas.length || undefined : undefined} active={isPersonsRoute} onClick={canViewPersons ? openPersons : openNewPerson} />}
           {canViewEmployees && <Nav icon="user" label="Empleados" count={empleados.length || undefined} active={isEmployeesRoute} onClick={openEmployees} />}
@@ -1577,6 +1598,7 @@ function AuthenticatedApp({ session, onLogout, onSessionRefresh }) {
             <Route path="/mis-actividades/solicitudes/:idSolicitud" element={canViewActivities && canViewRequestDetails ? <ActivityRequestDetailPage request={activityRequestDetail} activities={actividades.filter((item) => Number(item.idSolicitud) === Number(activityRequestRoute?.params.idSolicitud))} options={options} loading={activityRequestLoading} onBack={() => navigate('/mis-actividades')} /> : <Navigate to={homePath} replace />} />
             <Route path="/mis-actividades/solicitudes/:idSolicitud/personas/:idSolicitudPersona" element={canViewActivities && canViewRequestDetails ? <ActivityRequestDetailPage request={activityRequestDetail} activities={actividades.filter((item) => Number(item.idSolicitud) === Number(activityRequestRoute?.params.idSolicitud) && Number(item.idSolicitudPersona) === Number(activityRequestRoute?.params.idSolicitudPersona))} options={options} loading={activityRequestLoading} onBack={() => navigate('/mis-actividades')} /> : <Navigate to={homePath} replace />} />
             <Route path="/configuracion/actividades" element={canManageWorkflows ? <ActivityWorkflowPage onError={setError} /> : <Navigate to={homePath} replace />} />
+            <Route path="/configuracion/matriz-accesos" element={isAdministrator ? <AccessMatrixPage onError={setError} /> : <Navigate to={homePath} replace />} />
             <Route path="/configuracion/freshservice" element={canViewFreshservice ? <FreshserviceIntegrationPage /> : <Navigate to={homePath} replace />} />
             <Route path="/usuarios" element={canManageUsers ? <UserManagementPage items={usuarios} loading={usersLoading} onNew={() => { setError(''); navigate('/usuarios/nuevo') }} onSelect={(idUsuario) => { setError(''); navigate(`/usuarios/${encodeURIComponent(idUsuario)}`) }} /> : <Navigate to={homePath} replace />} />
             <Route path="/auditoria" element={canViewAudit ? <AuditLogPage /> : <Navigate to={homePath} replace />} />
@@ -1652,6 +1674,7 @@ function validateStep(step, form, typeCode, peopleEntryMode, requestPeople = [],
   const totalPeople = requestPeople.length + existingPeople.length
   if (step === 1 && (!Number.isInteger(estimatedPeople) || estimatedPeople < 1)) return 'La cantidad estimada de personas debe ser un número entero mayor que cero.'
   if (step === 1 && totalPeople > estimatedPeople) return `La cantidad estimada no puede ser menor que las ${totalPeople} personas ya agregadas.`
+  if (step === 1 && typeCode === 'PROVEEDOR' && !form.idProveedor) return 'Selecciona el proveedor responsable de esta solicitud.'
   if (step === 2 && typeCode !== 'EMPLEADO' && (!form.contactoProveedor.trim() || !form.correoProveedor.trim())) return typeCode === 'NUEVO_EMPLEADO' ? 'Completa el nombre y el correo del nuevo empleado.' : 'Completa el contacto y el correo del proveedor.'
   if (step === 2 && typeCode !== 'EMPLEADO' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.correoProveedor.trim())) return 'Ingresa un correo electrónico válido.'
   if (step === 2 && (!form.idAreaSolicitante || !form.idUbicacion || !form.idUsuarioSolicitante)) return 'Selecciona el área, la ubicación y el usuario solicitante.'

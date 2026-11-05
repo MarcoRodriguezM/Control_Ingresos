@@ -857,6 +857,15 @@ public sealed class SolicitudesRepository(
         var visibleItems = items.Where(item => item.CodigoEstado != "PENDIENTE"
             || !item.IdSolicitud.HasValue
             || !pendingTicketRequests.Contains(item.IdSolicitud.Value)).ToArray();
+        await using var votedCommand = StoredProcedure(connection, "dbo.usp_Matriz_Aprobaciones_Votadas");
+        Add(votedCommand, "@IdUsuario", SqlDbType.VarChar, idUsuarioAprobador, 50);
+        var alreadyVoted = new HashSet<long>();
+        await using (var votedReader = await votedCommand.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await votedReader.ReadAsync(cancellationToken))
+                alreadyVoted.Add(votedReader.GetInt64(0));
+        }
+        visibleItems = visibleItems.Where(item => !alreadyVoted.Contains(item.IdSolicitudPersonaArea)).ToArray();
         var bloqueados = await activityWorkflows.ObtenerAccesosBloqueadosAsync(
             visibleItems.Where(item => string.Equals(item.CodigoEstado, "PENDIENTE", StringComparison.OrdinalIgnoreCase))
                 .Select(item => item.IdSolicitudPersonaArea)
@@ -867,7 +876,7 @@ public sealed class SolicitudesRepository(
             : item).ToArray();
     }
 
-    public async Task<long> DecidirAprobacionAsync(long idSolicitudPersonaArea, string idUsuarioAprobador, DecidirAprobacionRequest request, CancellationToken cancellationToken)
+    public async Task<(long Id, bool AccesoAprobado)> DecidirAprobacionAsync(long idSolicitudPersonaArea, string idUsuarioAprobador, DecidirAprobacionRequest request, CancellationToken cancellationToken)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
         await using (var ticketLookup = StoredProcedure(connection, "dbo.usp_Solicitud_Persona_Area_Solicitud_Obtener"))
@@ -892,7 +901,7 @@ public sealed class SolicitudesRepository(
                 throw new InvalidOperationException("No se puede aprobar el acceso al area porque la persona todavia tiene actividades pendientes.");
         }
 
-        await using var command = StoredProcedure(connection, "dbo.usp_Aprobacion_Area_Decidir");
+        await using var command = StoredProcedure(connection, "dbo.usp_Matriz_Aprobacion_Decidir");
 
         Add(command, "@IdSolicitudPersonaArea", SqlDbType.BigInt, idSolicitudPersonaArea);
         Add(command, "@IdUsuarioAprobador", SqlDbType.VarChar, idUsuarioAprobador, 50);
@@ -911,7 +920,16 @@ public sealed class SolicitudesRepository(
         Add(lookup, "@UsuarioSolicitante", SqlDbType.VarChar, null, 50);
         var requestId = await lookup.ExecuteScalarAsync(cancellationToken);
         if (requestId is not null) await SyncTicketStateAsync(Convert.ToInt64(requestId), idUsuarioAprobador, cancellationToken);
-        return idAprobacion;
+        await using var status = new SqlCommand("""
+            SELECT CASE WHEN estado.Codigo = 'APROBADA' THEN 1 ELSE 0 END
+            FROM dbo.Solicitud_Persona_Area AS spa
+            INNER JOIN dbo.Cat_Estado_Aprobacion_Area AS estado
+                ON estado.IdEstadoAprobacion = spa.IdEstadoAprobacion
+            WHERE spa.IdSolicitudPersonaArea = @IdSolicitudPersonaArea;
+            """, connection);
+        Add(status, "@IdSolicitudPersonaArea", SqlDbType.BigInt, idSolicitudPersonaArea);
+        var accesoAprobado = Convert.ToInt32(await status.ExecuteScalarAsync(cancellationToken)) == 1;
+        return (idAprobacion, accesoAprobado);
     }
 
     public async Task<IdCreadoResponse> CrearSolicitudAsync(
@@ -1149,6 +1167,27 @@ public sealed class SolicitudesRepository(
     public async Task EnviarSolicitudAsync(long idSolicitud, string idUsuario, CancellationToken cancellationToken)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using (var validate = new SqlCommand("""
+            SELECT area.Codigo, COUNT(DISTINCT aprobador.IdUsuarioAprobador)
+            FROM dbo.Solicitud_Persona_Area AS acceso
+            INNER JOIN dbo.Solicitud_Persona AS persona ON persona.IdSolicitudPersona = acceso.IdSolicitudPersona
+            INNER JOIN dbo.Cat_Area AS area ON area.IdArea = acceso.IdArea
+            LEFT JOIN dbo.Config_Aprobador_Area AS aprobador
+                ON aprobador.IdArea = area.IdArea AND ISNULL(aprobador.IdEstadoGeneral, 1) = 1
+                AND (aprobador.FechaInicio IS NULL OR aprobador.FechaInicio <= CONVERT(DATE, SYSDATETIME()))
+                AND (aprobador.FechaFin IS NULL OR aprobador.FechaFin >= CONVERT(DATE, SYSDATETIME()))
+            WHERE persona.IdSolicitud = @IdSolicitud AND area.Codigo IN ('POLVORIN', 'REFINERIA')
+              AND acceso.RequiereAprobacion = 1
+            GROUP BY area.Codigo;
+            """, connection))
+        {
+            Add(validate, "@IdSolicitud", SqlDbType.BigInt, idSolicitud);
+            await using var counts = await validate.ExecuteReaderAsync(cancellationToken);
+            while (await counts.ReadAsync(cancellationToken))
+                if (counts.GetInt32(1) != 3)
+                    throw new InvalidOperationException(
+                        $"{counts.GetString(0)} requiere exactamente tres aprobadores asignados antes de enviar la solicitud.");
+        }
         await using var command = StoredProcedure(connection, "dbo.usp_Solicitud_Enviar");
         Add(command, "@IdSolicitud", SqlDbType.BigInt, idSolicitud);
         Add(command, "@IdUsuario", SqlDbType.VarChar, idUsuario, 50);
