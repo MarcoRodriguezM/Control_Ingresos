@@ -133,6 +133,20 @@ if (!allowHttp)
 
 app.UseExceptionHandler();
 
+app.Use(async (context, next) =>
+{
+    try
+    {
+        await next();
+    }
+    catch (Microsoft.Data.SqlClient.SqlException exception) when (context.RequestAborted.IsCancellationRequested)
+    {
+        // Al reiniciar el backend, SqlClient puede reportar la cancelacion de la solicitud
+        // como SqlException. No es un fallo funcional y ya no existe un cliente al cual responder.
+        app.Logger.LogDebug(exception, "Consulta SQL cancelada porque la solicitud HTTP fue interrumpida.");
+    }
+});
+
 app.UseCors("Frontend");
 
 app.UseStaticFiles();

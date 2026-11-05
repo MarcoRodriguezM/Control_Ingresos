@@ -18,6 +18,9 @@ public sealed class FreshserviceOptions
 
 public interface IFreshserviceReadOnlyClient
 {
+    Task<IReadOnlyCollection<FreshserviceWorkspaceSummary>> ListWorkspacesAsync(
+        CancellationToken cancellationToken);
+
     Task<FreshserviceCatalogPage> ListCatalogAsync(
         int page,
         int perPage,
@@ -52,6 +55,27 @@ public sealed class FreshserviceReadOnlyClient(
 
     private readonly FreshserviceOptions options = configuredOptions.Value;
 
+    public async Task<IReadOnlyCollection<FreshserviceWorkspaceSummary>> ListWorkspacesAsync(
+        CancellationToken cancellationToken)
+    {
+        using var document = await GetJsonAsync("api/v2/workspaces?per_page=100&page=1", cancellationToken);
+        if (!TryGetProperty(document.RootElement, "workspaces", out var workspaces)
+            || workspaces.ValueKind != JsonValueKind.Array)
+            throw InvalidResponse("Freshservice no devolvió la estructura esperada para los workspaces.");
+
+        return workspaces.EnumerateArray()
+            .Select(workspace => new FreshserviceWorkspaceSummary(
+                ReadInt32(workspace, "id") ?? 0,
+                ReadString(workspace, "name"),
+                ReadBool(workspace, "primary"),
+                ReadBool(workspace, "restricted"),
+                ReadString(workspace, "state")))
+            .Where(workspace => workspace.Id > 0)
+            .OrderByDescending(workspace => workspace.Primary)
+            .ThenBy(workspace => workspace.Name)
+            .ToArray();
+    }
+
     public async Task<FreshserviceCatalogPage> ListCatalogAsync(
         int page,
         int perPage,
@@ -69,7 +93,7 @@ public sealed class FreshserviceReadOnlyClient(
         using var document = await GetJsonAsync(query.ToString(), cancellationToken);
         if (!TryGetProperty(document.RootElement, "service_items", out var serviceItems)
             || serviceItems.ValueKind != JsonValueKind.Array)
-            throw InvalidResponse();
+            throw InvalidResponse("Freshservice no devolvió la estructura esperada para el catálogo de servicios.");
 
         var items = serviceItems.EnumerateArray()
             .Select(ParseCatalogItem)
@@ -97,7 +121,7 @@ public sealed class FreshserviceReadOnlyClient(
         using var document = await GetJsonAsync(path, cancellationToken);
         if (!TryGetProperty(document.RootElement, "service_item", out var serviceItem)
             || serviceItem.ValueKind != JsonValueKind.Object)
-            throw InvalidResponse();
+            throw InvalidResponse("Freshservice no devolvió la estructura esperada para el servicio solicitado.");
 
         var parsedFields = TryGetProperty(serviceItem, "custom_fields", out var customFields)
             && customFields.ValueKind == JsonValueKind.Array
@@ -424,10 +448,10 @@ public sealed class FreshserviceReadOnlyClient(
         return result;
     }
 
-    private static FreshserviceIntegrationException InvalidResponse() => new(
+    private static FreshserviceIntegrationException InvalidResponse(string detail) => new(
         StatusCodes.Status502BadGateway,
         "Respuesta no reconocida",
-        "Freshservice no devolvió la estructura esperada para el catálogo de servicios.");
+        detail);
 
     private static bool TryGetProperty(JsonElement element, string name, out JsonElement value)
     {

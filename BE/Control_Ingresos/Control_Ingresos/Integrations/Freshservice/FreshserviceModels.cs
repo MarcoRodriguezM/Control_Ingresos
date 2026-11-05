@@ -1,5 +1,12 @@
 namespace Control_Ingresos.Integrations.Freshservice;
 
+public sealed record FreshserviceWorkspaceSummary(
+    int Id,
+    string? Name,
+    bool Primary,
+    bool Restricted,
+    string? State);
+
 public sealed record FreshserviceCatalogPage(
     int Page,
     int PerPage,

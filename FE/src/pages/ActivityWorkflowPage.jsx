@@ -6,12 +6,43 @@ import { ACTIVITY_ENTRY_TYPES } from '../utils/activityTypes'
 
 const newKey = () => `step-${Date.now()}-${Math.random().toString(16).slice(2)}`
 
+const FRESHSERVICE_LOOKUP_ORIGINS = [
+  { value: 'FRESHSERVICE_LOCATIONS', label: 'Localidades de Freshservice' },
+  { value: 'FRESHSERVICE_DEPARTMENTS', label: 'Departamentos de Freshservice' },
+  { value: 'FRESHSERVICE_REQUESTERS', label: 'Solicitantes de Freshservice' },
+  { value: 'FRESHSERVICE_AGENT_GROUPS', label: 'Grupos de agentes de Freshservice' },
+  { value: 'FRESHSERVICE_ASSETS', label: 'Activos de Freshservice' },
+]
+
+const SINGULAR_TRAININGS = [
+  'ANALISIS DE ACCIDENTES',
+  'ANIMALES PONZOÑOSOS',
+  'CODIGO DE ETICA',
+  'CONCEPTOS BASICOS DE SEGURIDAD',
+  'EQUIPO DE PROTECION PERSONAL',
+  'GERENCIAMIENTO DE CAMBIO',
+  'IPERC',
+  'MANEJO DE RESIDUOS',
+  'MANEJO DEFENSIVO',
+  'POLITICAS DE ALCOHOL Y DROGAS',
+  'REGLAS QUE SALVAN VIDAS',
+  'RESPUESTA DE EMERGENCIA',
+  'USO DE CIANURO',
+  'USO DE EXTINTORES',
+]
+
 const emptyStep = (areaId = '') => ({
   key: newKey(),
   idRequerimiento: null,
   nombreActividad: '',
   idAreaResponsable: areaId ? String(areaId) : '',
   requiereTicketExterno: false,
+  freshserviceWorkspaceId: '',
+  freshserviceServicioDisplayId: '',
+  freshserviceUrlFormularioRespaldo: '',
+  freshserviceLookups: [],
+  requiereConsultaSingular: false,
+  singularCapacitacionNombre: '',
   vigenciaMeses: 24,
   fechaInicio: '',
   fechaFin: '',
@@ -38,6 +69,9 @@ export function ActivityWorkflowPage({ onError }) {
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [freshserviceWorkspaces, setFreshserviceWorkspaces] = useState([])
+  const [freshserviceCatalogs, setFreshserviceCatalogs] = useState({})
+  const [freshserviceLookupLoading, setFreshserviceLookupLoading] = useState('')
 
   useEffect(() => {
     let active = true
@@ -50,6 +84,14 @@ export function ActivityWorkflowPage({ onError }) {
       })
       .catch((error) => active && onError(error.message))
       .finally(() => active && setLoading(false))
+    return () => { active = false }
+  }, [onError])
+
+  useEffect(() => {
+    let active = true
+    controlIngresosApi.listarWorkspacesFreshservice()
+      .then((result) => active && setFreshserviceWorkspaces(result ?? []))
+      .catch((error) => active && onError(`No se pudieron consultar los workspaces de Freshservice. ${error.message}`))
     return () => { active = false }
   }, [onError])
 
@@ -84,6 +126,95 @@ export function ActivityWorkflowPage({ onError }) {
     setFlow((current) => ({
       ...current,
       pasos: current.pasos.map((step, stepIndex) => stepIndex === index ? { ...step, [field]: value } : step),
+    }))
+    setSaved(false)
+  }
+
+  function updateStepFields(index, changes) {
+    setFlow((current) => ({
+      ...current,
+      pasos: current.pasos.map((step, stepIndex) => stepIndex === index ? { ...step, ...changes } : step),
+    }))
+    setSaved(false)
+  }
+
+  async function ensureFreshserviceCatalog(workspaceId) {
+    const key = String(workspaceId || '')
+    if (!key) return []
+    const current = freshserviceCatalogs[key]
+    if (current?.loaded) return current.items
+
+    setFreshserviceCatalogs((catalogs) => ({ ...catalogs, [key]: { items: current?.items ?? [], loading: true, loaded: false } }))
+    try {
+      const items = []
+      let page = 1
+      let hasNextPage = true
+      while (hasNextPage && page <= 20) {
+        const result = await controlIngresosApi.listarCatalogoFreshservice({ page, perPage: 30, workspaceId: key })
+        items.push(...(result.items ?? []))
+        hasNextPage = Boolean(result.hasNextPage)
+        page += 1
+      }
+      setFreshserviceCatalogs((catalogs) => ({ ...catalogs, [key]: { items, loading: false, loaded: true } }))
+      return items
+    } catch (error) {
+      setFreshserviceCatalogs((catalogs) => ({ ...catalogs, [key]: { items: [], loading: false, loaded: false } }))
+      onError(`No se pudo consultar el catálogo del workspace seleccionado. ${error.message}`)
+      return []
+    }
+  }
+
+  async function changeFreshserviceWorkspace(index, workspaceId) {
+    updateStepFields(index, {
+      freshserviceWorkspaceId: workspaceId,
+      freshserviceServicioDisplayId: '',
+      freshserviceLookups: [],
+    })
+    if (workspaceId) await ensureFreshserviceCatalog(workspaceId)
+  }
+
+  async function detectFreshserviceLookups(index, workspaceId, displayId) {
+    if (!workspaceId || !displayId) return
+    const loadingKey = `${index}:${displayId}`
+    setFreshserviceLookupLoading(loadingKey)
+    try {
+      const service = await controlIngresosApi.obtenerServicioFreshservice(displayId, workspaceId)
+      setFlow((current) => ({
+        ...current,
+        pasos: current.pasos.map((step, stepIndex) => {
+          if (stepIndex !== index) return step
+          const configured = new Map((step.freshserviceLookups ?? []).map((lookup) => [lookup.campoApi, lookup.origen]))
+          const lookups = (service.fields ?? [])
+            .filter((field) => String(field.rawType ?? '').toLowerCase().includes('lookup'))
+            .filter((field) => field.apiName)
+            .map((field) => ({
+              campoApi: field.apiName,
+              etiqueta: field.label || field.apiName,
+              tipo: field.rawType,
+              origen: configured.get(field.apiName) ?? '',
+            }))
+          return { ...step, freshserviceLookups: lookups }
+        }),
+      }))
+      setSaved(false)
+    } catch (error) {
+      onError(`No se pudieron detectar los campos lookup del servicio. ${error.message}`)
+    } finally {
+      setFreshserviceLookupLoading('')
+    }
+  }
+
+  async function changeFreshserviceService(index, workspaceId, displayId) {
+    updateStepFields(index, { freshserviceServicioDisplayId: displayId, freshserviceLookups: [] })
+    if (displayId) await detectFreshserviceLookups(index, workspaceId, displayId)
+  }
+
+  function updateFreshserviceLookup(index, campoApi, origen) {
+    setFlow((current) => ({
+      ...current,
+      pasos: current.pasos.map((step, stepIndex) => stepIndex === index
+        ? { ...step, freshserviceLookups: (step.freshserviceLookups ?? []).map((lookup) => lookup.campoApi === campoApi ? { ...lookup, origen } : lookup) }
+        : step),
     }))
     setSaved(false)
   }
@@ -161,7 +292,12 @@ export function ActivityWorkflowPage({ onError }) {
     const invalid = !flow.nombre.trim() || flow.pasos.some((step) => !step.nombreActividad.trim()
       || !Number(step.idAreaResponsable)
       || Number(step.vigenciaMeses) < 1
-      || (step.fechaInicio && step.fechaFin && step.fechaFin < step.fechaInicio))
+      || (step.fechaInicio && step.fechaFin && step.fechaFin < step.fechaInicio)
+      || (step.requiereTicketExterno && (!Number(step.freshserviceWorkspaceId)
+        || !Number(step.freshserviceServicioDisplayId)
+        || !step.freshserviceUrlFormularioRespaldo?.trim()
+        || (step.freshserviceLookups ?? []).some((lookup) => !lookup.origen)))
+      || (step.requiereConsultaSingular && !step.singularCapacitacionNombre?.trim()))
     if (invalid) {
       onError('Indica el nombre del flujo y completa correctamente sus actividades.')
       return
@@ -182,6 +318,14 @@ export function ActivityWorkflowPage({ onError }) {
           nombreActividad: step.nombreActividad.trim(),
           idAreaResponsable: Number(step.idAreaResponsable),
           requiereTicketExterno: Boolean(step.requiereTicketExterno),
+          freshserviceWorkspaceId: step.requiereTicketExterno ? Number(step.freshserviceWorkspaceId) : null,
+          freshserviceServicioDisplayId: step.requiereTicketExterno ? Number(step.freshserviceServicioDisplayId) : null,
+          freshserviceUrlFormularioRespaldo: step.requiereTicketExterno ? step.freshserviceUrlFormularioRespaldo.trim() : null,
+          freshserviceLookups: step.requiereTicketExterno
+            ? (step.freshserviceLookups ?? []).map((lookup) => ({ campoApi: lookup.campoApi, origen: lookup.origen }))
+            : [],
+          requiereConsultaSingular: Boolean(step.requiereConsultaSingular),
+          singularCapacitacionNombre: step.requiereConsultaSingular ? step.singularCapacitacionNombre.trim() : null,
           vigenciaMeses: Number(step.vigenciaMeses),
           fechaInicio: step.fechaInicio || null,
           fechaFin: step.fechaFin || null,
@@ -287,6 +431,24 @@ export function ActivityWorkflowPage({ onError }) {
                   onClear={() => clearDependencies(index)}
                 />
                 <label className="workflow-ticket"><input type="checkbox" checked={Boolean(step.requiereTicketExterno)} onChange={(event) => updateStep(index, 'requiereTicketExterno', event.target.checked)} /><span>Requiere comprobante o ticket externo</span></label>
+                {step.requiereTicketExterno && <FreshserviceActivityConfiguration
+                  step={step}
+                  index={index}
+                  workspaces={freshserviceWorkspaces}
+                  catalog={freshserviceCatalogs[String(step.freshserviceWorkspaceId || '')]}
+                  lookupLoading={freshserviceLookupLoading === `${index}:${step.freshserviceServicioDisplayId}`}
+                  onWorkspaceChange={changeFreshserviceWorkspace}
+                  onCatalogLoad={ensureFreshserviceCatalog}
+                  onServiceChange={changeFreshserviceService}
+                  onUrlChange={(value) => updateStep(index, 'freshserviceUrlFormularioRespaldo', value)}
+                  onLookupDetect={detectFreshserviceLookups}
+                  onLookupChange={updateFreshserviceLookup}
+                />}
+                <label className="workflow-ticket"><input type="checkbox" checked={Boolean(step.requiereConsultaSingular)} onChange={(event) => updateStepFields(index, { requiereConsultaSingular: event.target.checked, singularCapacitacionNombre: event.target.checked ? step.singularCapacitacionNombre : '' })} /><span>Consultar capacitación en Singular</span></label>
+                {step.requiereConsultaSingular && <SingularActivityConfiguration
+                  value={step.singularCapacitacionNombre}
+                  onChange={(value) => updateStep(index, 'singularCapacitacionNombre', value)}
+                />}
               </div>
               <div className="workflow-step-actions"><button type="button" className="remove" onClick={() => removeStep(index)} aria-label="Eliminar actividad">×</button></div>
             </article>)}</div>}
@@ -322,8 +484,71 @@ function mapFlow(flow) {
       fechaFin: step.fechaFin ?? '',
       dependencias: (step.dependencias ?? []).map((id) => keyById.get(id)).filter(Boolean),
       dependenciasExternas: step.dependenciasExternas ?? [],
+      freshserviceWorkspaceId: step.freshserviceWorkspaceId ? String(step.freshserviceWorkspaceId) : '',
+      freshserviceServicioDisplayId: step.freshserviceServicioDisplayId ? String(step.freshserviceServicioDisplayId) : '',
+      freshserviceUrlFormularioRespaldo: step.freshserviceUrlFormularioRespaldo ?? '',
+      freshserviceLookups: step.freshserviceLookups ?? [],
+      requiereConsultaSingular: Boolean(step.requiereConsultaSingular),
+      singularCapacitacionNombre: step.singularCapacitacionNombre ?? '',
     })),
   }
+}
+
+function SingularActivityConfiguration({ value, onChange }) {
+  const trainingKnown = !value || SINGULAR_TRAININGS.includes(value)
+  return <section className="workflow-singular" aria-label="Configuración Singular de la actividad">
+    <div><strong>Capacitación requerida en Singular</strong><small>Por ahora la asociación se realiza por el nombre exacto devuelto en el campo Entrenamiento.</small></div>
+    <label><span>Capacitación</span><select value={value ?? ''} onChange={(event) => onChange(event.target.value)}>
+      <option value="">Selecciona una capacitación</option>
+      {!trainingKnown && <option value={value}>{value} · Configurada anteriormente</option>}
+      {SINGULAR_TRAININGS.map((training) => <option key={training} value={training}>{training}</option>)}
+    </select></label>
+    <p>La consulta real y la validación de vigencia se habilitarán cuando sea posible probar la conexión con Singular.</p>
+  </section>
+}
+
+function FreshserviceActivityConfiguration({
+  step,
+  index,
+  workspaces,
+  catalog,
+  lookupLoading,
+  onWorkspaceChange,
+  onCatalogLoad,
+  onServiceChange,
+  onUrlChange,
+  onLookupDetect,
+  onLookupChange,
+}) {
+  const workspaceId = String(step.freshserviceWorkspaceId || '')
+  const serviceId = String(step.freshserviceServicioDisplayId || '')
+  const services = catalog?.items ?? []
+  const workspaceKnown = workspaces.some((item) => String(item.id) === workspaceId)
+  const serviceKnown = services.some((item) => String(item.displayId) === serviceId)
+
+  return <section className="workflow-freshservice" aria-label="Configuración Freshservice de la actividad">
+    <div className="workflow-freshservice-heading">
+      <div><strong>Servicio requerido de Freshservice</strong><small>La actividad quedará vinculada a un servicio exacto del catálogo.</small></div>
+      <span>Solo configuración</span>
+    </div>
+    <div className="workflow-freshservice-grid">
+      <label><span>Workspace</span><select value={workspaceId} onChange={(event) => onWorkspaceChange(index, event.target.value)}>
+        <option value="">Selecciona un workspace</option>
+        {!workspaceKnown && workspaceId && <option value={workspaceId}>Workspace #{workspaceId} configurado</option>}
+        {workspaces.filter((item) => item.state?.toLowerCase() !== 'inactive').map((item) => <option key={item.id} value={item.id}>{item.name || `Workspace #${item.id}`}{item.primary ? ' · Principal' : ''}</option>)}
+      </select></label>
+      <label><span>Servicio del catálogo</span><select value={serviceId} disabled={!workspaceId || catalog?.loading} onFocus={() => workspaceId && onCatalogLoad(workspaceId)} onChange={(event) => onServiceChange(index, workspaceId, event.target.value)}>
+        <option value="">{catalog?.loading ? 'Consultando servicios…' : 'Selecciona un servicio'}</option>
+        {!serviceKnown && serviceId && <option value={serviceId}>Servicio #{serviceId} configurado</option>}
+        {services.map((item) => <option key={item.displayId} value={item.displayId}>{item.name || `Servicio #${item.displayId}`}</option>)}
+      </select></label>
+      <label className="workflow-freshservice-url"><span>URL del formulario de respaldo</span><input type="url" maxLength="500" value={step.freshserviceUrlFormularioRespaldo ?? ''} onChange={(event) => onUrlChange(event.target.value)} placeholder="https://empresa.freshservice.com/support/catalog/items/..." /></label>
+    </div>
+    <div className="workflow-lookup-heading"><div><strong>Campos lookup</strong><small>Detecta los lookups del servicio y define de qué catálogo se alimenta cada uno.</small></div><button type="button" className="secondary-button" disabled={!workspaceId || !serviceId || lookupLoading} onClick={() => onLookupDetect(index, workspaceId, serviceId)}>{lookupLoading ? 'Detectando…' : 'Detectar lookups'}</button></div>
+    {(step.freshserviceLookups ?? []).length === 0
+      ? <p className="workflow-lookup-empty">No hay lookups detectados o todavía no se ha inspeccionado el servicio.</p>
+      : <div className="workflow-lookup-list">{step.freshserviceLookups.map((lookup) => <label key={lookup.campoApi}><span><strong>{lookup.etiqueta || lookup.campoApi}</strong><small>{lookup.campoApi}{lookup.tipo ? ` · ${lookup.tipo}` : ''}</small></span><select value={lookup.origen ?? ''} onChange={(event) => onLookupChange(index, lookup.campoApi, event.target.value)}><option value="">Selecciona el origen</option>{FRESHSERVICE_LOOKUP_ORIGINS.map((origin) => <option key={origin.value} value={origin.value}>{origin.label}</option>)}</select></label>)}</div>}
+  </section>
 }
 
 function WorkflowDependencyPicker({ areas, flow, step, onToggle, onClear }) {

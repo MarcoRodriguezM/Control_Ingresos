@@ -288,6 +288,12 @@ public sealed record ActividadFlujoPaso(
     int IdAreaResponsable,
     string? AreaResponsable,
     bool RequiereTicketExterno,
+    int? FreshserviceWorkspaceId,
+    long? FreshserviceServicioDisplayId,
+    string? FreshserviceUrlFormularioRespaldo,
+    IReadOnlyCollection<ActividadFreshserviceLookupConfiguracion> FreshserviceLookups,
+    bool RequiereConsultaSingular,
+    string? SingularCapacitacionNombre,
     int VigenciaMeses,
     DateOnly? FechaInicio,
     DateOnly? FechaFin,
@@ -325,11 +331,21 @@ public sealed record GuardarActividadFlujoPasoRequest(
     [Required, MaxLength(150)] string NombreActividad,
     int IdAreaResponsable,
     bool RequiereTicketExterno,
+    int? FreshserviceWorkspaceId = null,
+    long? FreshserviceServicioDisplayId = null,
+    [MaxLength(500)] string? FreshserviceUrlFormularioRespaldo = null,
+    IReadOnlyCollection<ActividadFreshserviceLookupConfiguracion>? FreshserviceLookups = null,
+    bool RequiereConsultaSingular = false,
+    [MaxLength(200)] string? SingularCapacitacionNombre = null,
     [Range(1, 1200)] int VigenciaMeses = 24,
     DateOnly? FechaInicio = null,
     DateOnly? FechaFin = null,
     IReadOnlyCollection<string>? Dependencias = null,
     IReadOnlyCollection<ActividadFlujoDependenciaExterna>? DependenciasExternas = null);
+
+public sealed record ActividadFreshserviceLookupConfiguracion(
+    [Required, MaxLength(150)] string CampoApi,
+    [Required, MaxLength(80)] string Origen);
 
 public sealed record GuardarActividadFlujoRequest(
     [Required, MaxLength(150)] string Nombre,

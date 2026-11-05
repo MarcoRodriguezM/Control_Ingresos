@@ -89,6 +89,7 @@ export const controlIngresosApi = {
     body: JSON.stringify(usuario),
   }),
   listarCatalogo: (catalogo) => request(`/api/catalogos/${encodeURIComponent(catalogo)}`),
+  listarWorkspacesFreshservice: () => request('/api/freshservice/workspaces'),
   listarCatalogoFreshservice: ({ page = 1, perPage = 30, workspaceId = null } = {}) => {
     const params = new URLSearchParams({ page: String(page), perPage: String(perPage) })
     if (workspaceId) params.set('workspaceId', String(workspaceId))

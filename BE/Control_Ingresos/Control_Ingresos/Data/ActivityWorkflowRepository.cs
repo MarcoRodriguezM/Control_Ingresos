@@ -7,13 +7,22 @@ namespace Control_Ingresos.Data;
 
 public sealed class ActivityWorkflowRepository(IConfiguration configuration) : IActivityWorkflowRepository
 {
+    private static readonly HashSet<string> OrigenesLookupFreshservice = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "FRESHSERVICE_LOCATIONS",
+        "FRESHSERVICE_DEPARTMENTS",
+        "FRESHSERVICE_REQUESTERS",
+        "FRESHSERVICE_AGENT_GROUPS",
+        "FRESHSERVICE_ASSETS"
+    };
+
     private readonly string _connectionString = configuration.GetConnectionString("ControlIngresos")
         ?? throw new InvalidOperationException("No se configuro ConnectionStrings:ControlIngresos.");
 
     public async Task<ActividadFlujoConfiguracion> ObtenerAsync(CancellationToken cancellationToken)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
-        await using var command = StoredProcedure(connection, "dbo.usp_Actividad_Flujo_Obtener_V2");
+        await using var command = StoredProcedure(connection, "dbo.usp_Actividad_Flujo_Obtener");
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
         var areas = new List<(int Id, string? Codigo, string? Nombre)>();
@@ -25,9 +34,9 @@ public sealed class ActivityWorkflowRepository(IConfiguration configuration) : I
         {
             while (await reader.ReadAsync(cancellationToken))
             {
-                var idVersion = reader.GetInt64(1);
+                var idVersion = GetInt64Value(reader, 1);
                 flujos[idVersion] = new FlujoBuilder(
-                    reader.GetInt64(0), idVersion, reader.GetInt32(2), reader.GetInt32(3),
+                    GetInt64Value(reader, 0), idVersion, reader.GetInt32(2), reader.GetInt32(3),
                     GetNullableString(reader, 4), GetNullableString(reader, 5), GetNullableString(reader, 6),
                     true, SplitStrings(GetNullableString(reader, 7)), [], []);
             }
@@ -37,13 +46,16 @@ public sealed class ActivityWorkflowRepository(IConfiguration configuration) : I
         {
             while (await reader.ReadAsync(cancellationToken))
             {
-                var idVersion = reader.GetInt64(1);
+                var idVersion = GetInt64Value(reader, 1);
                 if (!flujos.TryGetValue(idVersion, out var flujo)) continue;
                 flujo.Pasos.Add(new ActividadFlujoPaso(
-                    reader.GetInt64(0), GetNullableString(reader, 3), reader.GetInt32(4), reader.GetInt32(2),
+                    GetInt64Value(reader, 0), GetNullableString(reader, 3), reader.GetInt32(4), reader.GetInt32(2),
                     GetNullableString(reader, 5), reader.GetInt32(6), GetNullableString(reader, 7), reader.GetBoolean(8),
-                    reader.GetInt32(9), GetNullableDateOnly(reader, 10), GetNullableDateOnly(reader, 11),
-                    SplitLongs(GetNullableString(reader, 12)), []));
+                    GetNullableInt32(reader, 9), GetNullableInt64(reader, 10), GetNullableString(reader, 11),
+                    ParseFreshserviceLookups(GetNullableString(reader, 12)), reader.GetBoolean(13),
+                    GetNullableString(reader, 14), reader.GetInt32(15),
+                    GetNullableDateOnly(reader, 16), GetNullableDateOnly(reader, 17),
+                    SplitLongs(GetNullableString(reader, 18)), []));
             }
         }
 
@@ -54,9 +66,9 @@ public sealed class ActivityWorkflowRepository(IConfiguration configuration) : I
         {
             while (await historicalReader.ReadAsync(cancellationToken))
             {
-                var idVersion = historicalReader.GetInt64(1);
+                var idVersion = GetInt64Value(historicalReader, 1);
                 flujos[idVersion] = new FlujoBuilder(
-                    historicalReader.GetInt64(0), idVersion, historicalReader.GetInt32(2), historicalReader.GetInt32(3),
+                    GetInt64Value(historicalReader, 0), idVersion, historicalReader.GetInt32(2), historicalReader.GetInt32(3),
                     GetNullableString(historicalReader, 4), GetNullableString(historicalReader, 5), GetNullableString(historicalReader, 6),
                     false, SplitStrings(GetNullableString(historicalReader, 7)), [], []);
             }
@@ -65,13 +77,16 @@ public sealed class ActivityWorkflowRepository(IConfiguration configuration) : I
             {
                 while (await historicalReader.ReadAsync(cancellationToken))
                 {
-                    var idVersion = historicalReader.GetInt64(1);
+                    var idVersion = GetInt64Value(historicalReader, 1);
                     if (!flujos.TryGetValue(idVersion, out var flujo)) continue;
                     flujo.Pasos.Add(new ActividadFlujoPaso(
-                        historicalReader.GetInt64(0), GetNullableString(historicalReader, 3), historicalReader.GetInt32(4), historicalReader.GetInt32(2),
+                        GetInt64Value(historicalReader, 0), GetNullableString(historicalReader, 3), historicalReader.GetInt32(4), historicalReader.GetInt32(2),
                         GetNullableString(historicalReader, 5), historicalReader.GetInt32(6), GetNullableString(historicalReader, 7), historicalReader.GetBoolean(8),
-                        historicalReader.GetInt32(9), GetNullableDateOnly(historicalReader, 10), GetNullableDateOnly(historicalReader, 11),
-                        SplitLongs(GetNullableString(historicalReader, 12)), []));
+                        GetNullableInt32(historicalReader, 9), GetNullableInt64(historicalReader, 10), GetNullableString(historicalReader, 11),
+                        ParseFreshserviceLookups(GetNullableString(historicalReader, 12)), historicalReader.GetBoolean(13),
+                        GetNullableString(historicalReader, 14), historicalReader.GetInt32(15),
+                        GetNullableDateOnly(historicalReader, 16), GetNullableDateOnly(historicalReader, 17),
+                        SplitLongs(GetNullableString(historicalReader, 18)), []));
                 }
             }
         }
@@ -84,14 +99,14 @@ public sealed class ActivityWorkflowRepository(IConfiguration configuration) : I
         {
             while (await externalReader.ReadAsync(cancellationToken))
             {
-                if (!pasosPorId.TryGetValue(externalReader.GetInt64(0), out var ubicacion)) continue;
+                if (!pasosPorId.TryGetValue(GetInt64Value(externalReader, 0), out var ubicacion)) continue;
                 var paso = ubicacion.flujo.Pasos[ubicacion.index];
                 ubicacion.flujo.Pasos[ubicacion.index] = paso with
                 {
                     DependenciasExternas =
                     [
                         .. paso.DependenciasExternas,
-                        new ActividadFlujoDependenciaExterna(externalReader.GetInt64(1), externalReader.GetString(2)),
+                        new ActividadFlujoDependenciaExterna(GetInt64Value(externalReader, 1), externalReader.GetString(2)),
                     ],
                 };
             }
@@ -102,7 +117,7 @@ public sealed class ActivityWorkflowRepository(IConfiguration configuration) : I
         {
             while (await automaticReader.ReadAsync(cancellationToken))
             {
-                if (flujos.TryGetValue(automaticReader.GetInt64(0), out var flujo))
+                if (flujos.TryGetValue(GetInt64Value(automaticReader, 0), out var flujo))
                     flujo.TiposIngresoAutomaticos.Add(automaticReader.GetString(1));
             }
         }
@@ -135,7 +150,7 @@ public sealed class ActivityWorkflowRepository(IConfiguration configuration) : I
         {
             var flujoJson = JsonSerializer.Serialize(request);
             ActividadFlujoGuardadoResponse result;
-            await using (var command = StoredProcedure(connection, "dbo.usp_Actividad_Flujo_Guardar_V2"))
+            await using (var command = StoredProcedure(connection, "dbo.usp_Actividad_Flujo_Guardar"))
             {
                 command.Transaction = transaction;
                 Add(command, "@IdAreaAcceso", SqlDbType.Int, idAreaAcceso);
@@ -145,7 +160,7 @@ public sealed class ActivityWorkflowRepository(IConfiguration configuration) : I
                 await using var reader = await command.ExecuteReaderAsync(cancellationToken);
                 if (!await reader.ReadAsync(cancellationToken))
                     throw new InvalidOperationException("El procedimiento no devolvio la version guardada del flujo.");
-                result = new(reader.GetInt64(0), reader.GetInt64(1));
+                result = new(GetInt64Value(reader, 0), GetInt64Value(reader, 1));
             }
 
             await using (var externalCommand = StoredProcedure(connection, "dbo.usp_Actividad_Flujo_Dependencias_Externas_Guardar"))
@@ -276,14 +291,14 @@ public sealed class ActivityWorkflowRepository(IConfiguration configuration) : I
             Add(automaticCommand, "@FlujosJson", SqlDbType.NVarChar, JsonSerializer.Serialize(seleccion), -1);
             await using var automaticReader = await automaticCommand.ExecuteReaderAsync(cancellationToken);
             while (await automaticReader.ReadAsync(cancellationToken))
-                seleccion.Add(automaticReader.GetInt64(0));
+                seleccion.Add(GetInt64Value(automaticReader, 0));
         }
         await using (var dependencyCommand = StoredProcedure(connection, "dbo.usp_Actividad_Flujo_Dependencias_Resolver"))
         {
             Add(dependencyCommand, "@FlujosJson", SqlDbType.NVarChar, JsonSerializer.Serialize(seleccion.Distinct()), -1);
             await using var dependencyReader = await dependencyCommand.ExecuteReaderAsync(cancellationToken);
             while (await dependencyReader.ReadAsync(cancellationToken))
-                seleccion.Add(dependencyReader.GetInt64(0));
+                seleccion.Add(GetInt64Value(dependencyReader, 0));
         }
         await using var command = StoredProcedure(connection, "dbo.usp_Actividad_Flujo_Asignar_Generar");
         Add(command, "@IdSolicitud", SqlDbType.BigInt, idSolicitud);
@@ -310,7 +325,7 @@ public sealed class ActivityWorkflowRepository(IConfiguration configuration) : I
         Add(command, "@IdsJson", SqlDbType.NVarChar, JsonSerializer.Serialize(idsSolicitudPersonaArea.Distinct()), -1);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var bloqueados = new HashSet<long>();
-        while (await reader.ReadAsync(cancellationToken)) bloqueados.Add(reader.GetInt64(0));
+        while (await reader.ReadAsync(cancellationToken)) bloqueados.Add(GetInt64Value(reader, 0));
         return bloqueados;
     }
 
@@ -356,6 +371,26 @@ public sealed class ActivityWorkflowRepository(IConfiguration configuration) : I
             throw new InvalidOperationException("Cada actividad requiere un area responsable y una vigencia valida.");
         if (request.Pasos.Any(paso => paso.FechaInicio.HasValue && paso.FechaFin.HasValue && paso.FechaFin < paso.FechaInicio))
             throw new InvalidOperationException("La fecha final de una actividad no puede ser anterior a la inicial.");
+        foreach (var paso in request.Pasos)
+        {
+            if (paso.RequiereTicketExterno)
+            {
+                if (paso.FreshserviceWorkspaceId is not > 0 || paso.FreshserviceServicioDisplayId is not > 0)
+                    throw new InvalidOperationException("Cada actividad que requiere ticket debe indicar el workspace y el servicio de Freshservice.");
+                if (!Uri.TryCreate(paso.FreshserviceUrlFormularioRespaldo, UriKind.Absolute, out var fallbackUri)
+                    || fallbackUri.Scheme != Uri.UriSchemeHttps
+                    || !fallbackUri.Host.EndsWith(".freshservice.com", StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("Cada actividad que requiere ticket debe indicar una URL HTTPS de respaldo de Freshservice.");
+                var lookups = paso.FreshserviceLookups ?? [];
+                if (lookups.Any(item => string.IsNullOrWhiteSpace(item.CampoApi)
+                    || !OrigenesLookupFreshservice.Contains(item.Origen)))
+                    throw new InvalidOperationException("La configuracion de lookups de Freshservice contiene un campo u origen no permitido.");
+                if (lookups.GroupBy(item => item.CampoApi.Trim(), StringComparer.OrdinalIgnoreCase).Any(group => group.Count() > 1))
+                    throw new InvalidOperationException("Un campo lookup de Freshservice no puede configurarse mas de una vez.");
+            }
+            if (paso.RequiereConsultaSingular && string.IsNullOrWhiteSpace(paso.SingularCapacitacionNombre))
+                throw new InvalidOperationException("Cada actividad que consulta Singular debe indicar la capacitacion requerida.");
+        }
         var tipos = (request.TiposIngreso ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (tipos.Count > 0 && (request.TiposIngresoAutomaticos ?? []).Any(tipo => !tipos.Contains(tipo)))
             throw new InvalidOperationException("Un tipo de ingreso automatico tambien debe estar habilitado para el flujo.");
@@ -372,6 +407,15 @@ public sealed class ActivityWorkflowRepository(IConfiguration configuration) : I
     private static string? GetNullableString(SqlDataReader reader, int ordinal) =>
         reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
 
+    private static int? GetNullableInt32(SqlDataReader reader, int ordinal) =>
+        reader.IsDBNull(ordinal) ? null : reader.GetInt32(ordinal);
+
+    private static long GetInt64Value(SqlDataReader reader, int ordinal) =>
+        Convert.ToInt64(reader.GetValue(ordinal));
+
+    private static long? GetNullableInt64(SqlDataReader reader, int ordinal) =>
+        reader.IsDBNull(ordinal) ? null : Convert.ToInt64(reader.GetValue(ordinal));
+
     private static DateOnly? GetNullableDateOnly(SqlDataReader reader, int ordinal) =>
         reader.IsDBNull(ordinal) ? null : DateOnly.FromDateTime(reader.GetDateTime(ordinal));
 
@@ -380,6 +424,21 @@ public sealed class ActivityWorkflowRepository(IConfiguration configuration) : I
 
     private static IReadOnlyCollection<long> SplitLongs(string? value) =>
         SplitStrings(value).Select(item => long.TryParse(item, out var id) ? id : 0).Where(id => id > 0).ToArray();
+
+    private static IReadOnlyCollection<ActividadFreshserviceLookupConfiguracion> ParseFreshserviceLookups(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return [];
+        try
+        {
+            return JsonSerializer.Deserialize<IReadOnlyCollection<ActividadFreshserviceLookupConfiguracion>>(
+                value,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
 
     private sealed record FlujoBuilder(
         long IdFlujo,

@@ -10,6 +10,12 @@ namespace Control_Ingresos.Controllers;
 [Route("api/freshservice")]
 public sealed class FreshserviceController(IFreshserviceReadOnlyClient client) : ControllerBase
 {
+    [HttpGet("workspaces")]
+    [ProducesResponseType<IReadOnlyCollection<FreshserviceWorkspaceSummary>>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyCollection<FreshserviceWorkspaceSummary>>> ListWorkspaces(
+        CancellationToken cancellationToken = default) =>
+        Ok(await client.ListWorkspacesAsync(cancellationToken));
+
     [HttpGet("catalogo")]
     [ProducesResponseType<FreshserviceCatalogPage>(StatusCodes.Status200OK)]
     public async Task<ActionResult<FreshserviceCatalogPage>> ListCatalog(

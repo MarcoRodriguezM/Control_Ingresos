@@ -51,6 +51,7 @@ import './App.css'
 
 const today = () => new Date().toLocaleDateString('en-CA')
 const sessionKey = 'control-ingresos-session'
+const sessionRestoreRetryDelays = [0, 750, 1500, 2500, 4000, 6000, 8000]
 const initialForm = () => ({
   idTipoIngreso: '', idEstadoSolicitud: '', idProveedor: '', fechaInicio: today(), fechaFin: today(),
   nombreActividad: '', descripcionActividad: '', numeroContrato: '', cantidadEstimada: '1',
@@ -69,7 +70,7 @@ function App() {
   useEffect(() => {
     if (sessionReady || !session?.idUsuario) return undefined
     let active = true
-    controlIngresosApi.obtenerSesion()
+    restoreSession()
       .then((current) => {
         if (!active) return
         localStorage.setItem(sessionKey, JSON.stringify(current))
@@ -179,6 +180,21 @@ function App() {
   }
 
   return <AuthenticatedApp session={session} onLogout={logout} onSessionRefresh={refreshSession} />
+}
+
+async function restoreSession() {
+  let lastError = null
+  for (const delay of sessionRestoreRetryDelays) {
+    if (delay) await new Promise((resolve) => window.setTimeout(resolve, delay))
+    try {
+      return await controlIngresosApi.obtenerSesion()
+    } catch (error) {
+      lastError = error
+      const transient = !error.status || [502, 503, 504].includes(error.status)
+      if (!transient) throw error
+    }
+  }
+  throw lastError ?? new Error('No se pudo validar la sesion.')
 }
 
 function NoPermissionPage({ onLogout }) {
