@@ -523,6 +523,13 @@ function FreshserviceActivityConfiguration({
   const workspaceId = String(step.freshserviceWorkspaceId || '')
   const serviceId = String(step.freshserviceServicioDisplayId || '')
   const services = catalog?.items ?? []
+  const [serviceFilter, setServiceFilter] = useState({ workspaceId: '', value: '' })
+  const serviceSearch = serviceFilter.workspaceId === workspaceId ? serviceFilter.value : ''
+  const normalizedSearch = normalizeSearch(serviceSearch)
+  const visibleServices = services.filter((item) => {
+    if (!normalizedSearch || String(item.displayId) === serviceId) return true
+    return normalizeSearch(`${item.name ?? ''} ${item.displayId ?? ''}`).includes(normalizedSearch)
+  })
   const workspaceKnown = workspaces.some((item) => String(item.id) === workspaceId)
   const serviceKnown = services.some((item) => String(item.displayId) === serviceId)
 
@@ -537,10 +544,10 @@ function FreshserviceActivityConfiguration({
         {!workspaceKnown && workspaceId && <option value={workspaceId}>Workspace #{workspaceId} configurado</option>}
         {workspaces.filter((item) => item.state?.toLowerCase() !== 'inactive').map((item) => <option key={item.id} value={item.id}>{item.name || `Workspace #${item.id}`}{item.primary ? ' · Principal' : ''}</option>)}
       </select></label>
-      <label><span>Servicio del catálogo</span><select value={serviceId} disabled={!workspaceId || catalog?.loading} onFocus={() => workspaceId && onCatalogLoad(workspaceId)} onChange={(event) => onServiceChange(index, workspaceId, event.target.value)}>
-        <option value="">{catalog?.loading ? 'Consultando servicios…' : 'Selecciona un servicio'}</option>
+      <label className="workflow-freshservice-service"><span>Servicio del catálogo</span><input type="search" value={serviceSearch} disabled={!workspaceId || catalog?.loading} onFocus={() => workspaceId && onCatalogLoad(workspaceId)} onChange={(event) => setServiceFilter({ workspaceId, value: event.target.value })} placeholder="Buscar por nombre o ID" aria-label="Buscar servicio del catálogo" /><select value={serviceId} disabled={!workspaceId || catalog?.loading} onFocus={() => workspaceId && onCatalogLoad(workspaceId)} onChange={(event) => onServiceChange(index, workspaceId, event.target.value)}>
+        <option value="">{catalog?.loading ? 'Consultando servicios…' : visibleServices.length === 0 && serviceSearch ? 'No se encontraron servicios' : 'Selecciona un servicio'}</option>
         {!serviceKnown && serviceId && <option value={serviceId}>Servicio #{serviceId} configurado</option>}
-        {services.map((item) => <option key={item.displayId} value={item.displayId}>{item.name || `Servicio #${item.displayId}`}</option>)}
+        {visibleServices.map((item) => <option key={item.displayId} value={item.displayId}>{item.name || `Servicio #${item.displayId}`}</option>)}
       </select></label>
       <label className="workflow-freshservice-url"><span>URL del formulario de respaldo</span><input type="url" maxLength="500" value={step.freshserviceUrlFormularioRespaldo ?? ''} onChange={(event) => onUrlChange(event.target.value)} placeholder="https://empresa.freshservice.com/support/catalog/items/..." /></label>
     </div>
@@ -549,6 +556,14 @@ function FreshserviceActivityConfiguration({
       ? <p className="workflow-lookup-empty">No hay lookups detectados o todavía no se ha inspeccionado el servicio.</p>
       : <div className="workflow-lookup-list">{step.freshserviceLookups.map((lookup) => <label key={lookup.campoApi}><span><strong>{lookup.etiqueta || lookup.campoApi}</strong><small>{lookup.campoApi}{lookup.tipo ? ` · ${lookup.tipo}` : ''}</small></span><select value={lookup.origen ?? ''} onChange={(event) => onLookupChange(index, lookup.campoApi, event.target.value)}><option value="">Selecciona el origen</option>{FRESHSERVICE_LOOKUP_ORIGINS.map((origin) => <option key={origin.value} value={origin.value}>{origin.label}</option>)}</select></label>)}</div>}
   </section>
+}
+
+function normalizeSearch(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
 }
 
 function WorkflowDependencyPicker({ areas, flow, step, onToggle, onClear }) {
