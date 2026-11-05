@@ -43,6 +43,7 @@ public static class PermissionGate
 
         if (resource is "autenticacion" or "publico" or "catalogos") return [];
         if (resource == "usuarios") return ["GESTIONAR_USUARIOS"];
+        if (resource == "auditoria") return ["GESTIONAR_USUARIOS"];
         if (resource == "freshservice") return ["VER_FRESHSERVICE"];
         if (resource == "control-accesos") return ["REGISTRAR_INGRESOS"];
         if (resource == "actividad-flujos")

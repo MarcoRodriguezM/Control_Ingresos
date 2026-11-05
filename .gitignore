@@ -24,3 +24,9 @@ BE/Control_Ingresos/Control_Ingresos/appsettings.Development.json
 # Fotografías cargadas en ejecución
 BE/Control_Ingresos/Control_Ingresos/wwwroot/uploads/personas/*
 !BE/Control_Ingresos/Control_Ingresos/wwwroot/uploads/personas/.gitkeep
+
+# Auditoria local previa (se importa a SQL Server al iniciar)
+BE/Control_Ingresos/Control_Ingresos/App_Data/audit/
+
+# Script de instalacion incluido en el backend
+!BE/Control_Ingresos/Control_Ingresos/Sql/001_Auditoria_Registro.sql

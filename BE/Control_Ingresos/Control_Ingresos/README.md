@@ -2,14 +2,15 @@
 
 ## Preparación
 
-1. Cree y mantenga `Control_Ingresos_DB`, sus tablas y procedimientos directamente en SQL Server.
+1. Cree y mantenga `Control_Ingresos_DB` y sus tablas de negocio directamente en SQL Server.
 2. Ajuste `ConnectionStrings:ControlIngresos` en `appsettings.json` o mediante una variable de entorno:
 
    `ConnectionStrings__ControlIngresos=Server=...;Database=Control_Ingresos_DB;...`
 
 3. Inicie la API con `dotnet run`.
 
-La API consume las estructuras y los procedimientos almacenados existentes, pero no crea ni modifica tablas, procedimientos o registros durante el inicio. Los scripts de administración de SQL Server se conservan fuera de este repositorio.
+La API consume las estructuras y los procedimientos almacenados existentes. Al iniciar, verifica
+la tabla `dbo.Auditoria_Registro` y la crea si falta; no modifica las tablas de negocio.
 
 La URL HTTP de desarrollo es `http://localhost:5250`. Al ejecutar en Development:
 
@@ -68,3 +69,19 @@ Para asociar una persona ya registrada:
   "usuario": "usuario.directorio"
 }
 ```
+
+## Auditoria
+
+La pagina `/auditoria` y `GET /api/auditoria` requieren el rol `Administrador` y el permiso
+`GESTIONAR_USUARIOS`. Registra las llamadas autenticadas a la API, incluidos sus resultados,
+sin guardar contrasenas, cuerpos de peticion ni parametros de consulta. Los inicios de sesion
+correctos e incorrectos tambien se registran. Las consultas de sesion y recursos publicos
+se omiten para evitar ruido.
+
+Los eventos se guardan en `dbo.Auditoria_Registro`. Al iniciar el backend se ejecuta el script
+idempotente `Sql/001_Auditoria_Registro.sql` antes de atender solicitudes. Si existen registros
+anteriores en `App_Data/audit/*.jsonl`, se importan una sola vez por identificador; los archivos
+se conservan como respaldo local y ya no reciben eventos nuevos. La auditoria no puede recuperar
+acciones anteriores a su activacion.
+Si la instalacion anterior usaba `Audit:Directory`, mantenga esa configuracion durante el primer
+inicio para importar los archivos de esa ruta.

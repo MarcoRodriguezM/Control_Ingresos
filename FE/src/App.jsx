@@ -5,6 +5,7 @@ import { AlertModal } from './components/AlertModal'
 import auraLogo from './assets/logo-aura.png'
 import {
   ApprovalsPage,
+  AuditLogPage,
   ActivityRequestDetailPage,
   ActivityWorkflowPage,
   DashboardPage,
@@ -510,6 +511,7 @@ function AuthenticatedApp({ session, onLogout, onSessionRefresh }) {
   const canCreateProviders = hasPermission(session, 'CREAR_PROVEEDORES')
   const canScanQr = hasPermission(session, 'ESCANEAR_QR')
   const canManageUsers = hasPermission(session, 'GESTIONAR_USUARIOS')
+  const canViewAudit = isAdministrator && canManageUsers
   const canViewFreshservice = hasPermission(session, 'VER_FRESHSERVICE')
   const homePath = canViewRequests ? '/solicitudes' : canCreateRequests ? '/solicitudes/nueva' : canViewActivities ? '/mis-actividades' : canViewPersons ? '/personas' : canCreatePersons ? '/personas/nueva' : canViewEmployees ? '/empleados' : canScanQr ? '/escanear-qr' : '/perfil'
   const editRoute = matchPath('/solicitudes/:id/editar', location.pathname)
@@ -535,6 +537,7 @@ function AuthenticatedApp({ session, onLogout, onSessionRefresh }) {
   const isActivityWorkflowsRoute = location.pathname === '/configuracion/actividades'
   const isFreshserviceRoute = location.pathname === '/configuracion/freshservice'
   const isUsersRoute = location.pathname.startsWith('/usuarios')
+  const isAuditRoute = location.pathname === '/auditoria'
   const isNewUserRoute = location.pathname === '/usuarios/nuevo'
   const userEditRoute = matchPath('/usuarios/:idUsuario/editar', location.pathname)
   const userDetailRoute = !isNewUserRoute && !userEditRoute ? matchPath('/usuarios/:idUsuario', location.pathname) : null
@@ -1530,6 +1533,7 @@ function AuthenticatedApp({ session, onLogout, onSessionRefresh }) {
           {canCreateProviders && <Nav icon="company" label="Nuevo proveedor" active={isNewProviderRoute} onClick={openNewProvider} />}
           {canScanQr && <Nav icon="qr" label="Escanear QR" active={isQrScannerRoute} onClick={() => { navigate('/escanear-qr'); setMenuOpen(false); setError('') }} />}
           {canManageUsers && <Nav icon="settings" label="Usuarios" count={usuarios.length || undefined} active={isUsersRoute} onClick={() => { navigate('/usuarios'); setMenuOpen(false); setError('') }} />}
+          {canViewAudit && <Nav icon="tasks" label="Auditoria" active={isAuditRoute} onClick={() => { navigate('/auditoria'); setMenuOpen(false); setError('') }} />}
         </nav>
         <div className="sidebar-footer">
           <button type="button" className="nav-item" onClick={onLogout}><Icon name="logout" /><span>Cerrar sesión</span></button>
@@ -1541,7 +1545,7 @@ function AuthenticatedApp({ session, onLogout, onSessionRefresh }) {
           <button className="icon-button menu-button" onClick={() => setMenuOpen((open) => !open)} aria-label="Abrir menú"><Icon name="menu" /></button>
           <div className="breadcrumb">
             <Link to="/dashboard" onClick={() => { setError(''); setMenuOpen(false) }}>Inicio</Link>
-            <strong>{approvalDetailRoute ? 'Detalle de solicitud' : activityRequestRoute ? 'Consulta de solicitud' : isDashboardRoute ? 'Dashboard' : isProfileRoute ? 'Mi perfil' : isNewUserRoute ? 'Crear usuario' : userEditRoute ? 'Editar usuario' : userDetailRoute ? 'Detalle del usuario' : isUsersRoute ? 'Usuarios' : isFreshserviceRoute ? 'Pruebas Freshservice' : isActivityWorkflowsRoute ? 'Flujos de acceso' : isActivitiesRoute ? 'Mis actividades' : isApprovalsRoute ? 'Mis aprobaciones' : isQrScannerRoute ? 'Escanear QR' : isPublicEmployeeCredentialRoute ? 'Credencial del empleado' : isPublicPersonCredentialRoute ? 'Credencial de la persona' : personQrRoute ? 'QR de la persona' : employeeQrRoute ? 'QR del empleado' : isNewPersonRoute ? 'Nueva persona' : isNewProviderRoute ? 'Nuevo proveedor' : isPersonsRoute ? 'Personas y accesos' : isEmployeesRoute ? 'Empleados' : editRoute ? 'Editar solicitud' : trackingRoute ? 'Seguimiento de solicitud' : location.pathname === '/solicitudes/nueva' ? 'Nueva solicitud' : 'Solicitudes'}</strong>
+            <strong>{approvalDetailRoute ? 'Detalle de solicitud' : activityRequestRoute ? 'Consulta de solicitud' : isDashboardRoute ? 'Dashboard' : isProfileRoute ? 'Mi perfil' : isAuditRoute ? 'Auditoria' : isNewUserRoute ? 'Crear usuario' : userEditRoute ? 'Editar usuario' : userDetailRoute ? 'Detalle del usuario' : isUsersRoute ? 'Usuarios' : isFreshserviceRoute ? 'Pruebas Freshservice' : isActivityWorkflowsRoute ? 'Flujos de acceso' : isActivitiesRoute ? 'Mis actividades' : isApprovalsRoute ? 'Mis aprobaciones' : isQrScannerRoute ? 'Escanear QR' : isPublicEmployeeCredentialRoute ? 'Credencial del empleado' : isPublicPersonCredentialRoute ? 'Credencial de la persona' : personQrRoute ? 'QR de la persona' : employeeQrRoute ? 'QR del empleado' : isNewPersonRoute ? 'Nueva persona' : isNewProviderRoute ? 'Nuevo proveedor' : isPersonsRoute ? 'Personas y accesos' : isEmployeesRoute ? 'Empleados' : editRoute ? 'Editar solicitud' : trackingRoute ? 'Seguimiento de solicitud' : location.pathname === '/solicitudes/nueva' ? 'Nueva solicitud' : 'Solicitudes'}</strong>
           </div>
           <div className="top-actions">
             {/* <button className="ghost-button"><Icon name="help" />Ayuda</button> */}
@@ -1559,6 +1563,7 @@ function AuthenticatedApp({ session, onLogout, onSessionRefresh }) {
             <Route path="/configuracion/actividades" element={canManageWorkflows ? <ActivityWorkflowPage onError={setError} /> : <Navigate to={homePath} replace />} />
             <Route path="/configuracion/freshservice" element={canViewFreshservice ? <FreshserviceIntegrationPage /> : <Navigate to={homePath} replace />} />
             <Route path="/usuarios" element={canManageUsers ? <UserManagementPage items={usuarios} loading={usersLoading} onNew={() => { setError(''); navigate('/usuarios/nuevo') }} onSelect={(idUsuario) => { setError(''); navigate(`/usuarios/${encodeURIComponent(idUsuario)}`) }} /> : <Navigate to={homePath} replace />} />
+            <Route path="/auditoria" element={canViewAudit ? <AuditLogPage /> : <Navigate to={homePath} replace />} />
             <Route path="/usuarios/nuevo" element={canManageUsers ? <UserFormPage areas={userAreas} areasError={userAreasError} onCreate={createUser} onCancel={() => { setError(''); navigate('/usuarios') }} /> : <Navigate to={homePath} replace />} />
             <Route path="/usuarios/:idUsuario" element={canManageUsers ? <UserDetailPage idUsuario={userDetailRoute?.params.idUsuario ?? ''} onBack={() => { setError(''); navigate('/usuarios') }} onEdit={() => { setError(''); navigate(`/usuarios/${encodeURIComponent(userDetailRoute?.params.idUsuario ?? '')}/editar`) }} onError={setError} /> : <Navigate to={homePath} replace />} />
             <Route path="/usuarios/:idUsuario/editar" element={canManageUsers ? <UserEditPage idUsuario={userEditRoute?.params.idUsuario ?? ''} areas={userAreas} areasError={userAreasError} onUpdate={(user) => updateUser(userEditRoute?.params.idUsuario ?? '', user)} onCancel={() => { setError(''); navigate(`/usuarios/${encodeURIComponent(userEditRoute?.params.idUsuario ?? '')}`) }} onError={setError} /> : <Navigate to={homePath} replace />} />

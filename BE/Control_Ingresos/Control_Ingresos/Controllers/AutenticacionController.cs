@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 using Control_Ingresos.Security;
+using Control_Ingresos.Services;
 
 namespace Control_Ingresos.Controllers;
 
@@ -14,7 +15,9 @@ namespace Control_Ingresos.Controllers;
 public sealed class AutenticacionController(
     ISolicitudesRepository repository,
     ApplicationSession applicationSession,
-    CurrentUserAccessValidator accessValidator) : ControllerBase
+    CurrentUserAccessValidator accessValidator,
+    AuditLogService auditLog,
+    ILogger<AutenticacionController> logger) : ControllerBase
 {
     [Authorize]
     [HttpGet("sesion")]
@@ -63,11 +66,14 @@ public sealed class AutenticacionController(
     {
         var usuario = await repository.AutenticarAsync(request, cancellationToken);
         if (usuario is null)
+        {
+            await LogLoginAsync(request.Usuario, request.Usuario, StatusCodes.Status401Unauthorized);
             return Unauthorized(new ProblemDetails
             {
                 Title = "Credenciales incorrectas",
                 Detail = "El usuario, correo o contraseña no son válidos."
             });
+        }
 
         var claims = new List<Claim>
         {
@@ -83,7 +89,23 @@ public sealed class AutenticacionController(
             new ClaimsPrincipal(identity),
             new AuthenticationProperties { IsPersistent = true, ExpiresUtc = DateTimeOffset.UtcNow.AddHours(1) });
 
+        await LogLoginAsync(usuario.IdUsuario, usuario.NombreCompleto ?? usuario.IdUsuario,
+            StatusCodes.Status200OK);
+
         return Ok(usuario);
+    }
+
+    private async Task LogLoginAsync(string idUsuario, string nombre, int estado)
+    {
+        try
+        {
+            await auditLog.AppendAsync(new AuditEntry(Guid.NewGuid(), DateTimeOffset.UtcNow,
+                idUsuario, nombre, "POST", "api/autenticacion/login", null, estado));
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(exception, "No se pudo registrar el inicio de sesion en auditoria.");
+        }
     }
 
     [Authorize]

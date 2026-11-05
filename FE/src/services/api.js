@@ -79,6 +79,11 @@ export const controlIngresosApi = {
   cerrarSesion: () => request('/api/autenticacion/logout', { method: 'POST' }),
   obtenerMiPerfil: () => request('/api/autenticacion/perfil'),
   listarUsuarios: () => request('/api/usuarios'),
+  listarAuditoria: ({ desde, hasta, persona, pagina = 1 }) => {
+    const params = new URLSearchParams({ desde, hasta, pagina: String(pagina), offsetMinutos: String(new Date().getTimezoneOffset()) })
+    if (persona) params.set('persona', persona)
+    return request(`/api/auditoria?${params}`)
+  },
   obtenerUsuario: (idUsuario) => request(`/api/usuarios/${encodeURIComponent(idUsuario)}`),
   crearUsuario: (usuario) => request('/api/usuarios', {
     method: 'POST',
