@@ -11,17 +11,45 @@ const initialDates = () => {
   return { desde: dateValue(start), hasta: dateValue(end), persona: '' }
 }
 
-const methodLabels = { GET: 'Consulta', POST: 'Creacion', PUT: 'Actualizacion', PATCH: 'Cambio', DELETE: 'Eliminacion' }
+const methodLabels = { POST: 'Creacion', PUT: 'Actualizacion', PATCH: 'Cambio', DELETE: 'Eliminacion' }
 const resourceLabels = {
   autenticacion: 'Sesion', solicitudes: 'Solicitudes', personas: 'Personas', empleados: 'Empleados',
   aprobaciones: 'Aprobaciones', actividades: 'Actividades', 'actividad-flujos': 'Flujos de acceso',
-  proveedores: 'Proveedores', usuarios: 'Usuarios', freshservice: 'Freshservice',
+  proveedores: 'Proveedores', usuarios: 'Usuarios', freshservice: 'Freshservice', pantalla: 'Pantalla',
 }
 
 function actionLabel(item) {
+  if (item.metodo === 'VIEW') return 'Ingreso a pantalla'
   if (item.recurso === 'api/autenticacion/login') return 'Inicio de sesion'
   if (item.recurso?.includes('autenticacion/logout')) return 'Cierre de sesion'
+  if (item.recurso?.includes('fotografia')) return 'Cambio de fotografia'
+  if (item.recurso?.includes('reenviar-aprobacion')) return 'Reenvio de aprobacion'
+  if (item.recurso?.includes('/enviar')) return 'Envio de solicitud'
+  if (item.recurso?.includes('/decision')) return 'Decision de aprobacion'
+  if (item.recurso?.includes('/completar')) return 'Actividad completada'
+  if (item.recurso?.includes('/ticket')) return 'Creacion de ticket'
+  if (item.recurso?.includes('/movimientos')) return 'Registro de ingreso'
+  if (item.recurso?.includes('/areas')) return 'Asignacion de areas'
   return methodLabels[item.metodo] || item.metodo
+}
+
+function actionTone(item) {
+  if (item.metodo === 'VIEW') return 'viewed'
+  if (item.recurso?.includes('autenticacion/')) return 'session'
+  if (item.metodo === 'DELETE') return 'deleted'
+  if (item.metodo === 'PUT' || item.metodo === 'PATCH') return 'updated'
+  return 'created'
+}
+
+function resultLabel(item) {
+  if (item.estado >= 400) return `Error ${item.estado}`
+  if (item.metodo === 'VIEW') return 'Vista abierta'
+  if (item.recurso?.includes('autenticacion/login')) return 'Sesion iniciada'
+  if (item.recurso?.includes('autenticacion/logout')) return 'Sesion cerrada'
+  if (item.metodo === 'DELETE') return 'Eliminado'
+  if (item.metodo === 'PUT' || item.metodo === 'PATCH') return 'Actualizado'
+  if (item.recurso?.includes('/enviar')) return 'Enviado'
+  return 'Creado'
 }
 
 export function AuditLogPage() {
@@ -69,7 +97,7 @@ export function AuditLogPage() {
       <div>
         <p className="eyebrow">ADMINISTRACION</p>
         <h1>Registro de actividad</h1>
-        <p>Consulta las acciones de los usuarios. Los registros comienzan desde que se habilito esta auditoria.</p>
+        <p>Consulta entradas a pantallas y acciones realizadas por los usuarios, como crear, editar y eliminar.</p>
       </div>
       <button type="button" className="secondary-button audit-refresh" onClick={load} disabled={loading}>Actualizar</button>
     </div>
@@ -95,9 +123,9 @@ export function AuditLogPage() {
           {!loading && result.registros.map((item) => <tr key={item.id}>
             <td>{formatDateTime(item.fecha)}</td>
             <td><strong>{item.nombreUsuario || item.usuario || 'Desconocido'}</strong><span className="cell-sub">{item.usuario}</span></td>
-            <td>{actionLabel(item)}</td>
-            <td><strong>{resourceLabels[item.recurso?.split('/')[1]] || 'Sistema'}</strong><span className="cell-sub audit-resource">{item.recurso}{item.referencia ? ` · ${item.referencia}` : ''}</span></td>
-            <td><span className={`audit-status ${item.estado >= 400 ? 'failed' : 'ok'}`}>{item.estado >= 400 ? 'Error' : 'Correcto'} · {item.estado}</span></td>
+            <td><span className={`audit-action ${actionTone(item)}`}>{actionLabel(item)}</span></td>
+            <td><strong>{resourceLabels[item.recurso?.split('/')[1] || item.recurso] || 'Sistema'}</strong>{item.referencia && <span className="cell-sub">{item.referencia}</span>}</td>
+            <td><span className={`audit-status ${item.estado >= 400 ? 'failed' : actionTone(item)}`}>{resultLabel(item)}</span></td>
           </tr>)}
         </tbody>
       </table></div>

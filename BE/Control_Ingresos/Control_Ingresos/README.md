@@ -73,10 +73,13 @@ Para asociar una persona ya registrada:
 ## Auditoria
 
 La pagina `/auditoria` y `GET /api/auditoria` requieren el rol `Administrador` y el permiso
-`GESTIONAR_USUARIOS`. Registra las llamadas autenticadas a la API, incluidos sus resultados,
-sin guardar contrasenas, cuerpos de peticion ni parametros de consulta. Los inicios de sesion
-correctos e incorrectos tambien se registran. Las consultas de sesion y recursos publicos
-se omiten para evitar ruido.
+`GESTIONAR_USUARIOS`. Registra las acciones de escritura autenticadas (`POST`, `PUT`, `PATCH`
+y `DELETE`), incluidos sus resultados, y las entradas a pantallas enviadas explicitamente por
+el frontend (`VIEW`). Todos los usuarios autenticados pueden registrar su propia navegacion;
+solo los administradores con el permiso indicado pueden consultar el historial.
+No se guardan contrasenas, cuerpos de peticion ni parametros de consulta. Los inicios de sesion
+correctos e incorrectos tambien se registran. Las consultas automaticas (`GET`) se omiten
+para evitar ruido y crecimiento innecesario de la tabla.
 
 Los eventos se guardan en `dbo.Auditoria_Registro`. Al iniciar el backend se ejecuta el script
 idempotente `Sql/001_Auditoria_Registro.sql` antes de atender solicitudes. Si existen registros

@@ -52,6 +52,7 @@ import './App.css'
 
 const today = () => new Date().toLocaleDateString('en-CA')
 const sessionKey = 'control-ingresos-session'
+const recentNavigation = { key: '', at: 0 }
 const sessionRestoreRetryDelays = [0, 750, 1500, 2500, 4000, 6000, 8000]
 const initialForm = () => ({
   idTipoIngreso: '', idEstadoSolicitud: '', idProveedor: '', fechaInicio: today(), fechaFin: today(),
@@ -134,6 +135,21 @@ function App() {
       sessionStorage.setItem('control-ingresos-return-to', `${location.pathname}${location.search}`)
     }
   }, [session, location.pathname, location.search])
+
+  useEffect(() => {
+    if (!sessionReady || !session?.idUsuario || location.pathname === '/' || location.pathname === '/login')
+      return undefined
+
+    const key = `${session.idUsuario}:${location.pathname}`
+    const now = Date.now()
+    if (recentNavigation.key === key && now - recentNavigation.at < 300) return undefined
+    recentNavigation.key = key
+    recentNavigation.at = now
+    controlIngresosApi.registrarEntradaPantalla(location.pathname).catch((error) => {
+      if (import.meta.env.DEV) console.warn('No se pudo registrar la entrada a la pantalla:', error)
+    })
+    return undefined
+  }, [sessionReady, session?.idUsuario, location.pathname])
 
   async function login(credentials) {
     await controlIngresosApi.iniciarSesion(credentials)

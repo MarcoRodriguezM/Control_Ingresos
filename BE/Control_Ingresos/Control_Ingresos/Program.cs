@@ -208,7 +208,8 @@ app.Run();
 static bool EsRutaPermitidaParaGuardia(HttpRequest request)
 {
     if (HttpMethods.IsPost(request.Method)
-        && request.Path.Equals("/api/autenticacion/logout", StringComparison.OrdinalIgnoreCase))
+        && (request.Path.Equals("/api/autenticacion/logout", StringComparison.OrdinalIgnoreCase)
+            || request.Path.Equals("/api/auditoria/navegacion", StringComparison.OrdinalIgnoreCase)))
         return true;
 
     if (!HttpMethods.IsGet(request.Method)) return false;
@@ -232,6 +233,7 @@ static bool EsRutaPermitidaParaProveedor(HttpRequest request)
     if (HttpMethods.IsPost(request.Method))
     {
         return request.Path.Equals("/api/autenticacion/logout", StringComparison.OrdinalIgnoreCase)
+            || request.Path.Equals("/api/auditoria/navegacion", StringComparison.OrdinalIgnoreCase)
             || request.Path.Equals("/api/personas", StringComparison.OrdinalIgnoreCase)
             || request.Path.Equals("/api/personas/fotografia", StringComparison.OrdinalIgnoreCase)
             || request.Path.StartsWithSegments("/api/proveedores/solicitudes", StringComparison.OrdinalIgnoreCase);

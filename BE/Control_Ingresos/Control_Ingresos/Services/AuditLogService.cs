@@ -23,6 +23,10 @@ public sealed class AuditLogService(IConfiguration configuration, IWebHostEnviro
     private readonly string _legacyDirectory = ResolveLegacyDirectory(environment, configuration);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    public static bool IsActionMethod(string method) =>
+        HttpMethods.IsPost(method) || HttpMethods.IsPut(method)
+        || HttpMethods.IsPatch(method) || HttpMethods.IsDelete(method);
+
     public async Task AppendAsync(AuditEntry entry, CancellationToken cancellationToken = default)
     {
         await using var connection = new SqlConnection(_connectionString);
@@ -41,6 +45,7 @@ public sealed class AuditLogService(IConfiguration configuration, IWebHostEnviro
             SELECT COUNT(1)
             FROM dbo.Auditoria_Registro
             WHERE Fecha >= @Desde AND Fecha < @Hasta
+              AND Metodo IN ('POST', 'PUT', 'PATCH', 'DELETE', 'VIEW')
               AND (@Persona IS NULL
                    OR CHARINDEX(@Persona, Usuario COLLATE Latin1_General_CI_AI) > 0
                    OR CHARINDEX(@Persona, NombreUsuario COLLATE Latin1_General_CI_AI) > 0
@@ -49,6 +54,7 @@ public sealed class AuditLogService(IConfiguration configuration, IWebHostEnviro
             SELECT Id, Fecha, Usuario, NombreUsuario, Metodo, Recurso, Referencia, Estado
             FROM dbo.Auditoria_Registro
             WHERE Fecha >= @Desde AND Fecha < @Hasta
+              AND Metodo IN ('POST', 'PUT', 'PATCH', 'DELETE', 'VIEW')
               AND (@Persona IS NULL
                    OR CHARINDEX(@Persona, Usuario COLLATE Latin1_General_CI_AI) > 0
                    OR CHARINDEX(@Persona, NombreUsuario COLLATE Latin1_General_CI_AI) > 0
@@ -94,7 +100,7 @@ public sealed class AuditLogService(IConfiguration configuration, IWebHostEnviro
                 AuditEntry? entry;
                 try { entry = JsonSerializer.Deserialize<AuditEntry>(line, JsonOptions); }
                 catch (JsonException) { continue; }
-                if (entry is null) continue;
+                if (entry is null || !IsActionMethod(entry.Metodo)) continue;
                 await using var command = InsertCommand(connection, entry, ignoreDuplicates: true);
                 imported += await command.ExecuteNonQueryAsync(cancellationToken);
             }
