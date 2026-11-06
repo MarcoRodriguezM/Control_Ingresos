@@ -167,6 +167,14 @@ app.Use(AuditLogMiddleware.Invoke);
 
 app.Use(async (context, next) =>
 {
+    // Una cookie anterior no debe impedir iniciar una nueva sesion o consultar la actual.
+    // Los endpoints protegidos de autenticacion conservan sus atributos [Authorize].
+    if (context.Request.Path.StartsWithSegments("/api/autenticacion", StringComparison.OrdinalIgnoreCase))
+    {
+        await next();
+        return;
+    }
+
     var guardiaRestringido = context.User.Identity?.IsAuthenticated == true
         && context.User.IsInRole("Guardia")
         && !context.User.IsInRole("Administrador");

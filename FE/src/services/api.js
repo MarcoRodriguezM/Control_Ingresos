@@ -33,7 +33,6 @@ async function request(path, options = {}, redirectOnUnauthorized = true) {
     error.problem = problem
 
     if (redirectOnUnauthorized && response.status === 401 && path !== '/api/autenticacion/login') {
-      localStorage.removeItem('control-ingresos-session')
       window.location.assign('/login')
     }
 
@@ -60,7 +59,6 @@ async function requestBlob(path, redirectOnUnauthorized = true) {
     error.problem = problem
 
     if (redirectOnUnauthorized && response.status === 401) {
-      localStorage.removeItem('control-ingresos-session')
       window.location.assign('/login')
     }
 
@@ -80,7 +78,7 @@ export const controlIngresosApi = {
     method: 'POST',
     body: JSON.stringify({ ruta }),
   }, false),
-  cerrarSesion: () => request('/api/autenticacion/logout', { method: 'POST' }),
+  cerrarSesion: () => request('/api/autenticacion/logout', { method: 'POST' }, false),
   obtenerMiPerfil: () => request('/api/autenticacion/perfil'),
   listarUsuarios: () => request('/api/usuarios'),
   obtenerMatrizAccesos: () => request('/api/matriz-accesos'),

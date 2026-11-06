@@ -52,8 +52,10 @@ import { areaAvailableForEntry } from './utils/accessMatrix'
 import { hasPermission } from './utils/permissions'
 import './App.css'
 
+// Limpia la copia antigua del perfil; la sesion se consulta desde la cookie del backend.
+try { window.localStorage.removeItem('control-ingresos-session') } catch { /* Almacenamiento bloqueado. */ }
+
 const today = () => new Date().toLocaleDateString('en-CA')
-const sessionKey = 'control-ingresos-session'
 const recentNavigation = { key: '', at: 0 }
 const sessionRestoreRetryDelays = [0, 750, 1500, 2500, 4000, 6000, 8000]
 const initialForm = () => ({
@@ -66,39 +68,38 @@ const initialForm = () => ({
 function App() {
   const navigate = useNavigate()
   const location = useLocation()
-  const [session, setSession] = useState(readSession)
-  const [sessionReady, setSessionReady] = useState(() => !readSession()?.idUsuario)
+  const [session, setSession] = useState(null)
+  const [sessionReady, setSessionReady] = useState(false)
   const [sessionRestoreError, setSessionRestoreError] = useState('')
   const [sessionValidationAttempt, setSessionValidationAttempt] = useState(0)
 
   useEffect(() => {
-    if (sessionReady || !session?.idUsuario) return undefined
+    if (sessionReady) return undefined
     let active = true
     restoreSession()
       .then((current) => {
         if (!active) return
-        localStorage.setItem(sessionKey, JSON.stringify(current))
         setSession(current)
         setSessionRestoreError('')
         setSessionReady(true)
       })
-      .catch((error) => {
+      .catch(async (error) => {
+        if (error.status === 403) {
+          await controlIngresosApi.cerrarSesion().catch(() => {})
+        }
         if (!active) return
-        if (error.status === 401) {
-          localStorage.removeItem(sessionKey)
+        if (error.status === 401 || error.status === 403) {
           setSession(null)
           setSessionReady(true)
-          navigate('/login', { replace: true })
           return
         }
         setSessionRestoreError(error.message || 'No se pudo validar la sesion.')
       })
     return () => { active = false }
-  }, [sessionReady, session?.idUsuario, sessionValidationAttempt, navigate])
+  }, [sessionReady, sessionValidationAttempt])
 
   async function refreshSession() {
     const current = await controlIngresosApi.obtenerSesion()
-    localStorage.setItem(sessionKey, JSON.stringify(current))
     setSession((previous) => JSON.stringify(previous) === JSON.stringify(current) ? previous : current)
     return current
   }
@@ -110,11 +111,9 @@ function App() {
       try {
         const current = await controlIngresosApi.obtenerSesion()
         if (!active) return
-        localStorage.setItem(sessionKey, JSON.stringify(current))
         setSession((previous) => JSON.stringify(previous) === JSON.stringify(current) ? previous : current)
       } catch (error) {
         if (!active || error.status !== 401) return
-        localStorage.removeItem(sessionKey)
         setSession(null)
         navigate('/login', { replace: true })
       }
@@ -154,9 +153,14 @@ function App() {
   }, [sessionReady, session?.idUsuario, location.pathname])
 
   async function login(credentials) {
-    await controlIngresosApi.iniciarSesion(credentials)
-    const authenticatedUser = await controlIngresosApi.obtenerSesion()
-    localStorage.setItem(sessionKey, JSON.stringify(authenticatedUser))
+    let authenticatedUser
+    try {
+      authenticatedUser = await controlIngresosApi.iniciarSesion(credentials)
+    } catch (error) {
+      if (error.status !== 403) throw error
+      await controlIngresosApi.cerrarSesion().catch(() => {})
+      authenticatedUser = await controlIngresosApi.iniciarSesion(credentials)
+    }
     setSession(authenticatedUser)
     const returnTo = isGuardSession(authenticatedUser)
       ? '/escanear-qr'
@@ -173,7 +177,6 @@ function App() {
     } catch {
       // La sesión local siempre debe cerrarse, incluso si la API no está disponible.
     } finally {
-      localStorage.removeItem(sessionKey)
       setSession(null)
       navigate('/login', { replace: true })
     }
@@ -1709,14 +1712,5 @@ const hasRole = (session, role) => Boolean(
 
 const isGuardSession = (session) => hasRole(session, 'Guardia') && !hasRole(session, 'Administrador')
 const isProviderSession = (session) => hasRole(session, 'Proveedor') && !hasRole(session, 'Administrador')
-
-function readSession() {
-  try {
-    return JSON.parse(localStorage.getItem(sessionKey))
-  } catch {
-    localStorage.removeItem(sessionKey)
-    return null
-  }
-}
 
 export default App
