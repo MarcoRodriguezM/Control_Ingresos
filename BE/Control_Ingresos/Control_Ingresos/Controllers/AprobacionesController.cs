@@ -1,5 +1,6 @@
 using Control_Ingresos.Data;
 using Control_Ingresos.Models;
+using Control_Ingresos.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
@@ -12,7 +13,8 @@ namespace Control_Ingresos.Controllers;
 public sealed class AprobacionesController(
     ISolicitudesRepository repository,
     IEmpleadosRepository empleadosRepository,
-    ILogger<AprobacionesController> logger) : ControllerBase
+    ILogger<AprobacionesController> logger,
+    EmailNotificationService notifications) : ControllerBase
 {
     [HttpGet]
     [ProducesResponseType<IReadOnlyCollection<AprobacionResumen>>(StatusCodes.Status200OK)]
@@ -67,6 +69,8 @@ public sealed class AprobacionesController(
         if (string.IsNullOrWhiteSpace(idUsuarioAprobador)) return Unauthorized();
 
         var result = await repository.DecidirAprobacionAsync(idSolicitudPersonaArea, idUsuarioAprobador, request, cancellationToken);
+        if (result.AccesoAprobado || request.CodigoEstado.Equals("RECHAZADA", StringComparison.OrdinalIgnoreCase))
+            await notifications.NotificarDecisionAsync(idSolicitudPersonaArea, result.AccesoAprobado ? "APROBADA" : "RECHAZADA");
         return Ok(new DecisionAprobacionResponse(result.Id, result.AccesoAprobado));
     }
 }

@@ -27,6 +27,7 @@ builder.Services.AddSingleton<ApplicationSession>();
 builder.Services.AddSingleton<AuditLogService>();
 builder.Services.AddScoped<CurrentUserAccessValidator>();
 builder.Services.AddSingleton<ICredentialEmailSender, SmtpCredentialEmailSender>();
+builder.Services.AddScoped<EmailNotificationService>();
 builder.Services.Configure<FreshserviceOptions>(
     builder.Configuration.GetSection(FreshserviceOptions.SectionName));
 builder.Services.AddHttpClient<IFreshserviceReadOnlyClient, FreshserviceReadOnlyClient>(client =>

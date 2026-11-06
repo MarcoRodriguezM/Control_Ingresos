@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <Folder Include="Controllers\" />
+    <Content Include="Assets\aura-logo.png" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

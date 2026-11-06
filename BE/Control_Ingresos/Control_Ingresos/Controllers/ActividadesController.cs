@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Control_Ingresos.Data;
 using Control_Ingresos.Models;
+using Control_Ingresos.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -9,7 +10,7 @@ namespace Control_Ingresos.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/actividades")]
-public sealed class ActividadesController(ISolicitudesRepository repository) : ControllerBase
+public sealed class ActividadesController(ISolicitudesRepository repository, EmailNotificationService notifications) : ControllerBase
 {
     [Authorize(Roles = "Aprobador,Administrador")]
     [HttpGet]
@@ -56,6 +57,7 @@ public sealed class ActividadesController(ISolicitudesRepository repository) : C
         var idUsuario = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrWhiteSpace(idUsuario)) return Unauthorized();
         var ticket = await repository.CrearTicketActividadAsync(idActividad, idUsuario, request, cancellationToken);
+        await notifications.NotificarTicketRegistradoAsync(idActividad);
         return Created($"/api/actividades/{idActividad}/ticket", ticket);
     }
 

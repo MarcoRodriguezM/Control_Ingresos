@@ -1,4 +1,6 @@
 using System.Data;
+using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using Control_Ingresos.Models;
 using Control_Ingresos.Security;
@@ -557,25 +559,80 @@ public sealed class SolicitudesRepository(
         string contrasenaTemporal,
         CancellationToken cancellationToken)
     {
+        var idUsuario = GenerarIdUsuarioProveedor(request.NombreLegal);
         await using var connection = await OpenConnectionAsync(cancellationToken);
-        await using var command = StoredProcedure(connection, "dbo.usp_Proveedor_Usuario_Crear");
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            await using var proveedor = StoredProcedure(connection, "dbo.usp_Proveedor_Crear", transaction);
+            Add(proveedor, "@Codigo", SqlDbType.VarChar, request.Codigo, 30);
+            Add(proveedor, "@NombreLegal", SqlDbType.NVarChar, request.NombreLegal, 200);
+            Add(proveedor, "@NombreComercial", SqlDbType.NVarChar, request.NombreComercial, 200);
+            Add(proveedor, "@RTN", SqlDbType.VarChar, request.Rtn, 30);
+            Add(proveedor, "@ContactoPrincipal", SqlDbType.NVarChar, request.ContactoPrincipal, 200);
+            Add(proveedor, "@CorreoPrincipal", SqlDbType.VarChar, request.CorreoPrincipal, 254);
+            Add(proveedor, "@TelefonoPrincipal", SqlDbType.VarChar, request.TelefonoPrincipal, 30);
+            Add(proveedor, "@IdEstadoGeneral", SqlDbType.SmallInt, request.IdEstadoGeneral);
+            Add(proveedor, "@Usuario", SqlDbType.VarChar, request.Usuario, 50);
+            var idProveedor = Convert.ToInt64(await proveedor.ExecuteScalarAsync(cancellationToken));
 
-        Add(command, "@Codigo", SqlDbType.VarChar, request.Codigo, 30);
-        Add(command, "@NombreLegal", SqlDbType.NVarChar, request.NombreLegal, 200);
-        Add(command, "@NombreComercial", SqlDbType.NVarChar, request.NombreComercial, 200);
-        Add(command, "@RTN", SqlDbType.VarChar, request.Rtn, 30);
-        Add(command, "@ContactoPrincipal", SqlDbType.NVarChar, request.ContactoPrincipal, 200);
-        Add(command, "@CorreoPrincipal", SqlDbType.VarChar, request.CorreoPrincipal, 254);
-        Add(command, "@TelefonoPrincipal", SqlDbType.VarChar, request.TelefonoPrincipal, 30);
-        Add(command, "@IdEstadoGeneral", SqlDbType.SmallInt, request.IdEstadoGeneral);
-        Add(command, "@ContrasenaTemporal", SqlDbType.VarChar, contrasenaTemporal, 200);
-        Add(command, "@UsuarioCreacion", SqlDbType.VarChar, request.Usuario, 50);
+            await using var usuario = StoredProcedure(connection, "dbo.usp_Usuario_Crear", transaction);
+            Add(usuario, "@IdUsuario", SqlDbType.VarChar, idUsuario, 50);
+            var nombreCuenta = !string.IsNullOrWhiteSpace(request.ContactoPrincipal)
+                ? request.ContactoPrincipal
+                : !string.IsNullOrWhiteSpace(request.NombreComercial)
+                    ? request.NombreComercial
+                    : request.NombreLegal;
+            Add(usuario, "@NombreCompleto", SqlDbType.NVarChar,
+                nombreCuenta, 200);
+            Add(usuario, "@Correo", SqlDbType.VarChar, request.CorreoPrincipal, 254);
+            Add(usuario, "@Telefono", SqlDbType.VarChar, request.TelefonoPrincipal, 30);
+            Add(usuario, "@Puesto", SqlDbType.NVarChar, "Proveedor", 150);
+            Add(usuario, "@Contrasena", SqlDbType.VarChar, contrasenaTemporal, 200);
+            Add(usuario, "@IdArea", SqlDbType.Int, null);
+            Add(usuario, "@PuedeSolicitar", SqlDbType.Bit, false);
+            Add(usuario, "@EsAprobador", SqlDbType.Bit, false);
+            Add(usuario, "@Activo", SqlDbType.Bit, true);
+            Add(usuario, "@UsuarioCreacion", SqlDbType.VarChar, request.Usuario, 50);
+            await usuario.ExecuteNonQueryAsync(cancellationToken);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
-            throw new InvalidOperationException("No se recibió la cuenta creada para el proveedor.");
+            await using var vincular = new SqlCommand("UPDATE dbo.Usuario SET IdProveedor = @IdProveedor, FechaModificacion = SYSDATETIME(), UsuarioModificacion = @Actor WHERE IdUsuario = @IdUsuario;", connection, transaction);
+            Add(vincular, "@IdProveedor", SqlDbType.BigInt, idProveedor);
+            Add(vincular, "@Actor", SqlDbType.VarChar, request.Usuario, 50);
+            Add(vincular, "@IdUsuario", SqlDbType.VarChar, idUsuario, 50);
+            if (await vincular.ExecuteNonQueryAsync(cancellationToken) != 1)
+                throw new InvalidOperationException("No se pudo vincular el usuario con el proveedor.");
 
-        return new ProveedorUsuarioCreado(reader.GetInt64(0), reader.GetString(1));
+            await using var rol = StoredProcedure(connection, "dbo.usp_Usuario_Rol_Asignar", transaction);
+            Add(rol, "@IdUsuario", SqlDbType.VarChar, idUsuario, 50);
+            Add(rol, "@CodigoRol", SqlDbType.VarChar, "PROVEEDOR", 30);
+            Add(rol, "@UsuarioAsignacion", SqlDbType.VarChar, request.Usuario, 50);
+            await rol.ExecuteNonQueryAsync(cancellationToken);
+
+            await transaction.CommitAsync(cancellationToken);
+            return new ProveedorUsuarioCreado(idProveedor, idUsuario);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
+    private static string GenerarIdUsuarioProveedor(string nombreLegal)
+    {
+        var normalized = nombreLegal.Normalize(NormalizationForm.FormD).ToLowerInvariant();
+        var slug = new StringBuilder();
+        foreach (var character in normalized)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(character) == UnicodeCategory.NonSpacingMark) continue;
+            if (character is >= 'a' and <= 'z' or >= '0' and <= '9') slug.Append(character);
+        }
+        if (slug.Length == 0)
+            throw new ArgumentException("El nombre legal debe contener letras o numeros para generar el usuario.", nameof(nombreLegal));
+        if (slug.Length > 50)
+            throw new ArgumentException("El nombre legal genera un usuario de mas de 50 caracteres. Usa un nombre legal mas corto.", nameof(nombreLegal));
+        return slug.ToString();
     }
 
     public async Task<long> CrearPersonaAsync(

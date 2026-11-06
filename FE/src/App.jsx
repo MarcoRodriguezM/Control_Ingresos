@@ -1328,14 +1328,16 @@ function AuthenticatedApp({ session, onLogout, onSessionRefresh }) {
   async function createUser(user) {
     setError('')
     try {
-      await controlIngresosApi.crearUsuario(user)
+      const created = await controlIngresosApi.crearUsuario(user)
       try {
         setUsuarios(await controlIngresosApi.listarUsuarios())
       } catch {
         // La creación ya fue confirmada por el servidor. El listado se recargará
         // al volver a entrar para que un fallo de refresco no simule un fallo al crear.
       }
-      await showSuccessAlert('El usuario fue creado correctamente.')
+      await showSuccessAlert(created.credencialesEnviadas
+        ? 'El usuario fue creado y sus credenciales se enviaron por correo.'
+        : 'El usuario fue creado, pero no se pudieron enviar las credenciales por correo.')
       navigate('/usuarios')
       return { success: true }
     } catch (requestError) {

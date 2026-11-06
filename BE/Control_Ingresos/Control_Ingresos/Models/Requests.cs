@@ -633,7 +633,7 @@ public sealed record UsuarioAdministracionDetalle(
 public sealed record CrearUsuarioRequest(
     [Required, MaxLength(50)] string IdUsuario,
     [Required, MaxLength(200)] string NombreCompleto,
-    [EmailAddress, MaxLength(254)] string? Correo,
+    [Required, EmailAddress, MaxLength(254)] string Correo,
     [MaxLength(30)] string? Telefono,
     [MaxLength(150)] string? Puesto,
     [Required, MinLength(8), MaxLength(200)] string Contrasena,

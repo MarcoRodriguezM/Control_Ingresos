@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Control_Ingresos.Data;
 using Control_Ingresos.Models;
 using Control_Ingresos.Security;
+using Control_Ingresos.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -10,7 +11,7 @@ namespace Control_Ingresos.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/usuarios")]
-public sealed class UsuariosController(ISolicitudesRepository repository) : ControllerBase
+public sealed class UsuariosController(ISolicitudesRepository repository, ICredentialEmailSender emailSender) : ControllerBase
 {
     [HttpGet]
     [ProducesResponseType<IReadOnlyCollection<UsuarioAdministracionResumen>>(StatusCodes.Status200OK)]
@@ -39,7 +40,9 @@ public sealed class UsuariosController(ISolicitudesRepository repository) : Cont
         var idUsuarioActual = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrWhiteSpace(idUsuarioActual)) return Unauthorized();
         var idUsuario = await repository.CrearUsuarioAsync(request, idUsuarioActual, cancellationToken);
-        return Created($"/api/usuarios/{Uri.EscapeDataString(idUsuario)}", new { idUsuario });
+        var credencialesEnviadas = await emailSender.EnviarCredencialesUsuarioAsync(
+            request.Correo, request.NombreCompleto, idUsuario, request.Contrasena, cancellationToken);
+        return Created($"/api/usuarios/{Uri.EscapeDataString(idUsuario)}", new { idUsuario, credencialesEnviadas });
     }
 
     [HttpPut("{idUsuario}")]

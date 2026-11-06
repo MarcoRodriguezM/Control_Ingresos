@@ -30,7 +30,23 @@ La URL HTTP de desarrollo es `http://localhost:5250`. Al ejecutar en Development
 - `DELETE /api/solicitudes/{id}?usuario={idUsuario}`
 - `POST /api/solicitudes/{id}/personas`
 
-Todos los endpoints de escritura invocan procedimientos almacenados. Las relaciones lógicas se validan dentro de SQL Server antes de insertar.
+Los endpoints de escritura usan los procedimientos almacenados existentes. Al crear un proveedor, el backend vincula su cuenta dentro de la misma transaccion. Las relaciones logicas se validan dentro de SQL Server antes de insertar.
+
+## Correos
+
+Configure `Email:Enabled`, `Email:Smtp:Host`, `Email:Smtp:Port`,
+`Email:Smtp:UserName`, `Email:Smtp:Password`, `Email:Smtp:SenderAddress` y
+`Email:Smtp:SenderName` en la configuracion local o mediante variables de entorno
+con el prefijo `Email__Smtp__`. Configure tambien `Frontend:BaseUrl` con la URL
+publica de la app para que los botones del correo abran el portal correcto.
+La imagen `Assets/aura-logo.png` se incrusta en los mensajes.
+
+Al crear un proveedor, el usuario se genera solo a partir de su nombre legal,
+en minusculas y sin espacios ni signos (por ejemplo, `Davis Industry A` produce
+`davisindustrya`). Si ya existe ese usuario, se rechaza la creacion para evitar
+duplicados. Los correos incluyen
+credenciales para cuentas nuevas y avisos de solicitudes para proveedores,
+aprobadores y solicitantes. Si SMTP falla, la operacion principal permanece guardada.
 
 ## Ejemplo de solicitud
 

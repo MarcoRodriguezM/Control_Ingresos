@@ -86,7 +86,7 @@ export function UserFormPage({ areas = [], areasError = '', onCreate, onCancel }
       <div className="form-grid">
         <Field label="Identificador de usuario" required><input name="idUsuario" maxLength="50" value={form.idUsuario} onChange={change} required placeholder="Ej. nombre.apellido" autoComplete="off" /></Field>
         <Field label="Nombre completo" required><input name="nombreCompleto" maxLength="200" value={form.nombreCompleto} onChange={change} required /></Field>
-        <Field label="Correo electrónico"><input type="email" name="correo" maxLength="254" value={form.correo} onChange={change} /></Field>
+        <Field label="Correo electrónico" required><input type="email" name="correo" maxLength="254" value={form.correo} onChange={change} required /></Field>
         <Field label="Teléfono"><input type="tel" name="telefono" maxLength="30" value={form.telefono} onChange={change} /></Field>
         <Field label="Puesto"><input name="puesto" maxLength="150" value={form.puesto} onChange={change} /></Field>
         <Field label="Área principal" required={areaRequired}>

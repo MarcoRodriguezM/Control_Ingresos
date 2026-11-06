@@ -1,5 +1,6 @@
 using Control_Ingresos.Data;
 using Control_Ingresos.Models;
+using Control_Ingresos.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
@@ -12,7 +13,8 @@ namespace Control_Ingresos.Controllers;
 public sealed class SolicitudesController(
     ISolicitudesRepository repository,
     IEmpleadosRepository empleadosRepository,
-    ILogger<SolicitudesController> logger) : ControllerBase
+    ILogger<SolicitudesController> logger,
+    EmailNotificationService notifications) : ControllerBase
 
 {
     [HttpGet("formulario-datos")]
@@ -291,6 +293,7 @@ public sealed class SolicitudesController(
             request.Flujos,
             usuario,
             cancellationToken);
+        await notifications.NotificarAreasAsignadasAsync(id);
         return NoContent();
     }
 
@@ -307,6 +310,7 @@ public sealed class SolicitudesController(
         await ValidarEmpleadosAsociadosActivosAsync(existing, cancellationToken);
         if (!ModelState.IsValid) return ValidationProblem(ModelState);
         await repository.EnviarSolicitudAsync(id, usuario, cancellationToken);
+        await notifications.NotificarSolicitudEnviadaAsync(id);
         return NoContent();
     }
 
@@ -320,6 +324,7 @@ public sealed class SolicitudesController(
         if (string.IsNullOrWhiteSpace(request.Justificacion))
             return BadRequest(new ProblemDetails { Detail = "La justificacion es obligatoria." });
         await repository.ReenviarAprobacionAsync(idSolicitudPersonaArea, idUsuarioSolicitante, request.Justificacion.Trim(), cancellationToken);
+        await notifications.NotificarAprobacionReenviadaAsync(idSolicitudPersonaArea);
         return NoContent();
     }
 

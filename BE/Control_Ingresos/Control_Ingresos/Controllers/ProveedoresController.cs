@@ -13,7 +13,8 @@ namespace Control_Ingresos.Controllers;
 [Route("api/proveedores")]
 public sealed class ProveedoresController(
     ISolicitudesRepository repository,
-    ICredentialEmailSender credentialEmailSender) : ControllerBase
+    ICredentialEmailSender credentialEmailSender,
+    EmailNotificationService notifications) : ControllerBase
 {
     [HttpGet("mi-empresa")]
     [Authorize(Roles = "Proveedor")]
@@ -97,6 +98,7 @@ public sealed class ProveedoresController(
         var usuario = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrWhiteSpace(usuario)) return Unauthorized();
         await repository.EnviarSolicitudProveedorAsync(id, usuario, cancellationToken);
+        await notifications.NotificarProveedorFinalizoAsync(id);
         return NoContent();
     }
 
@@ -110,7 +112,15 @@ public sealed class ProveedoresController(
         if (string.IsNullOrWhiteSpace(usuario)) return Unauthorized();
         request = request with { Usuario = usuario, IdEstadoGeneral = null };
         var contrasenaTemporal = GenerarContrasenaTemporal();
-        var creado = await repository.CrearProveedorAsync(request, contrasenaTemporal, cancellationToken);
+        ProveedorUsuarioCreado creado;
+        try
+        {
+            creado = await repository.CrearProveedorAsync(request, contrasenaTemporal, cancellationToken);
+        }
+        catch (ArgumentException exception)
+        {
+            return BadRequest(new ProblemDetails { Detail = exception.Message });
+        }
         var credencialesEnviadas = await credentialEmailSender.EnviarCredencialesProveedorAsync(
             request.CorreoPrincipal,
             request.NombreComercial ?? request.NombreLegal,
